@@ -1,21 +1,22 @@
-use crossterm::{
-    event::{self, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
-    text::{Line, Span, Text},
-    widgets::{Block, Borders, Paragraph},
-    Terminal,
-};
+// use crossterm::{
+//     event::{self, Event, KeyCode},
+//     execute,
+//     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+// };
+// use ratatui::{
+//     backend::CrosstermBackend,
+//     layout::{Constraint, Direction, Layout},
+//     style::{Color, Style},
+//     text::{Line, Span, Text},
+//     widgets::{Block, Borders, Paragraph},
+//     Terminal,
+// };
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Command, Stdio};
+use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 // Define MI Response Types
 #[derive(Debug)]
@@ -80,7 +81,220 @@ fn parse_stream_output(input: &str) -> MIResponse {
     MIResponse::StreamOutput(kind.to_string(), content.trim_matches('"').to_string())
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+// fn main() -> Result<(), Box<dyn std::error::Error>> {
+//     // Start GDB process
+//     let mut gdb_process = Command::new("gdb")
+//         .args(["--interpreter=mi2", "--quiet"])
+//         .stdin(Stdio::piped())
+//         .stdout(Stdio::piped())
+//         .spawn()
+//         .expect("Failed to start GDB");
+
+//     let gdb_stdin = Arc::new(Mutex::new(gdb_process.stdin.take().unwrap()));
+//     let gdb_stdout = BufReader::new(gdb_process.stdout.take().unwrap());
+//     let parsed_responses = Arc::new(Mutex::new(Vec::new()));
+//     let user_input = Arc::new(Mutex::new(Vec::<String>::new())); // Change to Vec<String>
+//     let unknown_text = Arc::new(Mutex::new(String::new()));
+//     let responses_clone = Arc::clone(&parsed_responses);
+//     let user_input_clone = Arc::clone(&user_input);
+//     let unknown_text_clone = Arc::clone(&unknown_text);
+
+//     // Thread to read GDB output and parse it
+//     thread::spawn(move || {
+//         for line in gdb_stdout.lines() {
+//             if let Ok(line) = line {
+//                 let response = parse_mi_response(&line);
+//                 if let MIResponse::Unknown(content) = &response {
+//                     let mut unknown = unknown_text_clone.lock().unwrap();
+//                     unknown.push_str(content);
+//                 }
+//                 responses_clone.lock().unwrap().push(response);
+//             }
+//         }
+//     });
+
+//     // Setup terminal UI
+//     enable_raw_mode()?;
+//     let mut stdout = std::io::stdout();
+//     execute!(stdout, EnterAlternateScreen)?;
+//     let backend = CrosstermBackend::new(stdout);
+//     let mut terminal = Terminal::new(backend)?;
+
+//     loop {
+//         // Draw UI
+//         terminal.draw(|f| {
+//             let chunks = Layout::default()
+//                 .direction(Direction::Vertical)
+//                 .constraints([Constraint::Min(3), Constraint::Length(10)].as_ref())
+//                 .split(f.area());
+
+//             // Display parsed responses
+//             let response_text = {
+//                 let responses = parsed_responses.lock().unwrap();
+//                 Text::from(
+//                     responses
+//                         .iter()
+//                         .map(|response| Line::from(Span::raw(format!("{:?}", response))))
+//                         .collect::<Vec<_>>(),
+//                 )
+//             };
+
+//             let response_widget = Paragraph::new(response_text).block(
+//                 Block::default()
+//                     .title("Parsed Responses")
+//                     .borders(Borders::ALL),
+//             );
+//             f.render_widget(response_widget, chunks[0]);
+
+//             // Display input box (Unknown messages + User input)
+//             let input_text = {
+//                 let unknown = unknown_text.lock().unwrap();
+//                 let user = user_input.lock().unwrap();
+//                 // Join multiple lines of user input into a single string
+//                 // format!("{unknown}{}", user.join("\n"))
+//                 format!("{}", user.join("\n"))
+//             };
+
+//             let input_widget = Paragraph::new(input_text)
+//                 .block(Block::default().title("Input").borders(Borders::ALL))
+//                 .style(Style::default().fg(Color::Yellow));
+//             f.render_widget(input_widget, chunks[1]);
+//         })?;
+
+//         // Handle user input
+//         if let Event::Key(key) = event::read()? {
+//             match key.code {
+//                 KeyCode::Char(c) => {
+//                     let mut input = user_input.lock().unwrap();
+//                     // If the current line is too long, move to the next one
+//                     if let Some(last_line) = input.last_mut() {
+//                         if last_line.len() < 80 {
+//                             last_line.push(c);
+//                         } else {
+//                             input.push(c.to_string());
+//                         }
+//                     }
+//                 }
+//                 KeyCode::Enter => {
+//                     // Add the current line of input to the Vec and start a new line
+//                     let mut input = user_input.lock().unwrap();
+//                     input.push(String::new()); // Add a new empty line
+//                                                // Write to GDB
+//                     let mut stdin = gdb_stdin.lock().unwrap();
+//                     if !input.is_empty() {
+//                         let input_line = input.last().unwrap();
+//                         writeln!(stdin, "{}", input_line)?;
+//                     }
+//                 }
+//                 KeyCode::Backspace => {
+//                     let mut input = user_input.lock().unwrap();
+//                     if let Some(last_line) = input.last_mut() {
+//                         last_line.pop();
+//                     }
+//                 }
+//                 KeyCode::Esc => {
+//                     break;
+//                 }
+//                 _ => {}
+//             }
+//         }
+//     }
+
+//     // Cleanup
+//     disable_raw_mode()?;
+//     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+//     terminal.show_cursor()?;
+
+//     Ok(())
+// }
+
+/// This example is taken from https://raw.githubusercontent.com/fdehau/tui-rs/master/examples/user_input.rs
+use ratatui::prelude::*;
+use ratatui::{
+    crossterm::{
+        event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+        execute,
+        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    },
+    widgets::{Block, Borders, List, ListItem, Paragraph},
+};
+use std::{error::Error, io};
+use tui_input::backend::crossterm::EventHandler;
+use tui_input::Input;
+
+enum InputMode {
+    Normal,
+    Editing,
+}
+
+use std::collections::VecDeque;
+
+struct LimitedBuffer<T> {
+    buffer: VecDeque<T>,
+    capacity: usize,
+}
+
+impl<T> LimitedBuffer<T> {
+    fn new(capacity: usize) -> Self {
+        Self {
+            buffer: VecDeque::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    fn push(&mut self, value: T) {
+        if self.buffer.len() == self.capacity {
+            self.buffer.pop_front(); // Remove the oldest element
+        }
+        self.buffer.push_back(value);
+    }
+
+    fn as_slice(&self) -> &[T] {
+        self.buffer.as_slices().0
+    }
+
+    fn len(&self) -> usize {
+        self.buffer.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.buffer.is_empty()
+    }
+}
+
+/// App holds the state of the application
+struct App {
+    /// Current value of the input box
+    input: Input,
+    /// Current input mode
+    input_mode: InputMode,
+    /// History of recorded messages
+    messages: LimitedBuffer<String>,
+    parsed_responses: Arc<Mutex<LimitedBuffer<MIResponse>>>,
+    gdb_stdin: Arc<Mutex<ChildStdin>>,
+}
+
+impl App {
+    fn new(gdb_stdin: ChildStdin) -> App {
+        let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
+        App {
+            input: Input::default(),
+            input_mode: InputMode::Normal,
+            messages: LimitedBuffer::new(10),
+            parsed_responses: Arc::new(Mutex::new(LimitedBuffer::new(30))),
+            gdb_stdin,
+        }
+    }
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    // setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
     // Start GDB process
     let mut gdb_process = Command::new("gdb")
         .args(["--interpreter=mi2", "--quiet"])
@@ -88,93 +302,182 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .stdout(Stdio::piped())
         .spawn()
         .expect("Failed to start GDB");
-
-    let gdb_stdin = Arc::new(Mutex::new(gdb_process.stdin.take().unwrap()));
+    // let gdb_stdin = Arc::new(Mutex::new(gdb_process.stdin.take().unwrap()));
+    let gdb_stdin = gdb_process.stdin.take().unwrap();
     let gdb_stdout = BufReader::new(gdb_process.stdout.take().unwrap());
-    let parsed_responses = Arc::new(Mutex::new(Vec::new()));
-    let responses_clone = Arc::clone(&parsed_responses);
+
+    // create app and run it
+    let app = App::new(gdb_stdin);
+
+    let parsed_reponses_arc = Arc::clone(&app.parsed_responses);
 
     // Thread to read GDB output and parse it
     thread::spawn(move || {
         for line in gdb_stdout.lines() {
+            // println!("{:?}", line);
             if let Ok(line) = line {
                 let response = parse_mi_response(&line);
-                responses_clone.lock().unwrap().push(response);
+                // if let MIResponse::Unknown(content) = &response {
+                //     let mut unknown = unknown_text_clone.lock().unwrap();
+                //     unknown.push_str(content);
+                // }
+                parsed_reponses_arc.lock().unwrap().push(response);
             }
         }
     });
+    let res = run_app(&mut terminal, app);
 
-    // Setup terminal UI
-    enable_raw_mode()?;
-    let mut stdout = std::io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    // restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
 
-    let mut user_input = String::new();
+    if let Err(err) = res {
+        println!("{:?}", err)
+    }
 
+    Ok(())
+}
+
+fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<()> {
     loop {
-        // Draw UI
-        terminal.draw(|f| {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Min(3), Constraint::Length(3)].as_ref())
-                .split(f.area());
+        terminal.draw(|f| ui(f, &app))?;
 
-            // Display parsed responses
-            let response_text = {
-                let responses = parsed_responses.lock().unwrap();
-                Text::from(
-                    responses
-                        .iter()
-                        .map(|response| Line::from(Span::raw(format!("{:?}", response))))
-                        .collect::<Vec<_>>(),
-                )
-            };
-
-            let response_widget = Paragraph::new(response_text).block(
-                Block::default()
-                    .title("Parsed Responses")
-                    .borders(Borders::ALL),
-            );
-            f.render_widget(response_widget, chunks[0]);
-
-            // Display input box
-            let input_widget = Paragraph::new(user_input.clone())
-                .block(Block::default().title("Input").borders(Borders::ALL))
-                .style(Style::default().fg(Color::Yellow));
-            f.render_widget(input_widget, chunks[1]);
-        })?;
-
-        // Handle user input
-        if let Event::Key(key) = event::read()? {
-            match key.code {
-                KeyCode::Char(c) => {
-                    user_input.push(c);
+        if crossterm::event::poll(Duration::from_millis(10))? {
+            if let Event::Key(key) = event::read()? {
+                match app.input_mode {
+                    InputMode::Normal => match key.code {
+                        KeyCode::Char('i') => {
+                            app.input_mode = InputMode::Editing;
+                        }
+                        KeyCode::Char('q') => {
+                            return Ok(());
+                        }
+                        _ => {}
+                    },
+                    InputMode::Editing => match key.code {
+                        KeyCode::Enter => {
+                            app.messages.push(app.input.value().into());
+                            let mut stdin = app.gdb_stdin.lock().unwrap();
+                            // println!("{}", app.input.value());
+                            writeln!(stdin, "{}", app.input.value())?;
+                            app.input.reset();
+                        }
+                        KeyCode::Esc => {
+                            app.input_mode = InputMode::Normal;
+                        }
+                        _ => {
+                            app.input.handle_event(&Event::Key(key));
+                        }
+                    },
                 }
-                KeyCode::Enter => {
-                    // Write input to GDB process
-                    if !user_input.is_empty() {
-                        let mut stdin = gdb_stdin.lock().unwrap();
-                        writeln!(stdin, "{}", user_input)?;
-                        user_input.clear();
-                    }
-                }
-                KeyCode::Backspace => {
-                    user_input.pop();
-                }
-                KeyCode::Esc => {
-                    break;
-                }
-                _ => {}
             }
         }
     }
+}
 
-    // Cleanup
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
+fn ui(f: &mut Frame, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints(
+            [
+                Constraint::Length(1),
+                Constraint::Length(3),
+                Constraint::Length(50),
+                Constraint::Length(50),
+            ]
+            .as_ref(),
+        )
+        .split(f.area());
 
-    Ok(())
+    let (msg, style) = match app.input_mode {
+        InputMode::Normal => (
+            vec![
+                Span::raw("Press "),
+                Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" to exit, "),
+                Span::styled("i", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" to start editing."),
+            ],
+            Style::default().add_modifier(Modifier::RAPID_BLINK),
+        ),
+        InputMode::Editing => (
+            vec![
+                Span::raw("Press "),
+                Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" to stop editing, "),
+                Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" to record the message"),
+            ],
+            Style::default(),
+        ),
+    };
+    let text = Text::from(Line::from(msg)).style(style);
+    let help_message = Paragraph::new(text);
+    f.render_widget(help_message, chunks[0]);
+
+    let width = chunks[0].width.max(3) - 3; // keep 2 for borders and 1 for cursor
+
+    let scroll = app.input.visual_scroll(width as usize);
+    let input = Paragraph::new(app.input.value())
+        .style(match app.input_mode {
+            InputMode::Normal => Style::default(),
+            InputMode::Editing => Style::default().fg(Color::Yellow),
+        })
+        .scroll((0, scroll as u16))
+        .block(Block::default().borders(Borders::ALL).title("Input"));
+    f.render_widget(input, chunks[1]);
+
+    // Display parsed responses
+    let response_text = {
+        let responses = app.parsed_responses.lock().unwrap();
+        Text::from(
+            responses
+                .buffer
+                .iter()
+                .map(|response| Line::from(Span::raw(format!("{:?}", response))))
+                .collect::<Vec<_>>(),
+        )
+    };
+    match app.input_mode {
+        InputMode::Normal =>
+            // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
+            {}
+
+        InputMode::Editing => {
+            // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
+            f.set_cursor_position((
+                // Put cursor past the end of the input text
+                chunks[1].x + ((app.input.visual_cursor()).max(scroll) - scroll) as u16 + 1,
+                // Move one line down, from the border to the input line
+                chunks[1].y + 1,
+            ))
+        }
+    }
+
+    let messages: Vec<ListItem> = app
+        .messages
+        .buffer
+        .iter()
+        .enumerate()
+        .map(|(i, m)| {
+            let content = vec![Line::from(Span::raw(format!("{}: {}", i, m)))];
+            ListItem::new(content)
+        })
+        .collect();
+    let messages =
+        List::new(messages).block(Block::default().borders(Borders::ALL).title("Messages"));
+    f.render_widget(messages, chunks[2]);
+
+    let response_widget = Paragraph::new(response_text).block(
+        Block::default()
+            .title("Parsed Responses")
+            .borders(Borders::ALL),
+    );
+    f.render_widget(response_widget, chunks[3]);
 }

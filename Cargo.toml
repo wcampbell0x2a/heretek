@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+chrono = "0.4.38"
 crossterm = "0.28.1"
+env_logger = "0.11.5"
+log = "0.4.22"
 ratatui = "0.29.0"
 tui-input = "0.11.0"

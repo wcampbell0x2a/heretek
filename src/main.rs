@@ -12,11 +12,15 @@
 //     Terminal,
 // };
 use std::collections::HashMap;
+use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+
+use env_logger::{Builder, Env};
+use log::debug;
 
 // Define MI Response Types
 #[derive(Debug)]
@@ -145,22 +149,40 @@ struct App {
     messages: LimitedBuffer<String>,
     parsed_responses: Arc<Mutex<LimitedBuffer<MIResponse>>>,
     gdb_stdin: Arc<Mutex<ChildStdin>>,
+    registers: Arc<Mutex<String>>,
 }
 
 impl App {
-    fn new(gdb_stdin: ChildStdin) -> App {
-        let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
+    fn new(gdb_stdin: Arc<Mutex<ChildStdin>>) -> App {
         App {
             input: Input::default(),
             input_mode: InputMode::Normal,
             messages: LimitedBuffer::new(10),
             parsed_responses: Arc::new(Mutex::new(LimitedBuffer::new(30))),
             gdb_stdin,
+            registers: Arc::new(Mutex::new(String::new())),
         }
     }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    // Configure logging to a file
+    let log_file = Arc::new(Mutex::new(File::create("app.log")?));
+    Builder::from_env(Env::default().default_filter_or("debug"))
+        .format(move |buf, record| {
+            let mut log_file = log_file.lock().unwrap();
+            let log_msg = format!(
+                "{} [{}] - {}\n",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                record.level(),
+                record.args()
+            );
+            log_file.write_all(log_msg.as_bytes()).unwrap();
+            writeln!(buf, "{}", log_msg.trim_end())
+        })
+        .target(env_logger::Target::Pipe(Box::new(std::io::sink()))) // Disable stdout/stderr
+        .init();
+
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -178,22 +200,48 @@ fn main() -> Result<(), Box<dyn Error>> {
     // let gdb_stdin = Arc::new(Mutex::new(gdb_process.stdin.take().unwrap()));
     let gdb_stdin = gdb_process.stdin.take().unwrap();
     let gdb_stdout = BufReader::new(gdb_process.stdout.take().unwrap());
+    let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
 
     // create app and run it
     let app = App::new(gdb_stdin);
 
+    let gdb_stdin_arc = Arc::clone(&app.gdb_stdin);
     let parsed_reponses_arc = Arc::clone(&app.parsed_responses);
+    let registers_arc = Arc::clone(&app.registers);
 
     // Thread to read GDB output and parse it
     thread::spawn(move || {
+        let mut next_write = String::new();
         for line in gdb_stdout.lines() {
-            // println!("{:?}", line);
             if let Ok(line) = line {
                 let response = parse_mi_response(&line);
-                // if let MIResponse::Unknown(content) = &response {
-                //     let mut unknown = unknown_text_clone.lock().unwrap();
-                //     unknown.push_str(content);
-                // }
+                match &response {
+                    MIResponse::AsyncRecord(reason, _) => {
+                        if reason == "stopped" {
+                            // if reason == "breakpoint-hit" {
+                            // if reason == "reason=\"breakpoint-hit\"" {
+                            // When a breakpoint is hit, query for register values
+                            next_write = "-data-list-register-values x".to_string();
+                        }
+                    }
+                    MIResponse::ExecResult(_, kv) => {
+                        // Check if response is register data
+                        if let Some(register_data) = kv.get("register-values") {
+                            let mut regs = registers_arc.lock().unwrap();
+                            *regs = register_data.clone();
+                        }
+                    }
+                    MIResponse::Unknown(_) => {
+                        if !next_write.is_empty() {
+                            let mut stdin = gdb_stdin_arc.lock().unwrap();
+                            debug!("writing {}", next_write);
+                            writeln!(stdin, "{}", next_write).expect("Failed to send command");
+                            next_write.clear();
+                        }
+                    }
+                    _ => (),
+                }
+                debug!("response {:?}", response);
                 parsed_reponses_arc.lock().unwrap().push(response);
             }
         }
@@ -238,6 +286,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<(
                             let mut stdin = app.gdb_stdin.lock().unwrap();
                             // println!("{}", app.input.value());
                             writeln!(stdin, "{}", app.input.value())?;
+                            debug!("writing {}", app.input.value());
                             app.input.reset();
                         }
                         KeyCode::Esc => {
@@ -261,7 +310,8 @@ fn ui(f: &mut Frame, app: &App) {
             [
                 Constraint::Length(1),
                 Constraint::Length(3),
-                Constraint::Length(50),
+                Constraint::Length(20),
+                Constraint::Length(40),
                 Constraint::Length(50),
             ]
             .as_ref(),
@@ -306,6 +356,10 @@ fn ui(f: &mut Frame, app: &App) {
         .block(Block::default().borders(Borders::ALL).title("Input"));
     f.render_widget(input, chunks[1]);
 
+    let response_widget = Paragraph::new(app.registers.lock().unwrap().clone())
+        .block(Block::default().title("Registers").borders(Borders::ALL));
+    f.render_widget(response_widget, chunks[2]);
+
     // Display parsed responses
     let response_text = {
         let responses = app.parsed_responses.lock().unwrap();
@@ -345,12 +399,12 @@ fn ui(f: &mut Frame, app: &App) {
         .collect();
     let messages =
         List::new(messages).block(Block::default().borders(Borders::ALL).title("Messages"));
-    f.render_widget(messages, chunks[2]);
+    f.render_widget(messages, chunks[3]);
 
     let response_widget = Paragraph::new(response_text).block(
         Block::default()
             .title("Parsed Responses")
             .borders(Borders::ALL),
     );
-    f.render_widget(response_widget, chunks[3]);
+    f.render_widget(response_widget, chunks[4]);
 }

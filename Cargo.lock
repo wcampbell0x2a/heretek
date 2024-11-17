@@ -172,6 +172,7 @@ dependencies = [
  "env_logger",
  "log",
  "ratatui",
+ "regex",
  "tui-input",
 ]
 

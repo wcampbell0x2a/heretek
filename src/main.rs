@@ -1,6 +1,5 @@
 use mi::{MIResponse, Register};
 use ratatui::widgets::{Row, Table};
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{ChildStdin, ChildStdout, Command, Stdio};
@@ -13,6 +12,7 @@ use tui_input::Input;
 
 use env_logger::{Builder, Env};
 use log::debug;
+use ratatui::layout::{Constraint, Layout};
 use ratatui::prelude::*;
 use ratatui::{
     crossterm::{
@@ -22,6 +22,7 @@ use ratatui::{
     },
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
+use Constraint::{Fill, Length, Min};
 
 mod mi;
 
@@ -148,8 +149,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                             if let Some(arch) = v.get("arch") {
                                 debug!("{arch}");
                             }
-                            // if reason == "breakpoint-hit" {
-                            // if reason == "reason=\"breakpoint-hit\"" {
                             // When a breakpoint is hit, query for register values
                             next_write = "-data-list-register-values x".to_string();
                         }
@@ -231,20 +230,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<(
 }
 
 fn ui(f: &mut Frame, app: &App) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(2)
-        .constraints(
-            [
-                Constraint::Length(1),
-                Constraint::Length(3),
-                Constraint::Length(20),
-                Constraint::Length(40),
-                Constraint::Length(50),
-            ]
-            .as_ref(),
-        )
-        .split(f.area());
+    let vertical = Layout::vertical([Length(1), Min(3), Min(30), Length(40)]);
+    let [title_area, input, info, parsed] = vertical.areas(f.area());
+    let horizontal = Layout::horizontal([Fill(1); 2]);
+    let [register, other] = horizontal.areas(info);
 
     let (msg, style) = match app.input_mode {
         InputMode::Normal => (
@@ -253,7 +242,7 @@ fn ui(f: &mut Frame, app: &App) {
                 Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(" to exit, "),
                 Span::styled("i", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to start editing."),
+                Span::raw(" to enter input"),
             ],
             Style::default().add_modifier(Modifier::RAPID_BLINK),
         ),
@@ -263,26 +252,26 @@ fn ui(f: &mut Frame, app: &App) {
                 Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(" to stop editing, "),
                 Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to record the message"),
+                Span::raw(" to send input"),
             ],
             Style::default(),
         ),
     };
     let text = Text::from(Line::from(msg)).style(style);
     let help_message = Paragraph::new(text);
-    f.render_widget(help_message, chunks[0]);
+    f.render_widget(help_message, title_area);
 
-    let width = chunks[0].width.max(3) - 3; // keep 2 for borders and 1 for cursor
+    let width = title_area.width.max(3) - 3; // keep 2 for borders and 1 for cursor
 
     let scroll = app.input.visual_scroll(width as usize);
-    let input = Paragraph::new(app.input.value())
+    let txt_input = Paragraph::new(app.input.value())
         .style(match app.input_mode {
             InputMode::Normal => Style::default(),
             InputMode::Editing => Style::default().fg(Color::Blue),
         })
         .scroll((0, scroll as u16))
         .block(Block::default().borders(Borders::ALL).title("Input"));
-    f.render_widget(input, chunks[1]);
+    f.render_widget(txt_input, input);
 
     let regs = app.registers.lock().unwrap();
     let mut rows = vec![];
@@ -296,7 +285,7 @@ fn ui(f: &mut Frame, app: &App) {
     let table =
         Table::new(rows, widths).block(Block::default().borders(Borders::ALL).title("Registers"));
 
-    f.render_widget(table, chunks[2]);
+    f.render_widget(table, register);
 
     // Display parsed responses
     let response_text = {
@@ -318,9 +307,9 @@ fn ui(f: &mut Frame, app: &App) {
             // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
             f.set_cursor_position((
                 // Put cursor past the end of the input text
-                chunks[1].x + ((app.input.visual_cursor()).max(scroll) - scroll) as u16 + 1,
+                input.x + ((app.input.visual_cursor()).max(scroll) - scroll) as u16 + 1,
                 // Move one line down, from the border to the input line
-                chunks[1].y + 1,
+                input.y + 1,
             ))
         }
     }
@@ -337,12 +326,12 @@ fn ui(f: &mut Frame, app: &App) {
         .collect();
     let messages =
         List::new(messages).block(Block::default().borders(Borders::ALL).title("Messages"));
-    f.render_widget(messages, chunks[3]);
+    f.render_widget(messages, other);
 
     let response_widget = Paragraph::new(response_text).block(
         Block::default()
             .title("Parsed Responses")
             .borders(Borders::ALL),
     );
-    f.render_widget(response_widget, chunks[4]);
+    f.render_widget(response_widget, parsed);
 }

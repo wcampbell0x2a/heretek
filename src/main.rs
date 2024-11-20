@@ -1,3 +1,4 @@
+use mi::MIResponse;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
@@ -23,141 +24,7 @@ use ratatui::{
 
 use regex::Regex;
 
-// Define Register struct to hold register data
-#[derive(Debug)]
-struct Register {
-    number: String,
-    value: Option<String>,
-    v2_int128: Option<String>,
-    v8_int32: Option<String>,
-    v4_int64: Option<String>,
-    v8_float: Option<String>,
-    v16_int8: Option<String>,
-    v4_int32: Option<String>,
-    error: Option<String>,
-}
-
-// Recursive function to parse key-value pairs
-fn parse_key_value_pairs(input: &str) -> HashMap<String, String> {
-    input
-        .split(',')
-        .filter_map(|pair| pair.split_once('='))
-        .map(|(key, value)| (key.to_string(), value.trim_matches('"').to_string()))
-        .collect()
-}
-
-// Function to parse register-values as an array of Registers
-fn parse_register_values(input: &str) -> Vec<Register> {
-    let mut registers = Vec::new();
-    let re = Regex::new(r#"\{(.*?)\}"#).unwrap(); // Match entire register block
-
-    // Capture each register block and parse it
-    for capture in re.captures_iter(input) {
-        let register_str = &capture[1];
-        let mut register = Register {
-            number: String::new(),
-            value: None,
-            v2_int128: None,
-            v8_int32: None,
-            v4_int64: None,
-            v8_float: None,
-            v16_int8: None,
-            v4_int32: None,
-            error: None,
-        };
-
-        let key_values = parse_key_value_pairs(register_str);
-        for (key, val) in key_values {
-            match key.as_str() {
-                "number" => register.number = val,
-                "value" => register.value = Some(val),
-                "v2_int128" => register.v2_int128 = Some(val),
-                "v8_int32" => register.v8_int32 = Some(val),
-                "v4_int64" => register.v4_int64 = Some(val),
-                "v8_float" => register.v8_float = Some(val),
-                "v16_int8" => register.v16_int8 = Some(val),
-                "v4_int32" => register.v4_int32 = Some(val),
-                "error" => register.error = Some(val),
-                _ => {}
-            }
-        }
-        registers.push(register);
-    }
-    let register_names = vec![
-        "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "r8", "r9", "r10", "r11", "r12",
-        "r13", "r14", "r15", "rip", "eflags", "cs", "ss", "ds", "es", "fs", "gs",
-    ];
-    for (i, (register, name)) in registers.iter().zip(register_names.iter()).enumerate() {
-        if !register.number.is_empty() {
-            debug!("[{i}] register({name}): {:?}", register);
-        }
-    }
-    registers
-}
-
-// MIResponse enum to represent different types of GDB responses
-#[derive(Debug)]
-pub enum MIResponse {
-    ExecResult(String, HashMap<String, String>, Vec<Register>),
-    AsyncRecord(String, HashMap<String, String>),
-    Notify(String, HashMap<String, String>),
-    StreamOutput(String, String),
-    Unknown(String),
-}
-
-// Function to parse a single GDB/MI line into MIResponse
-fn parse_mi_response(line: &str) -> MIResponse {
-    debug!("{}", line);
-    if line.starts_with('^') {
-        parse_exec_result(&line[1..])
-    } else if line.starts_with('*') {
-        parse_async_record(&line[1..])
-    } else if line.starts_with('=') {
-        parse_notify(&line[1..])
-    } else if line.starts_with('~') || line.starts_with('@') || line.starts_with('&') {
-        parse_stream_output(line)
-    } else {
-        MIResponse::Unknown(line.to_string())
-    }
-}
-
-// Helper function to parse ExecResult responses
-fn parse_exec_result(input: &str) -> MIResponse {
-    if let Some((status, rest)) = input.split_once(',') {
-        let register_values = parse_register_values(rest); // Parse register values from the rest
-        MIResponse::ExecResult(
-            status.to_string(),
-            parse_key_value_pairs(rest),
-            register_values,
-        )
-    } else {
-        MIResponse::ExecResult(input.to_string(), HashMap::new(), Vec::new())
-    }
-}
-
-// Helper function to parse AsyncRecord responses
-fn parse_async_record(input: &str) -> MIResponse {
-    if let Some((reason, rest)) = input.split_once(',') {
-        MIResponse::AsyncRecord(reason.to_string(), parse_key_value_pairs(rest))
-    } else {
-        MIResponse::AsyncRecord(input.to_string(), HashMap::new())
-    }
-}
-
-// Helper function to parse Notify responses
-fn parse_notify(input: &str) -> MIResponse {
-    if let Some((event, rest)) = input.split_once(',') {
-        MIResponse::Notify(event.to_string(), parse_key_value_pairs(rest))
-    } else {
-        MIResponse::Notify(input.to_string(), HashMap::new())
-    }
-}
-
-// Helper function to parse StreamOutput responses
-fn parse_stream_output(input: &str) -> MIResponse {
-    let (kind, content) = input.split_at(1);
-    MIResponse::StreamOutput(kind.to_string(), content.trim_matches('"').to_string())
-}
+mod mi;
 
 enum InputMode {
     Normal,
@@ -274,7 +141,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut next_write = String::new();
         for line in gdb_stdout.lines() {
             if let Ok(line) = line {
-                let response = parse_mi_response(&line);
+                let response = mi::parse_mi_response(&line);
                 match &response {
                     MIResponse::AsyncRecord(reason, v) => {
                         if reason == "stopped" {

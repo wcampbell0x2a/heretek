@@ -22,8 +22,6 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
 
-use regex::Regex;
-
 mod mi;
 
 enum InputMode {

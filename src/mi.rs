@@ -21,13 +21,64 @@ pub struct Register {
     error: Option<String>,
 }
 
-// Recursive function to parse key-value pairs
 fn parse_key_value_pairs(input: &str) -> HashMap<String, String> {
-    input
-        .split(',')
-        .filter_map(|pair| pair.split_once('='))
-        .map(|(key, value)| (key.to_string(), value.trim_matches('"').to_string()))
-        .collect()
+    let mut key_values = HashMap::new();
+    let mut current_key = String::new();
+    let mut buffer = String::new();
+    let mut nesting_level = 0;
+    let mut in_quotes = false;
+
+    for c in input.chars() {
+        match c {
+            '=' if nesting_level == 0 && !in_quotes => {
+                current_key = buffer.trim().to_string();
+                buffer.clear();
+            }
+            '{' if !in_quotes => {
+                nesting_level += 1;
+                if nesting_level > 1 {
+                    buffer.push(c); // Nested brace content
+                }
+            }
+            '}' if !in_quotes => {
+                if nesting_level > 1 {
+                    buffer.push(c); // Nested brace content
+                }
+                nesting_level -= 1;
+                if nesting_level == 0 && !current_key.is_empty() {
+                    let value = if buffer.starts_with('{') && buffer.ends_with('}') {
+                        buffer[1..buffer.len() - 1].to_string() // Trim outer braces
+                    } else {
+                        buffer.trim().to_string()
+                    };
+                    key_values.insert(current_key.clone(), value);
+                    current_key.clear();
+                    buffer.clear();
+                }
+            }
+            ',' if nesting_level == 0 && !in_quotes => {
+                if !current_key.is_empty() && !buffer.is_empty() {
+                    let value = buffer.trim().trim_matches('"').to_string(); // Trim quotes here
+                    key_values.insert(current_key.clone(), value);
+                    current_key.clear();
+                    buffer.clear();
+                }
+            }
+            '"' => {
+                in_quotes = !in_quotes;
+                buffer.push(c);
+            }
+            _ => buffer.push(c),
+        }
+    }
+
+    // Handle remaining buffer
+    if !current_key.is_empty() && !buffer.is_empty() {
+        let value = buffer.trim().trim_matches('"').to_string(); // Trim quotes here
+        key_values.insert(current_key, value);
+    }
+
+    key_values
 }
 
 // Function to parse register-values as an array of Registers
@@ -137,10 +188,17 @@ fn parse_notify(input: &str) -> MIResponse {
     }
 }
 
-// Helper function to parse StreamOutput responses
+use std::borrow::Cow;
+
 fn parse_stream_output(input: &str) -> MIResponse {
     let (kind, content) = input.split_at(1);
-    MIResponse::StreamOutput(kind.to_string(), content.trim_matches('"').to_string())
+    let unescaped_content = unescape_gdb_output(content.trim_matches('"'));
+    MIResponse::StreamOutput(kind.to_string(), unescaped_content.to_string())
+}
+
+fn unescape_gdb_output(input: &str) -> Cow<str> {
+    // Replace escaped sequences with actual characters
+    input.replace("\\n", "\n").replace("\\t", "\t").into()
 }
 
 #[cfg(test)]
@@ -214,25 +272,33 @@ mod tests {
 
     #[test]
     fn test_recursive_parsing() {
-        let input = r#"^done,frame={addr="0x00007ffff7e04c48",func="printf",args=[],from="/usr/lib/libc.so.6"}"#;
-        if let MIResponse::ExecResult(status, key_values, _) = parse_mi_response(input) {
-            assert_eq!(status, "done");
-            if let Some(frame_str) = key_values.get("frame") {
-                let frame_values = parse_key_value_pairs(frame_str);
+        let input = "*stopped,reason=\"breakpoint-hit\",disp=\"keep\",bkptno=\"1\",frame={addr=\"0x00007ffff7e04c48\",func=\"printf\",args=[],from=\"/usr/lib/libc.so.6\",arch=\"i386:x86-64\"},thread-id=\"1\",stopped-threads=\"all\",core=\"1\"";
+        let response = parse_mi_response(input);
+
+        if let MIResponse::AsyncRecord(reason, data) = response {
+            assert_eq!(reason, "stopped");
+            assert_eq!(data.get("reason"), Some(&"breakpoint-hit".to_string()));
+            assert_eq!(data.get("disp"), Some(&"keep".to_string()));
+            assert_eq!(data.get("bkptno"), Some(&"1".to_string()));
+
+            // Validate nested frame
+            if let Some(frame_str) = data.get("frame") {
+                let frame_data = parse_key_value_pairs(frame_str);
                 assert_eq!(
-                    frame_values.get("addr").map(|s| s.as_str()),
-                    Some("0x00007ffff7e04c48")
+                    frame_data.get("addr"),
+                    Some(&"0x00007ffff7e04c48".to_string())
                 );
-                assert_eq!(frame_values.get("func").map(|s| s.as_str()), Some("printf"));
+                assert_eq!(frame_data.get("func"), Some(&"printf".to_string()));
                 assert_eq!(
-                    frame_values.get("from").map(|s| s.as_str()),
-                    Some("/usr/lib/libc.so.6")
+                    frame_data.get("from"),
+                    Some(&"/usr/lib/libc.so.6".to_string())
                 );
+                assert_eq!(frame_data.get("arch"), Some(&"i386:x86-64".to_string()));
             } else {
-                panic!("Expected frame key in ExecResult");
+                panic!("Frame data not found!");
             }
         } else {
-            panic!("Expected ExecResult response");
+            panic!("Unexpected MIResponse type");
         }
     }
 }

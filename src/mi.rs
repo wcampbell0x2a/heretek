@@ -81,6 +81,7 @@ fn parse_key_value_pairs(input: &str) -> HashMap<String, String> {
     key_values
 }
 
+// TODO: this could come from:  -data-list-register-names
 pub fn register_x86_64(registers: &[Register]) -> Vec<(String, Register)> {
     let register_names = vec![
         "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "r8", "r9", "r10", "r11", "r12",
@@ -140,7 +141,7 @@ fn parse_register_values(input: &str) -> Vec<Register> {
 // MIResponse enum to represent different types of GDB responses
 #[derive(Debug)]
 pub enum MIResponse {
-    ExecResult(String, HashMap<String, String>, Vec<Register>),
+    ExecResult(String, HashMap<String, String>, Option<Vec<Register>>),
     AsyncRecord(String, HashMap<String, String>),
     Notify(String, HashMap<String, String>),
     StreamOutput(String, String),
@@ -170,10 +171,10 @@ fn parse_exec_result(input: &str) -> MIResponse {
         MIResponse::ExecResult(
             status.to_string(),
             parse_key_value_pairs(rest),
-            register_values,
+            Some(register_values),
         )
     } else {
-        MIResponse::ExecResult(input.to_string(), HashMap::new(), Vec::new())
+        MIResponse::ExecResult(input.to_string(), HashMap::new(), None)
     }
 }
 

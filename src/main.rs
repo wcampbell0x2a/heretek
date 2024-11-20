@@ -138,7 +138,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Thread to read GDB output and parse it
     thread::spawn(move || {
-        let mut next_write = String::new();
+        let mut next_write = vec![String::new()];
         for line in gdb_stdout.lines() {
             if let Ok(line) = line {
                 let response = mi::parse_mi_response(&line);
@@ -150,20 +150,32 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 debug!("{arch}");
                             }
                             // When a breakpoint is hit, query for register values
-                            next_write = "-data-list-register-values x".to_string();
+                            next_write.push("-data-list-register-values x".to_string());
                         }
                     }
                     MIResponse::ExecResult(_, kv, registers) => {
-                        // Check if response is register data
-                        let mut regs = registers_arc.lock().unwrap();
-                        let registers = register_x86_64(registers);
-                        *regs = registers.clone();
+                        if let Some(registers) = registers {
+                            // Check if response is register data
+                            let mut regs = registers_arc.lock().unwrap();
+                            let registers = register_x86_64(registers);
+                            for s in registers.iter() {
+                                if s.0 == "rsp" {
+                                    next_write.push(format!(
+                                        "-data-read-memory-bytes {} 16",
+                                        s.1.value.as_ref().unwrap()
+                                    ))
+                                }
+                            }
+                            *regs = registers.clone();
+                        }
                     }
                     MIResponse::Unknown(_) => {
                         if !next_write.is_empty() {
-                            let mut stdin = gdb_stdin_arc.lock().unwrap();
-                            debug!("writing {}", next_write);
-                            writeln!(stdin, "{}", next_write).expect("Failed to send command");
+                            for w in &next_write {
+                                let mut stdin = gdb_stdin_arc.lock().unwrap();
+                                debug!("writing {}", w);
+                                writeln!(stdin, "{}", w).expect("Failed to send command");
+                            }
                             next_write.clear();
                         }
                     }
@@ -274,14 +286,19 @@ fn ui(f: &mut Frame, app: &App) {
         .block(Block::default().borders(Borders::ALL).title("Input"));
     f.render_widget(txt_input, input);
 
-    let regs = app.registers.lock().unwrap();
     let mut rows = vec![];
-    for (name, register) in regs.iter() {
-        rows.push(Row::new(vec![
-            name.to_string(),
-            register.value.clone().unwrap(),
-        ]));
+    match app.registers.lock() {
+        Ok(regs) => {
+            for (name, register) in regs.iter() {
+                rows.push(Row::new(vec![
+                    name.to_string(),
+                    register.value.clone().unwrap(),
+                ]));
+            }
+        }
+        Err(_) => (),
     }
+
     let widths = [Constraint::Length(5), Constraint::Length(20)];
     let table =
         Table::new(rows, widths).block(Block::default().borders(Borders::ALL).title("Registers"));

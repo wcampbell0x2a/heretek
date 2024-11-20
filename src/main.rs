@@ -1,4 +1,4 @@
-use mi::{MIResponse, Register};
+use mi::{register_x86_64, MIResponse, Register};
 use ratatui::widgets::{Row, Table};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
@@ -156,6 +156,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     MIResponse::ExecResult(_, kv, registers) => {
                         // Check if response is register data
                         let mut regs = registers_arc.lock().unwrap();
+                        let registers = register_x86_64(registers);
                         *regs = registers.clone();
                     }
                     MIResponse::Unknown(_) => {

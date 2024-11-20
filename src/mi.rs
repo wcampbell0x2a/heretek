@@ -81,8 +81,23 @@ fn parse_key_value_pairs(input: &str) -> HashMap<String, String> {
     key_values
 }
 
+pub fn register_x86_64(registers: &[Register]) -> Vec<(String, Register)> {
+    let register_names = vec![
+        "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "r8", "r9", "r10", "r11", "r12",
+        "r13", "r14", "r15", "rip", "eflags", "cs", "ss", "ds", "es", "fs", "gs",
+    ];
+    let mut registers_arch = vec![];
+    for (i, (register, name)) in registers.iter().zip(register_names.iter()).enumerate() {
+        if !register.number.is_empty() {
+            registers_arch.push((name.to_string(), register.clone()));
+            debug!("[{i}] register({name}): {:?}", register);
+        }
+    }
+    registers_arch
+}
+
 // Function to parse register-values as an array of Registers
-fn parse_register_values(input: &str) -> Vec<(String, Register)> {
+fn parse_register_values(input: &str) -> Vec<Register> {
     let mut registers = Vec::new();
     let re = Regex::new(r#"\{(.*?)\}"#).unwrap(); // Match entire register block
 
@@ -118,24 +133,14 @@ fn parse_register_values(input: &str) -> Vec<(String, Register)> {
         }
         registers.push(register);
     }
-    let register_names = vec![
-        "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "r8", "r9", "r10", "r11", "r12",
-        "r13", "r14", "r15", "rip", "eflags", "cs", "ss", "ds", "es", "fs", "gs",
-    ];
-    let mut registers_arch = vec![];
-    for (i, (register, name)) in registers.iter().zip(register_names.iter()).enumerate() {
-        if !register.number.is_empty() {
-            registers_arch.push((name.to_string(), register.clone()));
-            debug!("[{i}] register({name}): {:?}", register);
-        }
-    }
-    registers_arch
+
+    registers
 }
 
 // MIResponse enum to represent different types of GDB responses
 #[derive(Debug)]
 pub enum MIResponse {
-    ExecResult(String, HashMap<String, String>, Vec<(String, Register)>),
+    ExecResult(String, HashMap<String, String>, Vec<Register>),
     AsyncRecord(String, HashMap<String, String>),
     Notify(String, HashMap<String, String>),
     StreamOutput(String, String),

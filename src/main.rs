@@ -1,4 +1,5 @@
-use mi::MIResponse;
+use mi::{MIResponse, Register};
+use ratatui::widgets::{Row, Table};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
@@ -74,7 +75,7 @@ struct App {
     messages: LimitedBuffer<String>,
     parsed_responses: Arc<Mutex<LimitedBuffer<MIResponse>>>,
     gdb_stdin: Arc<Mutex<ChildStdin>>,
-    registers: Arc<Mutex<String>>,
+    registers: Arc<Mutex<Vec<(String, Register)>>>,
 }
 
 impl App {
@@ -85,7 +86,7 @@ impl App {
             messages: LimitedBuffer::new(10),
             parsed_responses: Arc::new(Mutex::new(LimitedBuffer::new(30))),
             gdb_stdin,
-            registers: Arc::new(Mutex::new(String::new())),
+            registers: Arc::new(Mutex::new(vec![])),
         }
     }
 }
@@ -155,10 +156,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                     MIResponse::ExecResult(_, kv, registers) => {
                         // Check if response is register data
-                        if let Some(register_data) = kv.get("register-values") {
-                            let mut regs = registers_arc.lock().unwrap();
-                            *regs = register_data.clone();
-                        }
+                        let mut regs = registers_arc.lock().unwrap();
+                        *regs = registers.clone();
                     }
                     MIResponse::Unknown(_) => {
                         if !next_write.is_empty() {
@@ -285,9 +284,19 @@ fn ui(f: &mut Frame, app: &App) {
         .block(Block::default().borders(Borders::ALL).title("Input"));
     f.render_widget(input, chunks[1]);
 
-    let response_widget = Paragraph::new(app.registers.lock().unwrap().clone())
-        .block(Block::default().title("Registers").borders(Borders::ALL));
-    f.render_widget(response_widget, chunks[2]);
+    let regs = app.registers.lock().unwrap();
+    let mut rows = vec![];
+    for (name, register) in regs.iter() {
+        rows.push(Row::new(vec![
+            name.to_string(),
+            register.value.clone().unwrap(),
+        ]));
+    }
+    let widths = [Constraint::Length(5), Constraint::Length(20)];
+    let table =
+        Table::new(rows, widths).block(Block::default().borders(Borders::ALL).title("Registers"));
+
+    f.render_widget(table, chunks[2]);
 
     // Display parsed responses
     let response_text = {

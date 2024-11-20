@@ -8,17 +8,17 @@ use log::debug;
 use regex::Regex;
 
 // Define Register struct to hold register data
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Register {
-    number: String,
-    value: Option<String>,
-    v2_int128: Option<String>,
-    v8_int32: Option<String>,
-    v4_int64: Option<String>,
-    v8_float: Option<String>,
-    v16_int8: Option<String>,
-    v4_int32: Option<String>,
-    error: Option<String>,
+    pub number: String,
+    pub value: Option<String>,
+    pub v2_int128: Option<String>,
+    pub v8_int32: Option<String>,
+    pub v4_int64: Option<String>,
+    pub v8_float: Option<String>,
+    pub v16_int8: Option<String>,
+    pub v4_int32: Option<String>,
+    pub error: Option<String>,
 }
 
 fn parse_key_value_pairs(input: &str) -> HashMap<String, String> {
@@ -82,7 +82,7 @@ fn parse_key_value_pairs(input: &str) -> HashMap<String, String> {
 }
 
 // Function to parse register-values as an array of Registers
-fn parse_register_values(input: &str) -> Vec<Register> {
+fn parse_register_values(input: &str) -> Vec<(String, Register)> {
     let mut registers = Vec::new();
     let re = Regex::new(r#"\{(.*?)\}"#).unwrap(); // Match entire register block
 
@@ -122,18 +122,20 @@ fn parse_register_values(input: &str) -> Vec<Register> {
         "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "r8", "r9", "r10", "r11", "r12",
         "r13", "r14", "r15", "rip", "eflags", "cs", "ss", "ds", "es", "fs", "gs",
     ];
+    let mut registers_arch = vec![];
     for (i, (register, name)) in registers.iter().zip(register_names.iter()).enumerate() {
         if !register.number.is_empty() {
+            registers_arch.push((name.to_string(), register.clone()));
             debug!("[{i}] register({name}): {:?}", register);
         }
     }
-    registers
+    registers_arch
 }
 
 // MIResponse enum to represent different types of GDB responses
 #[derive(Debug)]
 pub enum MIResponse {
-    ExecResult(String, HashMap<String, String>, Vec<Register>),
+    ExecResult(String, HashMap<String, String>, Vec<(String, Register)>),
     AsyncRecord(String, HashMap<String, String>),
     Notify(String, HashMap<String, String>),
     StreamOutput(String, String),
@@ -170,10 +172,10 @@ fn parse_exec_result(input: &str) -> MIResponse {
     }
 }
 
-// Helper function to parse AsyncRecord responses
 fn parse_async_record(input: &str) -> MIResponse {
-    if let Some((reason, rest)) = input.split_once(',') {
-        MIResponse::AsyncRecord(reason.to_string(), parse_key_value_pairs(rest))
+    if let Some((prefix, rest)) = input.split_once(',') {
+        let data = parse_key_value_pairs(rest);
+        MIResponse::AsyncRecord(prefix.to_string(), data)
     } else {
         MIResponse::AsyncRecord(input.to_string(), HashMap::new())
     }
@@ -299,6 +301,47 @@ mod tests {
             }
         } else {
             panic!("Unexpected MIResponse type");
+        }
+    }
+
+    #[test]
+    fn test_parse_stopped_message() {
+        let input = r#"
+        *stopped,reason="breakpoint-hit",disp="keep",bkptno="1",frame={addr="0x00007ffff7e04c48",func="printf",args=[],from="/usr/lib/libc.so.6",arch="i386:x86-64"},thread-id="1",stopped-threads="all",core="2"
+    "#;
+
+        let parsed = parse_mi_response(input.trim());
+
+        match parsed {
+            MIResponse::AsyncRecord(record_type, data) => {
+                // Verify the AsyncRecord type
+                assert_eq!(record_type, "stopped");
+
+                // Verify fields
+                assert_eq!(data.get("reason"), Some(&"breakpoint-hit".to_string()));
+                assert_eq!(data.get("disp"), Some(&"keep".to_string()));
+                assert_eq!(data.get("bkptno"), Some(&"1".to_string()));
+                assert_eq!(data.get("thread-id"), Some(&"1".to_string()));
+                assert_eq!(data.get("stopped-threads"), Some(&"all".to_string()));
+                assert_eq!(data.get("core"), Some(&"2".to_string()));
+
+                // Verify nested `frame` field
+                let frame_data = data.get("frame").unwrap();
+                let parsed_frame = parse_key_value_pairs(frame_data);
+
+                assert_eq!(
+                    parsed_frame.get("addr"),
+                    Some(&"0x00007ffff7e04c48".to_string())
+                );
+                assert_eq!(parsed_frame.get("func"), Some(&"printf".to_string()));
+                assert_eq!(parsed_frame.get("args"), Some(&"[]".to_string()));
+                assert_eq!(
+                    parsed_frame.get("from"),
+                    Some(&"/usr/lib/libc.so.6".to_string())
+                );
+                assert_eq!(parsed_frame.get("arch"), Some(&"i386:x86-64".to_string()));
+            }
+            _ => panic!("Failed to parse AsyncRecord"),
         }
     }
 }

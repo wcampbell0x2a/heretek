@@ -1,4 +1,4 @@
-use mi::{register_x86_64, MIResponse, Register};
+use mi::{parse_register_values, register_x86_64, MIResponse, Register};
 use ratatui::widgets::{Row, Table};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
@@ -22,7 +22,7 @@ use ratatui::{
     },
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
-use Constraint::{Fill, Length, Min};
+use Constraint::{Fill, Length, Max, Min};
 
 mod mi;
 
@@ -153,11 +153,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                             next_write.push("-data-list-register-values x".to_string());
                         }
                     }
-                    MIResponse::ExecResult(_, kv, registers) => {
-                        if let Some(registers) = registers {
+                    MIResponse::ExecResult(_, kv) => {
+                        if let Some(register_values) = kv.get("register-values") {
+                            let registers = parse_register_values(&register_values);
                             // Check if response is register data
                             let mut regs = registers_arc.lock().unwrap();
-                            let registers = register_x86_64(registers);
+                            let registers = register_x86_64(&registers);
                             for s in registers.iter() {
                                 if s.0 == "rsp" {
                                     next_write.push(format!(
@@ -224,7 +225,6 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<(
                         KeyCode::Enter => {
                             app.messages.push(app.input.value().into());
                             let mut stdin = app.gdb_stdin.lock().unwrap();
-                            // println!("{}", app.input.value());
                             writeln!(stdin, "{}", app.input.value())?;
                             debug!("writing {}", app.input.value());
                             app.input.reset();
@@ -245,7 +245,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<(
 fn ui(f: &mut Frame, app: &App) {
     let vertical = Layout::vertical([Length(1), Min(3), Min(30), Length(40)]);
     let [title_area, input, info, parsed] = vertical.areas(f.area());
-    let horizontal = Layout::horizontal([Fill(1); 2]);
+    let horizontal = Layout::horizontal([Max(30), Fill(1)]);
     let [register, other] = horizontal.areas(info);
 
     let (msg, style) = match app.input_mode {

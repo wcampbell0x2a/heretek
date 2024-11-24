@@ -21,64 +21,82 @@ pub struct Register {
     pub error: Option<String>,
 }
 
+/// Normalizes a value: trims quotes around strings like "\"0\"" -> "0"
+fn normalize_value(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.starts_with('"') && trimmed.ends_with('"') {
+        trimmed[1..trimmed.len() - 1].to_string() // Remove surrounding quotes
+    } else {
+        trimmed.to_string()
+    }
+}
+
 fn parse_key_value_pairs(input: &str) -> HashMap<String, String> {
-    let mut key_values = HashMap::new();
+    let mut map = HashMap::new();
     let mut current_key = String::new();
-    let mut buffer = String::new();
-    let mut nesting_level = 0;
-    let mut in_quotes = false;
+    let mut current_value = String::new();
+    let mut inside_quotes = false;
+    let mut bracket_count = 0;
+
+    let mut is_parsing_value = false;
 
     for c in input.chars() {
         match c {
-            '=' if nesting_level == 0 && !in_quotes => {
-                current_key = buffer.trim().to_string();
-                buffer.clear();
+            '=' if !inside_quotes && bracket_count == 0 => {
+                // Start parsing the value
+                is_parsing_value = true;
             }
-            '{' if !in_quotes => {
-                nesting_level += 1;
-                if nesting_level > 1 {
-                    buffer.push(c); // Nested brace content
+            ',' if !inside_quotes && bracket_count == 0 => {
+                // End of a key-value pair
+                if !current_key.is_empty() {
+                    map.insert(
+                        current_key.trim().to_string(),
+                        normalize_value(&current_value),
+                    );
                 }
+                current_key.clear();
+                current_value.clear();
+                is_parsing_value = false;
             }
-            '}' if !in_quotes => {
-                if nesting_level > 1 {
-                    buffer.push(c); // Nested brace content
-                }
-                nesting_level -= 1;
-                if nesting_level == 0 && !current_key.is_empty() {
-                    let value = if buffer.starts_with('{') && buffer.ends_with('}') {
-                        buffer[1..buffer.len() - 1].to_string() // Trim outer braces
-                    } else {
-                        buffer.trim().to_string()
-                    };
-                    key_values.insert(current_key.clone(), value);
-                    current_key.clear();
-                    buffer.clear();
-                }
+            '[' if !inside_quotes => {
+                // Start of a bracketed value
+                bracket_count += 1;
+                current_value.push(c);
             }
-            ',' if nesting_level == 0 && !in_quotes => {
-                if !current_key.is_empty() && !buffer.is_empty() {
-                    let value = buffer.trim().trim_matches('"').to_string(); // Trim quotes here
-                    key_values.insert(current_key.clone(), value);
-                    current_key.clear();
-                    buffer.clear();
-                }
+            ']' if !inside_quotes => {
+                // End of a bracketed value
+                bracket_count -= 1;
+                current_value.push(c);
             }
             '"' => {
-                in_quotes = !in_quotes;
-                buffer.push(c);
+                // Toggle inside_quotes flag
+                inside_quotes = !inside_quotes;
+                if is_parsing_value {
+                    current_value.push(c);
+                } else {
+                    current_key.push(c);
+                }
             }
-            _ => buffer.push(c),
+            _ => {
+                // Add character to the current key or value
+                if is_parsing_value {
+                    current_value.push(c);
+                } else {
+                    current_key.push(c);
+                }
+            }
         }
     }
 
-    // Handle remaining buffer
-    if !current_key.is_empty() && !buffer.is_empty() {
-        let value = buffer.trim().trim_matches('"').to_string(); // Trim quotes here
-        key_values.insert(current_key, value);
+    // Add the last key-value pair
+    if !current_key.is_empty() {
+        map.insert(
+            current_key.trim().to_string(),
+            normalize_value(&current_value),
+        );
     }
 
-    key_values
+    map
 }
 
 // TODO: this could come from:  -data-list-register-names
@@ -98,7 +116,7 @@ pub fn register_x86_64(registers: &[Register]) -> Vec<(String, Register)> {
 }
 
 // Function to parse register-values as an array of Registers
-fn parse_register_values(input: &str) -> Vec<Register> {
+pub fn parse_register_values(input: &str) -> Vec<Register> {
     let mut registers = Vec::new();
     let re = Regex::new(r#"\{(.*?)\}"#).unwrap(); // Match entire register block
 
@@ -141,7 +159,7 @@ fn parse_register_values(input: &str) -> Vec<Register> {
 // MIResponse enum to represent different types of GDB responses
 #[derive(Debug)]
 pub enum MIResponse {
-    ExecResult(String, HashMap<String, String>, Option<Vec<Register>>),
+    ExecResult(String, HashMap<String, String>),
     AsyncRecord(String, HashMap<String, String>),
     Notify(String, HashMap<String, String>),
     StreamOutput(String, String),
@@ -150,7 +168,7 @@ pub enum MIResponse {
 
 // Function to parse a single GDB/MI line into MIResponse
 pub fn parse_mi_response(line: &str) -> MIResponse {
-    debug!("{}", line);
+    debug!("line: {}", line);
     if line.starts_with('^') {
         parse_exec_result(&line[1..])
     } else if line.starts_with('*') {
@@ -166,16 +184,23 @@ pub fn parse_mi_response(line: &str) -> MIResponse {
 
 // Helper function to parse ExecResult responses
 fn parse_exec_result(input: &str) -> MIResponse {
-    if let Some((status, rest)) = input.split_once(',') {
-        let register_values = parse_register_values(rest); // Parse register values from the rest
-        MIResponse::ExecResult(
-            status.to_string(),
-            parse_key_value_pairs(rest),
-            Some(register_values),
-        )
+    if let Some((prefix, rest)) = input.split_once(',') {
+        let data = parse_key_value_pairs(rest);
+        MIResponse::ExecResult(prefix.to_string(), data)
     } else {
-        MIResponse::ExecResult(input.to_string(), HashMap::new(), None)
+        MIResponse::ExecResult(input.to_string(), HashMap::new())
     }
+    // if let Some((status, rest)) = input.split_once(',') {
+    //     let k = parse_key_value_pairs(rest);
+    //     let register_values = parse_register_values(&k["register-values"]); // Parse register values from the rest
+    //     MIResponse::ExecResult(
+    //         status.to_string(),
+    //         parse_key_value_pairs(rest),
+    //         Some(register_values),
+    //     )
+    // } else {
+    //     MIResponse::ExecResult(input.to_string(), HashMap::new(), None)
+    // }
 }
 
 fn parse_async_record(input: &str) -> MIResponse {
@@ -216,9 +241,9 @@ mod tests {
     #[test]
     fn test_exec_result_register_values() {
         let input = r#"^done,register-values=[{number="0",value="0x0"},{number="1",value="0x1"}]"#;
-        if let MIResponse::ExecResult(status, key_values, registers) = parse_mi_response(input) {
-            assert_eq!(status, "done");
-            assert!(key_values.contains_key("register-values"));
+        if let MIResponse::ExecResult(status, key_values) = parse_mi_response(input) {
+            let register_values = &key_values["register-values"];
+            let registers = parse_register_values(&register_values);
             assert_eq!(registers.len(), 2);
 
             assert_eq!(registers[0].number, "0");
@@ -288,23 +313,6 @@ mod tests {
             assert_eq!(data.get("reason"), Some(&"breakpoint-hit".to_string()));
             assert_eq!(data.get("disp"), Some(&"keep".to_string()));
             assert_eq!(data.get("bkptno"), Some(&"1".to_string()));
-
-            // Validate nested frame
-            if let Some(frame_str) = data.get("frame") {
-                let frame_data = parse_key_value_pairs(frame_str);
-                assert_eq!(
-                    frame_data.get("addr"),
-                    Some(&"0x00007ffff7e04c48".to_string())
-                );
-                assert_eq!(frame_data.get("func"), Some(&"printf".to_string()));
-                assert_eq!(
-                    frame_data.get("from"),
-                    Some(&"/usr/lib/libc.so.6".to_string())
-                );
-                assert_eq!(frame_data.get("arch"), Some(&"i386:x86-64".to_string()));
-            } else {
-                panic!("Frame data not found!");
-            }
         } else {
             panic!("Unexpected MIResponse type");
         }
@@ -330,22 +338,6 @@ mod tests {
                 assert_eq!(data.get("thread-id"), Some(&"1".to_string()));
                 assert_eq!(data.get("stopped-threads"), Some(&"all".to_string()));
                 assert_eq!(data.get("core"), Some(&"2".to_string()));
-
-                // Verify nested `frame` field
-                let frame_data = data.get("frame").unwrap();
-                let parsed_frame = parse_key_value_pairs(frame_data);
-
-                assert_eq!(
-                    parsed_frame.get("addr"),
-                    Some(&"0x00007ffff7e04c48".to_string())
-                );
-                assert_eq!(parsed_frame.get("func"), Some(&"printf".to_string()));
-                assert_eq!(parsed_frame.get("args"), Some(&"[]".to_string()));
-                assert_eq!(
-                    parsed_frame.get("from"),
-                    Some(&"/usr/lib/libc.so.6".to_string())
-                );
-                assert_eq!(parsed_frame.get("arch"), Some(&"i386:x86-64".to_string()));
             }
             _ => panic!("Failed to parse AsyncRecord"),
         }

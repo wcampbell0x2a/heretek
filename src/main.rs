@@ -1,4 +1,7 @@
-use mi::{parse_register_values, register_x86_64, MIResponse, Register};
+use mi::{
+    data_read_memory_bytes, parse_key_value_pairs, parse_register_values, register_x86_64,
+    MIResponse, Register,
+};
 use ratatui::widgets::{Row, Table};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
@@ -31,7 +34,7 @@ enum InputMode {
     Editing,
 }
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 struct LimitedBuffer<T> {
     buffer: VecDeque<T>,
@@ -77,6 +80,7 @@ struct App {
     parsed_responses: Arc<Mutex<LimitedBuffer<MIResponse>>>,
     gdb_stdin: Arc<Mutex<ChildStdin>>,
     registers: Arc<Mutex<Vec<(String, Register)>>>,
+    stack: Arc<Mutex<HashMap<u64, u64>>>,
 }
 
 impl App {
@@ -88,6 +92,7 @@ impl App {
             parsed_responses: Arc::new(Mutex::new(LimitedBuffer::new(30))),
             gdb_stdin,
             registers: Arc::new(Mutex::new(vec![])),
+            stack: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -135,6 +140,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let gdb_stdin_arc = Arc::clone(&app.gdb_stdin);
     let parsed_reponses_arc = Arc::clone(&app.parsed_responses);
     let registers_arc = Arc::clone(&app.registers);
+    let stack_arc = Arc::clone(&app.stack);
 
     // Thread to read GDB output and parse it
     thread::spawn(move || {
@@ -161,13 +167,41 @@ fn main() -> Result<(), Box<dyn Error>> {
                             let registers = register_x86_64(&registers);
                             for s in registers.iter() {
                                 if s.0 == "rsp" {
-                                    next_write.push(format!(
-                                        "-data-read-memory-bytes {} 16",
-                                        s.1.value.as_ref().unwrap()
-                                    ))
+                                    let start_addr = s.1.value.as_ref().unwrap();
+                                    next_write.push(data_read_memory_bytes(start_addr, 0, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 8, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 16, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 24, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 32, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 40, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 48, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 56, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 62, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 70, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 78, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 86, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 94, 8));
                                 }
                             }
                             *regs = registers.clone();
+                            let mut stack = stack_arc.lock().unwrap();
+                            stack.clear();
+                        }
+                        if let Some(memory) = kv.get("memory") {
+                            let mut stack = stack_arc.lock().unwrap();
+                            let mem_str = memory.strip_prefix(r#"[{"#).unwrap();
+                            let mem_str = mem_str.strip_suffix(r#"}]"#).unwrap();
+                            let data = parse_key_value_pairs(mem_str);
+                            let begin = data["begin"].to_string();
+                            let begin = begin.strip_prefix("0x").unwrap();
+                            debug!("{:?}", data);
+                            debug!("{}", data["contents"]);
+                            debug!("{}", begin);
+                            stack.insert(
+                                u64::from_str_radix(begin, 16).unwrap(),
+                                u64::from_str_radix(&data["contents"], 16).unwrap(),
+                            );
+                            debug!("{:?}", data);
                         }
                     }
                     MIResponse::Unknown(_) => {
@@ -243,10 +277,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<(
 }
 
 fn ui(f: &mut Frame, app: &App) {
-    let vertical = Layout::vertical([Length(1), Min(3), Min(30), Length(40)]);
-    let [title_area, input, info, parsed] = vertical.areas(f.area());
-    let horizontal = Layout::horizontal([Max(30), Fill(1)]);
-    let [register, other] = horizontal.areas(info);
+    let vertical = Layout::vertical([Length(1), Min(30), Length(40), Min(3)]);
+    let [title_area, info, parsed, input] = vertical.areas(f.area());
+    let horizontal = Layout::horizontal([Max(30), Fill(1), Fill(1)]);
+    let [register, stack, other] = horizontal.areas(info);
 
     let (msg, style) = match app.input_mode {
         InputMode::Normal => (
@@ -286,6 +320,7 @@ fn ui(f: &mut Frame, app: &App) {
         .block(Block::default().borders(Borders::ALL).title("Input"));
     f.render_widget(txt_input, input);
 
+    // Registers
     let mut rows = vec![];
     match app.registers.lock() {
         Ok(regs) => {
@@ -304,6 +339,29 @@ fn ui(f: &mut Frame, app: &App) {
         Table::new(rows, widths).block(Block::default().borders(Borders::ALL).title("Registers"));
 
     f.render_widget(table, register);
+
+    // Stack
+    let mut rows = vec![];
+    match app.stack.lock() {
+        Ok(stack) => {
+            // let stack = stack.clone().sort();
+            let mut entries: Vec<_> = stack.clone().into_iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            for (addr, value) in entries.iter() {
+                rows.push(Row::new(vec![
+                    format!("0x{:02x}", addr),
+                    format!("0x{:02x}", value),
+                ]));
+            }
+        }
+        Err(_) => (),
+    }
+
+    let widths = [Constraint::Length(16), Constraint::Length(20)];
+    let table =
+        Table::new(rows, widths).block(Block::default().borders(Borders::ALL).title("Stack"));
+
+    f.render_widget(table, stack);
 
     // Display parsed responses
     let response_text = {

@@ -31,7 +31,7 @@ fn normalize_value(value: &str) -> String {
     }
 }
 
-fn parse_key_value_pairs(input: &str) -> HashMap<String, String> {
+pub fn parse_key_value_pairs(input: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
     let mut current_key = String::new();
     let mut current_value = String::new();
@@ -342,4 +342,8 @@ mod tests {
             _ => panic!("Failed to parse AsyncRecord"),
         }
     }
+}
+
+pub fn data_read_memory_bytes(addr: &str, hex_offset: u64, len: u64) -> String {
+    format!("-data-read-memory-bytes {addr}+0x{hex_offset:02x} {len}")
 }

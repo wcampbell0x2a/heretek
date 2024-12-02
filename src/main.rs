@@ -40,6 +40,7 @@ enum InputMode {
 use std::collections::{HashMap, VecDeque};
 
 struct LimitedBuffer<T> {
+    offset: usize,
     buffer: VecDeque<T>,
     capacity: usize,
 }
@@ -47,6 +48,7 @@ struct LimitedBuffer<T> {
 impl<T> LimitedBuffer<T> {
     fn new(capacity: usize) -> Self {
         Self {
+            offset: 0,
             buffer: VecDeque::with_capacity(capacity),
             capacity,
         }
@@ -274,24 +276,102 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
             if let Event::Key(key) = event::read()? {
                 match app.input_mode {
                     InputMode::Normal => match key.code {
+                        KeyCode::Enter => {
+                            if app.input.value().is_empty() {
+                                app.messages.offset = 0;
+
+                                if let Some(val) = app.messages.as_slice().iter().last() {
+                                    let mut stdin = app.gdb_stdin.lock().unwrap();
+                                    writeln!(stdin, "{}", val)?;
+                                    debug!("writing {}", val);
+                                    app.input.reset();
+                                }
+                            } else {
+                                app.messages.offset = 0;
+                                app.messages.push(app.input.value().into());
+                                let mut stdin = app.gdb_stdin.lock().unwrap();
+                                writeln!(stdin, "{}", app.input.value())?;
+                                debug!("writing {}", app.input.value());
+                                app.input.reset();
+                            }
+                        }
                         KeyCode::Char('i') => {
                             app.input_mode = InputMode::Editing;
                         }
                         KeyCode::Char('q') => {
                             return Ok(());
                         }
+                        KeyCode::Down => {
+                            if !app.messages.buffer.is_empty() {
+                                if app.messages.offset != 0 {
+                                    app.messages.offset -= 1;
+                                } else {
+                                    app.messages.offset = 0;
+                                }
+                                update_from_previous_input(app);
+                            } else {
+                                app.messages.offset = 0;
+                            }
+                        }
+                        KeyCode::Up => {
+                            if !app.messages.buffer.is_empty() {
+                                if app.messages.offset < app.messages.buffer.len() {
+                                    app.messages.offset += 1;
+                                }
+                                update_from_previous_input(app);
+                            } else {
+                                app.messages.offset = 0;
+                            }
+                        }
                         _ => {}
                     },
                     InputMode::Editing => match key.code {
+                        // TODO: Same as above
                         KeyCode::Enter => {
-                            app.messages.push(app.input.value().into());
-                            let mut stdin = app.gdb_stdin.lock().unwrap();
-                            writeln!(stdin, "{}", app.input.value())?;
-                            debug!("writing {}", app.input.value());
-                            app.input.reset();
+                            if app.input.value().is_empty() {
+                                app.messages.offset = 0;
+
+                                if let Some(val) = app.messages.as_slice().iter().last() {
+                                    let mut stdin = app.gdb_stdin.lock().unwrap();
+                                    writeln!(stdin, "{}", val)?;
+                                    debug!("writing {}", val);
+                                    app.input.reset();
+                                }
+                            } else {
+                                app.messages.offset = 0;
+                                app.messages.push(app.input.value().into());
+                                let mut stdin = app.gdb_stdin.lock().unwrap();
+                                writeln!(stdin, "{}", app.input.value())?;
+                                debug!("writing {}", app.input.value());
+                                app.input.reset();
+                            }
                         }
                         KeyCode::Esc => {
                             app.input_mode = InputMode::Normal;
+                        }
+                        // TODO: Same as above
+                        KeyCode::Down => {
+                            if !app.messages.buffer.is_empty() {
+                                if app.messages.offset != 0 {
+                                    app.messages.offset -= 1;
+                                } else {
+                                    app.messages.offset = 0;
+                                }
+                                update_from_previous_input(app);
+                            } else {
+                                app.messages.offset = 0;
+                            }
+                        }
+                        // TODO: Same as above
+                        KeyCode::Up => {
+                            if !app.messages.buffer.is_empty() {
+                                if app.messages.offset < app.messages.buffer.len() {
+                                    app.messages.offset += 1;
+                                }
+                                update_from_previous_input(app);
+                            } else {
+                                app.messages.offset = 0;
+                            }
                         }
                         _ => {
                             app.input.handle_event(&Event::Key(key));
@@ -303,10 +383,22 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
     }
 }
 
+fn update_from_previous_input(app: &mut App) {
+    if app.messages.buffer.len() >= app.messages.offset {
+        if let Some(msg) = app
+            .messages
+            .buffer
+            .get(app.messages.buffer.len() - app.messages.offset)
+        {
+            app.input = Input::new(msg.clone())
+        }
+    }
+}
+
 fn ui(f: &mut Frame, app: &App) {
-    let vertical = Layout::vertical([Length(1), Min(30), Length(40), Min(3)]);
+    let vertical = Layout::vertical([Length(1), Min(30), Length(20), Max(3)]);
     let [title_area, info, parsed, input] = vertical.areas(f.area());
-    let horizontal = Layout::horizontal([Max(30), Fill(1), Fill(1), Fill(1)]);
+    let horizontal = Layout::horizontal([Max(30), Fill(1), Min(60), Fill(1)]);
     let [register, stack, asm, other] = horizontal.areas(info);
 
     let (msg, style) = match app.input_mode {

@@ -2,11 +2,13 @@ use mi::{
     data_disassemble, data_read_memory_bytes, parse_asm_insns_values, parse_key_value_pairs,
     parse_register_values, register_x86_64, Asm, MIResponse, Register,
 };
-use ratatui::widgets::{Row, Table};
+use ratatui::widgets::{Cell, Row, Table, TableState};
 use regex::Regex;
+use std::cmp::Ordering;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -78,6 +80,7 @@ struct App {
     input_mode: InputMode,
     /// History of recorded messages
     messages: LimitedBuffer<String>,
+    current_pc: Arc<Mutex<u64>>, // TODO: replace with AtomicU64?
     parsed_responses: Arc<Mutex<LimitedBuffer<MIResponse>>>,
     gdb_stdin: Arc<Mutex<ChildStdin>>,
     registers: Arc<Mutex<Vec<(String, Register)>>>,
@@ -91,6 +94,7 @@ impl App {
             input: Input::default(),
             input_mode: InputMode::Normal,
             messages: LimitedBuffer::new(10),
+            current_pc: Arc::new(Mutex::new(0)),
             parsed_responses: Arc::new(Mutex::new(LimitedBuffer::new(30))),
             gdb_stdin,
             registers: Arc::new(Mutex::new(vec![])),
@@ -138,9 +142,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
 
     // create app and run it
-    let app = App::new(gdb_stdin);
+    let mut app = App::new(gdb_stdin);
 
     let gdb_stdin_arc = Arc::clone(&app.gdb_stdin);
+    let current_pc_arc = Arc::clone(&app.current_pc);
     let parsed_reponses_arc = Arc::clone(&app.parsed_responses);
     let registers_arc = Arc::clone(&app.registers);
     let stack_arc = Arc::clone(&app.stack);
@@ -186,6 +191,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                                     next_write.push(data_read_memory_bytes(start_addr, 86, 8));
                                     next_write.push(data_read_memory_bytes(start_addr, 94, 8));
                                 }
+                                if s.0 == "rip" {
+                                    let val =
+                                        s.1.value.as_ref().unwrap().strip_prefix("0x").unwrap();
+                                    let mut cur_pc_lock = current_pc_arc.lock().unwrap();
+                                    *cur_pc_lock = u64::from_str_radix(val, 16).unwrap();
+                                }
                             }
                             *regs = registers.clone();
                             let mut stack = stack_arc.lock().unwrap();
@@ -193,7 +204,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                             // update current asm at pc
                             let instruction_length = 8;
-                            next_write.push(data_disassemble(instruction_length * 10));
+                            next_write.push(data_disassemble(
+                                instruction_length * 5,
+                                instruction_length * 15,
+                            ));
+                            let mut asm = asm_arc.lock().unwrap();
+                            asm.clear();
                         } else if let Some(memory) = kv.get("memory") {
                             let mut stack = stack_arc.lock().unwrap();
                             let mem_str = memory.strip_prefix(r#"[{"#).unwrap();
@@ -232,7 +248,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     });
-    let res = run_app(&mut terminal, app);
+    let res = run_app(&mut terminal, &mut app);
 
     // restore terminal
     disable_raw_mode()?;
@@ -250,7 +266,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<()> {
+fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<()> {
     loop {
         terminal.draw(|f| ui(f, &app))?;
 
@@ -346,8 +362,11 @@ fn ui(f: &mut Frame, app: &App) {
     }
 
     let widths = [Constraint::Length(5), Constraint::Length(20)];
-    let table =
-        Table::new(rows, widths).block(Block::default().borders(Borders::ALL).title("Registers"));
+    let table = Table::new(rows, widths).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Registers".blue()),
+    );
 
     f.render_widget(table, register);
 
@@ -355,22 +374,21 @@ fn ui(f: &mut Frame, app: &App) {
     let mut rows = vec![];
     match app.stack.lock() {
         Ok(stack) => {
-            // let stack = stack.clone().sort();
             let mut entries: Vec<_> = stack.clone().into_iter().collect();
             entries.sort_by(|a, b| a.0.cmp(&b.0));
             for (addr, value) in entries.iter() {
                 rows.push(Row::new(vec![
-                    format!("0x{:02x}", addr),
-                    format!("0x{:02x}", value),
+                    Cell::from(format!("0x{:02x}", addr)).yellow(),
+                    Cell::from(format!("0x{:02x}", value)),
                 ]));
             }
         }
         Err(_) => (),
     }
 
-    let widths = [Constraint::Length(16), Constraint::Length(20)];
-    let table =
-        Table::new(rows, widths).block(Block::default().borders(Borders::ALL).title("Stack"));
+    let widths = [Constraint::Length(16), Fill(1)];
+    let table = Table::new(rows, widths)
+        .block(Block::default().borders(Borders::ALL).title("Stack".blue()));
 
     f.render_widget(table, stack);
 
@@ -403,25 +421,49 @@ fn ui(f: &mut Frame, app: &App) {
 
     // Asm
     let mut rows = vec![];
+    let mut pc_index = None;
     match app.asm.lock() {
         Ok(asm) => {
             let mut entries: Vec<_> = asm.clone().into_iter().collect();
             entries.sort_by(|a, b| a.address.cmp(&b.address));
+            let mut index = 0;
+            let app_cur_lock = app.current_pc.lock().unwrap();
             for a in entries.iter() {
+                if a.address == *app_cur_lock {
+                    pc_index = Some(index);
+                }
                 rows.push(Row::new(vec![
-                    format!("0x{:02x}", a.address),
-                    format!("{}", a.inst),
+                    Cell::from(format!("0x{:02x}", a.address)).yellow(),
+                    Cell::from(format!("{}", a.inst)),
                 ]));
+                index += 1;
             }
         }
         Err(_) => (),
     }
 
-    let widths = [Constraint::Length(16), Fill(1)];
-    let table = Table::new(rows, widths)
-        .block(Block::default().borders(Borders::ALL).title("Instructions"));
+    if let Some(pc_index) = pc_index {
+        let widths = [Constraint::Length(16), Fill(1)];
+        let table = Table::new(rows, widths)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Instructions".blue()),
+            )
+            .row_highlight_style(Style::new().reversed())
+            .highlight_symbol(">>");
 
-    f.render_widget(table, asm);
+        // println!("{:?}", pc_index);
+        let mut table_state = TableState::default()
+            .with_offset(pc_index - 5)
+            .with_selected(pc_index);
+        f.render_stateful_widget(table, asm, &mut table_state);
+    } else {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title("Instructions".blue());
+        f.render_widget(block, asm);
+    }
 
     let messages: Vec<ListItem> = app
         .messages
@@ -433,13 +475,16 @@ fn ui(f: &mut Frame, app: &App) {
             ListItem::new(content)
         })
         .collect();
-    let messages =
-        List::new(messages).block(Block::default().borders(Borders::ALL).title("Messages"));
+    let messages = List::new(messages).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Messages".blue()),
+    );
     f.render_widget(messages, other);
 
     let response_widget = Paragraph::new(response_text).block(
         Block::default()
-            .title("Parsed Responses")
+            .title("Parsed Responses".blue())
             .borders(Borders::ALL),
     );
     f.render_widget(response_widget, parsed);

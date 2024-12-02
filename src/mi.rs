@@ -392,6 +392,6 @@ pub fn data_read_memory_bytes(addr: &str, hex_offset: u64, len: u64) -> String {
     format!("-data-read-memory-bytes {addr}+0x{hex_offset:02x} {len}")
 }
 
-pub fn data_disassemble(amt: usize) -> String {
-    format!("-data-disassemble -s $pc -e $pc+{amt} -- 0")
+pub fn data_disassemble(before: usize, amt: usize) -> String {
+    format!("-data-disassemble -s $pc-{before} -e $pc+{amt} -- 0")
 }

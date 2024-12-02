@@ -512,6 +512,7 @@ fn ui(f: &mut Frame, app: &App) {
     }
 
     // Asm
+    // TODO: cache the pc_index if this doesn't change
     let mut rows = vec![];
     let mut pc_index = None;
     match app.asm.lock() {

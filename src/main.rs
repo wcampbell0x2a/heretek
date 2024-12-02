@@ -1,3 +1,4 @@
+use clap::Parser;
 use mi::{
     data_disassemble, data_read_memory_bytes, parse_asm_insns_values, parse_key_value_pairs,
     parse_register_values, register_x86_64, Asm, MIResponse, Register,
@@ -7,7 +8,8 @@ use ratatui::widgets::{Cell, Row, Table, TableState};
 use regex::Regex;
 use std::cmp::Ordering;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{SocketAddr, TcpStream};
 use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
@@ -75,6 +77,17 @@ impl<T> LimitedBuffer<T> {
     }
 }
 
+/// Simple program to greet a person
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(short, long)]
+    local: Option<String>,
+
+    #[arg(short, long)]
+    remove: Option<SocketAddr>,
+}
+
 /// App holds the state of the application
 struct App {
     /// Current value of the input box
@@ -85,14 +98,14 @@ struct App {
     messages: LimitedBuffer<String>,
     current_pc: Arc<Mutex<u64>>, // TODO: replace with AtomicU64?
     parsed_responses: Arc<Mutex<LimitedBuffer<MIResponse>>>,
-    gdb_stdin: Arc<Mutex<ChildStdin>>,
+    gdb_stdin: Arc<Mutex<dyn Write + Send>>,
     registers: Arc<Mutex<Vec<(String, Register)>>>,
     stack: Arc<Mutex<HashMap<u64, u64>>>,
     asm: Arc<Mutex<Vec<Asm>>>,
 }
 
 impl App {
-    fn new(gdb_stdin: Arc<Mutex<ChildStdin>>) -> App {
+    fn new(gdb_stdin: Arc<Mutex<dyn Write + Send>>) -> App {
         App {
             input: Input::default(),
             input_mode: InputMode::Normal,
@@ -108,6 +121,8 @@ impl App {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
+
     // Configure logging to a file
     let log_file = Arc::new(Mutex::new(File::create("app.log")?));
     Builder::from_env(Env::default().default_filter_or("debug"))
@@ -126,23 +141,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         .init();
 
     // setup terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = ratatui::init();
 
-    // Start GDB process
-    let mut gdb_process = Command::new("gdb")
-        .args(["--interpreter=mi2", "--quiet"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("Failed to start GDB");
-    // let gdb_stdin = Arc::new(Mutex::new(gdb_process.stdin.take().unwrap()));
-    let gdb_stdin = gdb_process.stdin.take().unwrap();
-    let gdb_stdout = BufReader::new(gdb_process.stdout.take().unwrap());
-    let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
+    let stream = TcpStream::connect("127.0.0.1:12345").unwrap();
+    let gdb_stdout = BufReader::new(stream.try_clone().unwrap());
+    let gdb_stdin = Arc::new(Mutex::new(stream.try_clone().unwrap()));
+
+    // // Start GDB process
+    // let mut gdb_process = Command::new("gdb")
+    //     .args(["--interpreter=mi2", "--quiet"])
+    //     .stdin(Stdio::piped())
+    //     .stdout(Stdio::piped())
+    //     .spawn()
+    //     .expect("Failed to start GDB");
+    // let gdb_stdin = gdb_process.stdin.take().unwrap();
+    // let gdb_stdout = BufReader::new(gdb_process.stdout.take().unwrap());
+    // let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
 
     // create app and run it
     let mut app = App::new(gdb_stdin);

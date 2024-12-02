@@ -524,10 +524,17 @@ fn ui(f: &mut Frame, app: &App) {
                 if a.address == *app_cur_lock {
                     pc_index = Some(index);
                 }
-                rows.push(Row::new(vec![
-                    Cell::from(format!("0x{:02x}", a.address)).yellow(),
-                    Cell::from(format!("{}", a.inst)),
-                ]));
+                let addr_cell = Cell::from(format!("0x{:02x}", a.address)).yellow();
+                let inst_cell = if let Some(pc_index) = pc_index {
+                    if pc_index == index {
+                        Cell::from(format!("{}", a.inst)).green()
+                    } else {
+                        Cell::from(format!("{}", a.inst)).white()
+                    }
+                } else {
+                    Cell::from(format!("{}", a.inst)).gray()
+                };
+                rows.push(Row::new(vec![addr_cell, inst_cell]));
                 index += 1;
             }
         }
@@ -542,7 +549,7 @@ fn ui(f: &mut Frame, app: &App) {
                     .borders(Borders::ALL)
                     .title("Instructions".blue()),
             )
-            .row_highlight_style(Style::new().reversed())
+            .row_highlight_style(Style::new().green())
             .highlight_symbol(">>");
 
         // println!("{:?}", pc_index);

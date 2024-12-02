@@ -2,6 +2,7 @@ use mi::{
     data_disassemble, data_read_memory_bytes, parse_asm_insns_values, parse_key_value_pairs,
     parse_register_values, register_x86_64, Asm, MIResponse, Register,
 };
+use ratatui::widgets::block::Title;
 use ratatui::widgets::{Cell, Row, Table, TableState};
 use regex::Regex;
 use std::cmp::Ordering;
@@ -515,6 +516,7 @@ fn ui(f: &mut Frame, app: &App) {
     // TODO: cache the pc_index if this doesn't change
     let mut rows = vec![];
     let mut pc_index = None;
+    let mut function_name = None;
     match app.asm.lock() {
         Ok(asm) => {
             let mut entries: Vec<_> = asm.clone().into_iter().collect();
@@ -524,6 +526,9 @@ fn ui(f: &mut Frame, app: &App) {
             for a in entries.iter() {
                 if a.address == *app_cur_lock {
                     pc_index = Some(index);
+                    if let Some(func_name) = &a.func_name {
+                        function_name = Some(func_name.clone());
+                    }
                 }
                 let addr_cell = Cell::from(format!("0x{:02x}", a.address)).yellow();
                 let inst_cell = if let Some(pc_index) = pc_index {
@@ -533,7 +538,7 @@ fn ui(f: &mut Frame, app: &App) {
                         Cell::from(format!("{}", a.inst)).white()
                     }
                 } else {
-                    Cell::from(format!("{}", a.inst)).gray()
+                    Cell::from(format!("{}", a.inst)).dark_gray()
                 };
                 rows.push(Row::new(vec![addr_cell, inst_cell]));
                 index += 1;
@@ -542,26 +547,24 @@ fn ui(f: &mut Frame, app: &App) {
         Err(_) => (),
     }
 
+    let tital = if let Some(function_name) = function_name {
+        Title::from(format!("Instructions ({})", function_name).blue())
+    } else {
+        Title::from("Instructions".blue())
+    };
     if let Some(pc_index) = pc_index {
         let widths = [Constraint::Length(16), Fill(1)];
         let table = Table::new(rows, widths)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Instructions".blue()),
-            )
+            .block(Block::default().borders(Borders::ALL).title(tital))
             .row_highlight_style(Style::new().green())
             .highlight_symbol(">>");
-
-        // println!("{:?}", pc_index);
+        let start_offset = if pc_index < 5 { 0 } else { pc_index - 5 };
         let mut table_state = TableState::default()
-            .with_offset(pc_index - 5)
+            .with_offset(start_offset)
             .with_selected(pc_index);
         f.render_stateful_widget(table, asm, &mut table_state);
     } else {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title("Instructions".blue());
+        let block = Block::default().borders(Borders::ALL).title(tital);
         f.render_widget(block, asm);
     }
 

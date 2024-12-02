@@ -1,8 +1,9 @@
 use mi::{
-    data_read_memory_bytes, parse_key_value_pairs, parse_register_values, register_x86_64,
-    MIResponse, Register,
+    data_disassemble, data_read_memory_bytes, parse_asm_insns_values, parse_key_value_pairs,
+    parse_register_values, register_x86_64, Asm, MIResponse, Register,
 };
 use ratatui::widgets::{Row, Table};
+use regex::Regex;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{ChildStdin, ChildStdout, Command, Stdio};
@@ -81,6 +82,7 @@ struct App {
     gdb_stdin: Arc<Mutex<ChildStdin>>,
     registers: Arc<Mutex<Vec<(String, Register)>>>,
     stack: Arc<Mutex<HashMap<u64, u64>>>,
+    asm: Arc<Mutex<Vec<Asm>>>,
 }
 
 impl App {
@@ -93,6 +95,7 @@ impl App {
             gdb_stdin,
             registers: Arc::new(Mutex::new(vec![])),
             stack: Arc::new(Mutex::new(HashMap::new())),
+            asm: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -141,6 +144,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let parsed_reponses_arc = Arc::clone(&app.parsed_responses);
     let registers_arc = Arc::clone(&app.registers);
     let stack_arc = Arc::clone(&app.stack);
+    let asm_arc = Arc::clone(&app.asm);
 
     // Thread to read GDB output and parse it
     thread::spawn(move || {
@@ -186,8 +190,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                             *regs = registers.clone();
                             let mut stack = stack_arc.lock().unwrap();
                             stack.clear();
-                        }
-                        if let Some(memory) = kv.get("memory") {
+
+                            // update current asm at pc
+                            let instruction_length = 8;
+                            next_write.push(data_disassemble(instruction_length * 10));
+                        } else if let Some(memory) = kv.get("memory") {
                             let mut stack = stack_arc.lock().unwrap();
                             let mem_str = memory.strip_prefix(r#"[{"#).unwrap();
                             let mem_str = mem_str.strip_suffix(r#"}]"#).unwrap();
@@ -202,6 +209,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 u64::from_str_radix(&data["contents"], 16).unwrap(),
                             );
                             debug!("{:?}", data);
+                        } else if let Some(asm) = kv.get("asm_insns") {
+                            let new_asms = parse_asm_insns_values(&asm);
+                            let mut asm = asm_arc.lock().unwrap();
+                            *asm = new_asms.clone();
                         }
                     }
                     MIResponse::Unknown(_) => {
@@ -279,8 +290,8 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<(
 fn ui(f: &mut Frame, app: &App) {
     let vertical = Layout::vertical([Length(1), Min(30), Length(40), Min(3)]);
     let [title_area, info, parsed, input] = vertical.areas(f.area());
-    let horizontal = Layout::horizontal([Max(30), Fill(1), Fill(1)]);
-    let [register, stack, other] = horizontal.areas(info);
+    let horizontal = Layout::horizontal([Max(30), Fill(1), Fill(1), Fill(1)]);
+    let [register, stack, asm, other] = horizontal.areas(info);
 
     let (msg, style) = match app.input_mode {
         InputMode::Normal => (
@@ -389,6 +400,28 @@ fn ui(f: &mut Frame, app: &App) {
             ))
         }
     }
+
+    // Asm
+    let mut rows = vec![];
+    match app.asm.lock() {
+        Ok(asm) => {
+            let mut entries: Vec<_> = asm.clone().into_iter().collect();
+            entries.sort_by(|a, b| a.address.cmp(&b.address));
+            for a in entries.iter() {
+                rows.push(Row::new(vec![
+                    format!("0x{:02x}", a.address),
+                    format!("{}", a.inst),
+                ]));
+            }
+        }
+        Err(_) => (),
+    }
+
+    let widths = [Constraint::Length(16), Fill(1)];
+    let table = Table::new(rows, widths)
+        .block(Block::default().borders(Borders::ALL).title("Instructions"));
+
+    f.render_widget(table, asm);
 
     let messages: Vec<ListItem> = app
         .messages

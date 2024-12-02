@@ -21,6 +21,14 @@ pub struct Register {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct Asm {
+    pub address: u64,
+    pub inst: String,
+    pub offset: u64,
+    pub func_name: Option<String>,
+}
+
 /// Normalizes a value: trims quotes around strings like "\"0\"" -> "0"
 fn normalize_value(value: &str) -> String {
     let trimmed = value.trim();
@@ -154,6 +162,42 @@ pub fn parse_register_values(input: &str) -> Vec<Register> {
     }
 
     registers
+}
+
+// Function to parse register-values as an array of Registers
+pub fn parse_asm_insns_values(input: &str) -> Vec<Asm> {
+    let mut asms = Vec::new();
+    let re = Regex::new(r#"\{(.*?)\}"#).unwrap(); // Match entire register block
+
+    // Capture each register block and parse it
+    for capture in re.captures_iter(input) {
+        let cap_str = &capture[1];
+        let mut asm = Asm {
+            address: 0,
+            inst: String::new(),
+            offset: 0,
+            func_name: None,
+        };
+
+        let key_values = parse_key_value_pairs(cap_str);
+        for (key, val) in key_values {
+            match key.as_str() {
+                "address" => {
+                    asm.address = {
+                        let val = val.strip_prefix("0x").unwrap();
+                        u64::from_str_radix(&val, 16).unwrap()
+                    }
+                }
+                "inst" => asm.inst = val,
+                "offset" => asm.offset = u64::from_str_radix(&val, 10).unwrap(),
+                "func-name" => asm.func_name = Some(val),
+                _ => {}
+            }
+        }
+        asms.push(asm);
+    }
+
+    asms
 }
 
 // MIResponse enum to represent different types of GDB responses
@@ -346,4 +390,8 @@ mod tests {
 
 pub fn data_read_memory_bytes(addr: &str, hex_offset: u64, len: u64) -> String {
     format!("-data-read-memory-bytes {addr}+0x{hex_offset:02x} {len}")
+}
+
+pub fn data_disassemble(amt: usize) -> String {
+    format!("-data-disassemble -s $pc -e $pc+{amt} -- 0")
 }

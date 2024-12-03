@@ -1,0 +1,45 @@
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+name: ci
+
+jobs:
+  # build, test all supported targets
+  build-stable:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        targets:
+          - x86_64-unknown-linux-musl
+        toolchain:
+          - stable
+
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: dtolnay/rust-toolchain@439cf607258077187679211f12aa6f19af4a0af7 # master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          target: ${{ matrix.targets }}
+      - run: cargo install cross --git https://github.com/cross-rs/cross --force
+      - run: cross build --locked --workspace --target ${{ matrix.targets }}
+
+  # fmt and clippy on nightly builds
+  fmt-clippy-nightly:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: dtolnay/rust-toolchain@439cf607258077187679211f12aa6f19af4a0af7 # master
+        with:
+          toolchain: nightly
+          target: x86_64-unknown-linux-musl
+          components: rustfmt, clippy
+      - run: cargo install cargo-quickinstall
+      - run: cargo quickinstall cross
+      - run: cargo fmt --all --check
+      - run: cross clippy --target x86_64-unknown-linux-gnu --workspace -- -D warnings

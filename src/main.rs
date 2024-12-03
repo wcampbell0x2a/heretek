@@ -5,13 +5,10 @@ use mi::{
 };
 use ratatui::widgets::block::Title;
 use ratatui::widgets::{Cell, Row, Table, TableState};
-use regex::Regex;
-use std::cmp::Ordering;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
-use std::process::{ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::atomic::AtomicU64;
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -25,9 +22,9 @@ use ratatui::layout::{Constraint, Layout};
 use ratatui::prelude::*;
 use ratatui::{
     crossterm::{
-        event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+        event::{self, DisableMouseCapture, Event, KeyCode},
         execute,
-        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+        terminal::{disable_raw_mode, LeaveAlternateScreen},
     },
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
@@ -49,6 +46,18 @@ struct LimitedBuffer<T> {
 }
 
 impl<T> LimitedBuffer<T> {
+    fn as_slice(&self) -> &[T] {
+        self.buffer.as_slices().0
+    }
+
+    fn is_empty(&self) -> bool {
+        self.buffer.is_empty()
+    }
+
+    fn len(&self) -> usize {
+        self.buffer.len()
+    }
+
     fn new(capacity: usize) -> Self {
         Self {
             offset: 0,
@@ -59,42 +68,27 @@ impl<T> LimitedBuffer<T> {
 
     fn push(&mut self, value: T) {
         if self.buffer.len() == self.capacity {
-            self.buffer.pop_front(); // Remove the oldest element
+            self.buffer.pop_front();
         }
         self.buffer.push_back(value);
     }
-
-    fn as_slice(&self) -> &[T] {
-        self.buffer.as_slices().0
-    }
-
-    fn len(&self) -> usize {
-        self.buffer.len()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.buffer.is_empty()
-    }
 }
 
-/// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
+    /// Run gdb as child process from PATH
     #[arg(short, long)]
-    local: Option<String>,
+    local: bool,
 
+    /// Connect to nc session
     #[arg(short, long)]
     remote: Option<SocketAddr>,
 }
 
-/// App holds the state of the application
 struct App {
-    /// Current value of the input box
     input: Input,
-    /// Current input mode
     input_mode: InputMode,
-    /// History of recorded messages
     messages: LimitedBuffer<String>,
     current_pc: Arc<Mutex<u64>>, // TODO: replace with AtomicU64?
     parsed_responses: Arc<Mutex<LimitedBuffer<MIResponse>>>,
@@ -105,13 +99,45 @@ struct App {
 }
 
 impl App {
-    fn new_tcp(args: Args) -> (BufReader<Box<dyn Read + Send>>, App) {
-        // fn new(gdb_stdin: Arc<Mutex<dyn Write + Send>>) -> App {
-        let stream =
-            TcpStream::connect_timeout(&args.remote.unwrap(), Duration::from_secs(5)).unwrap();
-        let gdb_stdout =
-            BufReader::new(Box::new(stream.try_clone().unwrap()) as Box<dyn Read + Send>);
-        let gdb_stdin = Arc::new(Mutex::new(stream.try_clone().unwrap()));
+    /// Create new stream to gdb
+    /// - remote: Connect to gdb via a TCP connection
+    /// - local: Connect to gdb via spawning a gdb process
+    ///
+    ///
+    /// # Returns
+    /// `(gdb_stdin, App)`
+    pub fn new_stream(args: Args) -> (BufReader<Box<dyn Read + Send>>, App) {
+        let (reader, gdb_stdin): (
+            BufReader<Box<dyn Read + Send>>,
+            Arc<Mutex<dyn Write + Send>>,
+        ) = match (&args.local, &args.remote) {
+            (true, None) => {
+                let mut gdb_process = Command::new("gdb")
+                    .args(["--interpreter=mi2", "--quiet"])
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .spawn()
+                    .expect("Failed to start GDB");
+
+                let reader =
+                    BufReader::new(Box::new(gdb_process.stdout.unwrap()) as Box<dyn Read + Send>);
+                let gdb_stdin = gdb_process.stdin.take().unwrap();
+                let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
+
+                (reader, gdb_stdin)
+            }
+            (false, Some(remote)) => {
+                let tcp_stream = TcpStream::connect(remote).unwrap(); // Example address
+                let reader = BufReader::new(
+                    Box::new(tcp_stream.try_clone().unwrap()) as Box<dyn Read + Send>
+                );
+                let gdb_stdin = Arc::new(Mutex::new(tcp_stream.try_clone().unwrap()));
+
+                (reader, gdb_stdin)
+            }
+            _ => panic!("Invalid configuration"),
+        };
+
         let app = App {
             input: Input::default(),
             input_mode: InputMode::Normal,
@@ -124,35 +150,7 @@ impl App {
             asm: Arc::new(Mutex::new(Vec::new())),
         };
 
-        (gdb_stdout, app)
-    }
-
-    fn new_local(args: Args) -> (BufReader<Box<dyn Read + Send>>, App) {
-        // Start GDB process
-        let mut gdb_process = Command::new("gdb")
-            .args(["--interpreter=mi2", "--quiet"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("Failed to start GDB");
-        let gdb_stdin = gdb_process.stdin.take().unwrap();
-        let gdb_stdout =
-            BufReader::new(Box::new(gdb_process.stdout.take().unwrap()) as Box<dyn Read + Send>);
-        let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
-
-        let app = App {
-            input: Input::default(),
-            input_mode: InputMode::Normal,
-            messages: LimitedBuffer::new(10),
-            current_pc: Arc::new(Mutex::new(0)),
-            parsed_responses: Arc::new(Mutex::new(LimitedBuffer::new(30))),
-            gdb_stdin,
-            registers: Arc::new(Mutex::new(vec![])),
-            stack: Arc::new(Mutex::new(HashMap::new())),
-            asm: Arc::new(Mutex::new(Vec::new())),
-        };
-
-        (gdb_stdout, app)
+        (reader, app)
     }
 }
 
@@ -180,12 +178,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut terminal = ratatui::init();
 
     // create app and run it
-    let (gdb_stdout, mut app): (BufReader<Box<dyn Read + Send>>, App) =
-        match (&args.local, &args.remote) {
-            (Some(local), None) => App::new_local(args),
-            (None, Some(remote)) => App::new_tcp(args),
-            _ => panic!("rip"),
-        };
+    let (gdb_stdout, mut app) = App::new_stream(args);
 
     let gdb_stdin_arc = Arc::clone(&app.gdb_stdin);
     let current_pc_arc = Arc::clone(&app.current_pc);
@@ -200,6 +193,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         for line in gdb_stdout.lines() {
             if let Ok(line) = line {
                 let response = mi::parse_mi_response(&line);
+                // TODO: I really hate the flow of this function, the reading and writing should be split into some
+                // sort of state machine instead of just writing stuff and hoping the next state makes us read the right thing...
                 match &response {
                     MIResponse::AsyncRecord(reason, v) => {
                         if reason == "stopped" {
@@ -261,7 +256,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                             let begin = data["begin"].to_string();
                             let begin = begin.strip_prefix("0x").unwrap();
                             debug!("{:?}", data);
-                            debug!("{}", data["contents"]);
                             debug!("{}", begin);
                             // TODO: this is insane and should be cached
                             stack.insert(
@@ -319,23 +313,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                 match app.input_mode {
                     InputMode::Normal => match key.code {
                         KeyCode::Enter => {
-                            if app.input.value().is_empty() {
-                                app.messages.offset = 0;
-
-                                if let Some(val) = app.messages.as_slice().iter().last() {
-                                    let mut stdin = app.gdb_stdin.lock().unwrap();
-                                    writeln!(stdin, "{}", val)?;
-                                    debug!("writing {}", val);
-                                    app.input.reset();
-                                }
-                            } else {
-                                app.messages.offset = 0;
-                                app.messages.push(app.input.value().into());
-                                let mut stdin = app.gdb_stdin.lock().unwrap();
-                                writeln!(stdin, "{}", app.input.value())?;
-                                debug!("writing {}", app.input.value());
-                                app.input.reset();
-                            }
+                            key_enter(app)?;
                         }
                         KeyCode::Char('i') => {
                             app.input_mode = InputMode::Editing;
@@ -344,76 +322,25 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                             return Ok(());
                         }
                         KeyCode::Down => {
-                            if !app.messages.buffer.is_empty() {
-                                if app.messages.offset != 0 {
-                                    app.messages.offset -= 1;
-                                } else {
-                                    app.messages.offset = 0;
-                                }
-                                update_from_previous_input(app);
-                            } else {
-                                app.messages.offset = 0;
-                            }
+                            key_down(app);
                         }
                         KeyCode::Up => {
-                            if !app.messages.buffer.is_empty() {
-                                if app.messages.offset < app.messages.buffer.len() {
-                                    app.messages.offset += 1;
-                                }
-                                update_from_previous_input(app);
-                            } else {
-                                app.messages.offset = 0;
-                            }
+                            key_up(app);
                         }
                         _ => {}
                     },
                     InputMode::Editing => match key.code {
-                        // TODO: Same as above
                         KeyCode::Enter => {
-                            if app.input.value().is_empty() {
-                                app.messages.offset = 0;
-
-                                if let Some(val) = app.messages.as_slice().iter().last() {
-                                    let mut stdin = app.gdb_stdin.lock().unwrap();
-                                    writeln!(stdin, "{}", val)?;
-                                    debug!("writing {}", val);
-                                    app.input.reset();
-                                }
-                            } else {
-                                app.messages.offset = 0;
-                                app.messages.push(app.input.value().into());
-                                let mut stdin = app.gdb_stdin.lock().unwrap();
-                                writeln!(stdin, "{}", app.input.value())?;
-                                debug!("writing {}", app.input.value());
-                                app.input.reset();
-                            }
+                            key_enter(app)?;
                         }
                         KeyCode::Esc => {
                             app.input_mode = InputMode::Normal;
                         }
-                        // TODO: Same as above
                         KeyCode::Down => {
-                            if !app.messages.buffer.is_empty() {
-                                if app.messages.offset != 0 {
-                                    app.messages.offset -= 1;
-                                } else {
-                                    app.messages.offset = 0;
-                                }
-                                update_from_previous_input(app);
-                            } else {
-                                app.messages.offset = 0;
-                            }
+                            key_down(app);
                         }
-                        // TODO: Same as above
                         KeyCode::Up => {
-                            if !app.messages.buffer.is_empty() {
-                                if app.messages.offset < app.messages.buffer.len() {
-                                    app.messages.offset += 1;
-                                }
-                                update_from_previous_input(app);
-                            } else {
-                                app.messages.offset = 0;
-                            }
+                            key_up(app);
                         }
                         _ => {
                             app.input.handle_event(&Event::Key(key));
@@ -423,6 +350,53 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
             }
         }
     }
+}
+
+fn key_up(app: &mut App) {
+    if !app.messages.buffer.is_empty() {
+        if app.messages.offset < app.messages.buffer.len() {
+            app.messages.offset += 1;
+        }
+        update_from_previous_input(app);
+    } else {
+        app.messages.offset = 0;
+    }
+}
+
+fn key_down(app: &mut App) {
+    if !app.messages.buffer.is_empty() {
+        if app.messages.offset != 0 {
+            app.messages.offset -= 1;
+            if app.messages.offset == 0 {
+                app.input.reset();
+            }
+        }
+        update_from_previous_input(app);
+    } else {
+        app.messages.offset = 0;
+    }
+}
+
+fn key_enter(app: &mut App) -> Result<(), io::Error> {
+    if app.input.value().is_empty() {
+        app.messages.offset = 0;
+
+        if let Some(val) = app.messages.as_slice().iter().last() {
+            let mut stdin = app.gdb_stdin.lock().unwrap();
+            writeln!(stdin, "{}", val)?;
+            debug!("writing {}", val);
+            app.input.reset();
+        }
+    } else {
+        app.messages.offset = 0;
+        app.messages.push(app.input.value().into());
+        let mut stdin = app.gdb_stdin.lock().unwrap();
+        writeln!(stdin, "{}", app.input.value())?;
+        debug!("writing {}", app.input.value());
+        app.input.reset();
+    }
+
+    Ok(())
 }
 
 fn update_from_previous_input(app: &mut App) {
@@ -443,6 +417,7 @@ fn ui(f: &mut Frame, app: &App) {
     let horizontal = Layout::horizontal([Max(30), Max(40), Min(80), Fill(1)]);
     let [register, stack, asm, other] = horizontal.areas(info);
 
+    // Title Area
     let (msg, style) = match app.input_mode {
         InputMode::Normal => (
             vec![
@@ -468,18 +443,6 @@ fn ui(f: &mut Frame, app: &App) {
     let text = Text::from(Line::from(msg)).style(style);
     let help_message = Paragraph::new(text);
     f.render_widget(help_message, title_area);
-
-    let width = title_area.width.max(3) - 3; // keep 2 for borders and 1 for cursor
-
-    let scroll = app.input.visual_scroll(width as usize);
-    let txt_input = Paragraph::new(app.input.value())
-        .style(match app.input_mode {
-            InputMode::Normal => Style::default(),
-            InputMode::Editing => Style::default().fg(Color::Green),
-        })
-        .scroll((0, scroll as u16))
-        .block(Block::default().borders(Borders::ALL).title("Input"));
-    f.render_widget(txt_input, input);
 
     // Registers
     let mut rows = vec![];
@@ -537,22 +500,6 @@ fn ui(f: &mut Frame, app: &App) {
                 .collect::<Vec<_>>(),
         )
     };
-    match app.input_mode {
-        InputMode::Normal =>
-            // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
-            {}
-
-        InputMode::Editing => {
-            // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
-            f.set_cursor_position((
-                // Put cursor past the end of the input text
-                input.x + ((app.input.visual_cursor()).max(scroll) - scroll) as u16 + 1,
-                // Move one line down, from the border to the input line
-                input.y + 1,
-            ))
-        }
-    }
-
     // Asm
     // TODO: cache the pc_index if this doesn't change
     let mut rows = vec![];
@@ -632,4 +579,32 @@ fn ui(f: &mut Frame, app: &App) {
             .borders(Borders::ALL),
     );
     f.render_widget(response_widget, parsed);
+
+    // Input
+    let width = title_area.width.max(3) - 3; // keep 2 for borders and 1 for cursor
+
+    let scroll = app.input.visual_scroll(width as usize);
+    let txt_input = Paragraph::new(app.input.value())
+        .style(match app.input_mode {
+            InputMode::Normal => Style::default(),
+            InputMode::Editing => Style::default().fg(Color::Green),
+        })
+        .scroll((0, scroll as u16))
+        .block(Block::default().borders(Borders::ALL).title("Input"));
+    f.render_widget(txt_input, input);
+    match app.input_mode {
+        InputMode::Normal =>
+            // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
+            {}
+
+        InputMode::Editing => {
+            // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
+            f.set_cursor_position((
+                // Put cursor past the end of the input text
+                input.x + ((app.input.visual_cursor()).max(scroll) - scroll) as u16 + 1,
+                // Move one line down, from the border to the input line
+                input.y + 1,
+            ))
+        }
+    }
 }

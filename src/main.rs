@@ -29,8 +29,9 @@ use Constraint::{Fill, Length, Max, Min};
 
 mod mi;
 use mi::{
-    data_disassemble, data_read_memory_bytes, parse_asm_insns_values, parse_key_value_pairs,
-    parse_register_values, register_x86_64, Asm, MIResponse, Register,
+    data_disassemble, data_read_memory_bytes, join_registers, parse_asm_insns_values,
+    parse_key_value_pairs, parse_register_names_values, parse_register_values, Asm, MIResponse,
+    Register, REGISTER_COUNT_MAX,
 };
 
 enum InputMode {
@@ -100,6 +101,7 @@ struct App {
     current_pc: Arc<Mutex<u64>>, // TODO: replace with AtomicU64?
     parsed_responses: Arc<Mutex<LimitedBuffer<MIResponse>>>,
     gdb_stdin: Arc<Mutex<dyn Write + Send>>,
+    register_names: Arc<Mutex<Vec<String>>>,
     registers: Arc<Mutex<Vec<(String, Register)>>>,
     stack: Arc<Mutex<HashMap<u64, u64>>>,
     asm: Arc<Mutex<Vec<Asm>>>,
@@ -151,6 +153,7 @@ impl App {
             messages: LimitedBuffer::new(10),
             current_pc: Arc::new(Mutex::new(0)),
             parsed_responses: Arc::new(Mutex::new(LimitedBuffer::new(30))),
+            register_names: Arc::new(Mutex::new(vec![])),
             gdb_stdin,
             registers: Arc::new(Mutex::new(vec![])),
             stack: Arc::new(Mutex::new(HashMap::new())),
@@ -190,6 +193,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let gdb_stdin_arc = Arc::clone(&app.gdb_stdin);
     let current_pc_arc = Arc::clone(&app.current_pc);
     let parsed_reponses_arc = Arc::clone(&app.parsed_responses);
+    let register_names_arc = Arc::clone(&app.register_names);
     let registers_arc = Arc::clone(&app.registers);
     let stack_arc = Arc::clone(&app.stack);
     let asm_arc = Arc::clone(&app.asm);
@@ -198,6 +202,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     thread::spawn(move || {
         gdb_interact(
             gdb_stdout,
+            register_names_arc,
             registers_arc,
             current_pc_arc,
             stack_arc,
@@ -228,6 +233,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn gdb_interact(
     gdb_stdout: BufReader<Box<dyn Read + Send>>,
+    register_names_arc: Arc<Mutex<Vec<String>>>,
     registers_arc: Arc<Mutex<Vec<(String, Register)>>>,
     current_pc_arc: Arc<Mutex<u64>>,
     stack_arc: Arc<Mutex<HashMap<u64, u64>>>,
@@ -249,15 +255,21 @@ fn gdb_interact(
                             debug!("{arch}");
                         }
                         // When a breakpoint is hit, query for register values
+                        next_write.push("-data-list-register-names".to_string());
                         next_write.push("-data-list-register-values x".to_string());
                     }
                 }
                 MIResponse::ExecResult(_, kv) => {
-                    if let Some(register_values) = kv.get("register-values") {
+                    if let Some(register_names) = kv.get("register-names") {
+                        let register_names = parse_register_names_values(register_names);
+                        let mut regs_names = register_names_arc.lock().unwrap();
+                        *regs_names = register_names;
+                    } else if let Some(register_values) = kv.get("register-values") {
                         let registers = parse_register_values(register_values);
                         // Check if response is register data
                         let mut regs = registers_arc.lock().unwrap();
-                        let registers = register_x86_64(&registers);
+                        let mut regs_names = register_names_arc.lock().unwrap();
+                        let registers = join_registers(&regs_names, &registers);
                         for s in registers.iter() {
                             if s.0 == "rsp" {
                                 let start_addr = s.1.value.as_ref().unwrap();
@@ -441,7 +453,7 @@ fn update_from_previous_input(app: &mut App) {
 
 fn ui(f: &mut Frame, app: &App) {
     // TODO: register size should depend on arch
-    let register_size = Length(26);
+    let register_size = Length(REGISTER_COUNT_MAX as u16 + 1);
     let stack_size = Min(10);
     let asm_size = Min(10);
     let info_size = Length(5);

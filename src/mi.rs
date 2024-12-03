@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use log::debug;
 use regex::Regex;
 
+pub const REGISTER_COUNT_MAX: usize = 25;
+
 // Define Register struct to hold register data
 #[derive(Debug, Clone)]
 pub struct Register {
@@ -104,14 +106,17 @@ pub fn parse_key_value_pairs(input: &str) -> HashMap<String, String> {
     map
 }
 
-// TODO: this could come from:  -data-list-register-names
-pub fn register_x86_64(registers: &[Register]) -> Vec<(String, Register)> {
-    let register_names = vec![
-        "rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "r8", "r9", "r10", "r11", "r12",
-        "r13", "r14", "r15", "rip", "eflags", "cs", "ss", "ds", "es", "fs", "gs",
-    ];
+pub fn join_registers(
+    register_names: &Vec<String>,
+    registers: &[Register],
+) -> Vec<(String, Register)> {
     let mut registers_arch = vec![];
-    for (i, (register, name)) in registers.iter().zip(register_names.iter()).enumerate() {
+    for (i, (register, name)) in registers
+        .iter()
+        .take(REGISTER_COUNT_MAX)
+        .zip(register_names.iter().take(REGISTER_COUNT_MAX))
+        .enumerate()
+    {
         if !register.number.is_empty() {
             registers_arch.push((name.to_string(), register.clone()));
             debug!("[{i}] register({name}): {:?}", register);
@@ -157,6 +162,18 @@ pub fn parse_register_values(input: &str) -> Vec<Register> {
         }
         registers.push(register);
     }
+
+    registers
+}
+
+// Function to parse register-values as an array of Registers
+pub fn parse_register_names_values(input: &str) -> Vec<String> {
+    let registers: Vec<String> = input
+        .trim_matches(|c| c == '[' || c == ']')
+        .split(',')
+        .map(|s| s.trim_matches('"').to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
 
     registers
 }

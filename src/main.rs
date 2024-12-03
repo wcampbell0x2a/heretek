@@ -433,10 +433,22 @@ fn update_from_previous_input(app: &mut App) {
 }
 
 fn ui(f: &mut Frame, app: &App) {
-    let vertical = Layout::vertical([Length(1), Min(30), Length(20), Max(3)]);
-    let [title_area, info, parsed, input] = vertical.areas(f.area());
-    let horizontal = Layout::horizontal([Max(30), Max(40), Min(80), Fill(1)]);
-    let [register, stack, asm, other] = horizontal.areas(info);
+    let register_size = Min(10);
+    let stack_size = Length(10);
+    let asm_size = Length(20);
+    let info_size = Length(10);
+
+    let vertical = Layout::vertical([
+        Length(1),
+        register_size,
+        stack_size,
+        asm_size,
+        info_size,
+        Max(3),
+    ]);
+    let [title_area, register, stack, asm, info, input] = vertical.areas(f.area());
+    let horizontal = Layout::horizontal([Fill(1), Fill(1)]);
+    let [parsed, other] = horizontal.areas(info);
 
     // Title Area
     let (msg, style) = match app.input_mode {

@@ -251,11 +251,13 @@ fn gdb_interact(
                 MIResponse::AsyncRecord(reason, v) => {
                     if reason == "stopped" {
                         debug!("{v:?}");
+                        // TODO: we could cache this, per file opened
                         if let Some(arch) = v.get("arch") {
                             debug!("{arch}");
                         }
-                        // When a breakpoint is hit, query for register values
+                        // TODO: we could cache this, per file opened
                         next_write.push("-data-list-register-names".to_string());
+                        // When a breakpoint is hit, query for register values
                         next_write.push("-data-list-register-values x".to_string());
                     }
                 }

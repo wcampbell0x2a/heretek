@@ -174,10 +174,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         .target(env_logger::Target::Pipe(Box::new(std::io::sink()))) // Disable stdout/stderr
         .init();
 
-    // setup terminal
+    // Setup terminal
     let mut terminal = ratatui::init();
 
-    // create app and run it
+    // Start rx thread
     let (gdb_stdout, mut app) = App::new_stream(args);
 
     let gdb_stdin_arc = Arc::clone(&app.gdb_stdin);
@@ -188,7 +188,45 @@ fn main() -> Result<(), Box<dyn Error>> {
     let asm_arc = Arc::clone(&app.asm);
 
     // Thread to read GDB output and parse it
-    thread::spawn(move || {
+    thread::spawn(gdb_interact(
+        gdb_stdout,
+        registers_arc,
+        current_pc_arc,
+        stack_arc,
+        asm_arc,
+        gdb_stdin_arc,
+        parsed_reponses_arc,
+    ));
+
+    // Run tui application
+    let res = run_app(&mut terminal, &mut app);
+
+    // restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    if let Err(err) = res {
+        println!("{:?}", err)
+    }
+
+    Ok(())
+}
+
+fn gdb_interact(
+    gdb_stdout: BufReader<Box<dyn Read + Send>>,
+    registers_arc: Arc<Mutex<Vec<(String, Register)>>>,
+    current_pc_arc: Arc<Mutex<u64>>,
+    stack_arc: Arc<Mutex<HashMap<u64, u64>>>,
+    asm_arc: Arc<Mutex<Vec<Asm>>>,
+    gdb_stdin_arc: Arc<Mutex<dyn Write + Send>>,
+    parsed_reponses_arc: Arc<Mutex<LimitedBuffer<MIResponse>>>,
+) -> impl FnOnce() {
+    move || {
         let mut next_write = vec![String::new()];
         for line in gdb_stdout.lines() {
             if let Ok(line) = line {
@@ -285,23 +323,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 parsed_reponses_arc.lock().unwrap().push(response);
             }
         }
-    });
-    let res = run_app(&mut terminal, &mut app);
-
-    // restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
-
-    if let Err(err) = res {
-        println!("{:?}", err)
     }
-
-    Ok(())
 }
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<()> {

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{ChildStdin, ChildStdout, Command, Stdio};
@@ -210,7 +211,6 @@ pub enum MIResponse {
     Unknown(String),
 }
 
-// Function to parse a single GDB/MI line into MIResponse
 pub fn parse_mi_response(line: &str) -> MIResponse {
     debug!("line: {}", line);
     if line.starts_with('^') {
@@ -226,7 +226,6 @@ pub fn parse_mi_response(line: &str) -> MIResponse {
     }
 }
 
-// Helper function to parse ExecResult responses
 fn parse_exec_result(input: &str) -> MIResponse {
     if let Some((prefix, rest)) = input.split_once(',') {
         let data = parse_key_value_pairs(rest);
@@ -234,17 +233,6 @@ fn parse_exec_result(input: &str) -> MIResponse {
     } else {
         MIResponse::ExecResult(input.to_string(), HashMap::new())
     }
-    // if let Some((status, rest)) = input.split_once(',') {
-    //     let k = parse_key_value_pairs(rest);
-    //     let register_values = parse_register_values(&k["register-values"]); // Parse register values from the rest
-    //     MIResponse::ExecResult(
-    //         status.to_string(),
-    //         parse_key_value_pairs(rest),
-    //         Some(register_values),
-    //     )
-    // } else {
-    //     MIResponse::ExecResult(input.to_string(), HashMap::new(), None)
-    // }
 }
 
 fn parse_async_record(input: &str) -> MIResponse {
@@ -256,7 +244,6 @@ fn parse_async_record(input: &str) -> MIResponse {
     }
 }
 
-// Helper function to parse Notify responses
 fn parse_notify(input: &str) -> MIResponse {
     if let Some((event, rest)) = input.split_once(',') {
         MIResponse::Notify(event.to_string(), parse_key_value_pairs(rest))
@@ -265,8 +252,6 @@ fn parse_notify(input: &str) -> MIResponse {
     }
 }
 
-use std::borrow::Cow;
-
 fn parse_stream_output(input: &str) -> MIResponse {
     let (kind, content) = input.split_at(1);
     let unescaped_content = unescape_gdb_output(content.trim_matches('"'));
@@ -274,7 +259,6 @@ fn parse_stream_output(input: &str) -> MIResponse {
 }
 
 fn unescape_gdb_output(input: &str) -> Cow<str> {
-    // Replace escaped sequences with actual characters
     input.replace("\\n", "\n").replace("\\t", "\t").into()
 }
 

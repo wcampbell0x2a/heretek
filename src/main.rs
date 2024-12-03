@@ -90,6 +90,8 @@ struct Args {
     local: bool,
 
     /// Connect to nc session
+    ///
+    /// `mkfifo gdb_sock; cat gdb_pipe | gdb --interpreter=mi | nc -l -p 12345 > gdb_pipe`
     #[arg(short, long)]
     remote: Option<SocketAddr>,
 }

@@ -188,15 +188,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let asm_arc = Arc::clone(&app.asm);
 
     // Thread to read GDB output and parse it
-    thread::spawn(gdb_interact(
-        gdb_stdout,
-        registers_arc,
-        current_pc_arc,
-        stack_arc,
-        asm_arc,
-        gdb_stdin_arc,
-        parsed_reponses_arc,
-    ));
+    thread::spawn(move || {
+        gdb_interact(
+            gdb_stdout,
+            registers_arc,
+            current_pc_arc,
+            stack_arc,
+            asm_arc,
+            gdb_stdin_arc,
+            parsed_reponses_arc,
+        )
+    });
 
     // Run tui application
     let res = run_app(&mut terminal, &mut app);
@@ -225,103 +227,100 @@ fn gdb_interact(
     asm_arc: Arc<Mutex<Vec<Asm>>>,
     gdb_stdin_arc: Arc<Mutex<dyn Write + Send>>,
     parsed_reponses_arc: Arc<Mutex<LimitedBuffer<MIResponse>>>,
-) -> impl FnOnce() {
-    move || {
-        let mut next_write = vec![String::new()];
-        for line in gdb_stdout.lines() {
-            if let Ok(line) = line {
-                let response = mi::parse_mi_response(&line);
-                // TODO: I really hate the flow of this function, the reading and writing should be split into some
-                // sort of state machine instead of just writing stuff and hoping the next state makes us read the right thing...
-                match &response {
-                    MIResponse::AsyncRecord(reason, v) => {
-                        if reason == "stopped" {
-                            debug!("{v:?}");
-                            if let Some(arch) = v.get("arch") {
-                                debug!("{arch}");
-                            }
-                            // When a breakpoint is hit, query for register values
-                            next_write.push("-data-list-register-values x".to_string());
+) {
+    let mut next_write = vec![String::new()];
+    for line in gdb_stdout.lines() {
+        if let Ok(line) = line {
+            let response = mi::parse_mi_response(&line);
+            // TODO: I really hate the flow of this function, the reading and writing should be split into some
+            // sort of state machine instead of just writing stuff and hoping the next state makes us read the right thing...
+            match &response {
+                MIResponse::AsyncRecord(reason, v) => {
+                    if reason == "stopped" {
+                        debug!("{v:?}");
+                        if let Some(arch) = v.get("arch") {
+                            debug!("{arch}");
                         }
+                        // When a breakpoint is hit, query for register values
+                        next_write.push("-data-list-register-values x".to_string());
                     }
-                    MIResponse::ExecResult(_, kv) => {
-                        if let Some(register_values) = kv.get("register-values") {
-                            let registers = parse_register_values(&register_values);
-                            // Check if response is register data
-                            let mut regs = registers_arc.lock().unwrap();
-                            let registers = register_x86_64(&registers);
-                            for s in registers.iter() {
-                                if s.0 == "rsp" {
-                                    let start_addr = s.1.value.as_ref().unwrap();
-                                    next_write.push(data_read_memory_bytes(start_addr, 0, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 8, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 16, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 24, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 32, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 40, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 48, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 56, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 62, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 70, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 78, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 86, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 94, 8));
-                                }
-                                if s.0 == "rip" {
-                                    let val =
-                                        s.1.value.as_ref().unwrap().strip_prefix("0x").unwrap();
-                                    let mut cur_pc_lock = current_pc_arc.lock().unwrap();
-                                    *cur_pc_lock = u64::from_str_radix(val, 16).unwrap();
-                                }
-                            }
-                            *regs = registers.clone();
-                            let mut stack = stack_arc.lock().unwrap();
-                            stack.clear();
-
-                            // update current asm at pc
-                            let instruction_length = 8;
-                            next_write.push(data_disassemble(
-                                instruction_length * 5,
-                                instruction_length * 15,
-                            ));
-                            let mut asm = asm_arc.lock().unwrap();
-                            asm.clear();
-                        } else if let Some(memory) = kv.get("memory") {
-                            let mut stack = stack_arc.lock().unwrap();
-                            let mem_str = memory.strip_prefix(r#"[{"#).unwrap();
-                            let mem_str = mem_str.strip_suffix(r#"}]"#).unwrap();
-                            let data = parse_key_value_pairs(mem_str);
-                            let begin = data["begin"].to_string();
-                            let begin = begin.strip_prefix("0x").unwrap();
-                            debug!("{:?}", data);
-                            debug!("{}", begin);
-                            // TODO: this is insane and should be cached
-                            stack.insert(
-                                u64::from_str_radix(begin, 16).unwrap(),
-                                u64::from_str_radix(&data["contents"], 16).unwrap(),
-                            );
-                            debug!("{:?}", data);
-                        } else if let Some(asm) = kv.get("asm_insns") {
-                            let new_asms = parse_asm_insns_values(&asm);
-                            let mut asm = asm_arc.lock().unwrap();
-                            *asm = new_asms.clone();
-                        }
-                    }
-                    MIResponse::Unknown(_) => {
-                        if !next_write.is_empty() {
-                            for w in &next_write {
-                                let mut stdin = gdb_stdin_arc.lock().unwrap();
-                                debug!("writing {}", w);
-                                writeln!(stdin, "{}", w).expect("Failed to send command");
-                            }
-                            next_write.clear();
-                        }
-                    }
-                    _ => (),
                 }
-                debug!("response {:?}", response);
-                parsed_reponses_arc.lock().unwrap().push(response);
+                MIResponse::ExecResult(_, kv) => {
+                    if let Some(register_values) = kv.get("register-values") {
+                        let registers = parse_register_values(&register_values);
+                        // Check if response is register data
+                        let mut regs = registers_arc.lock().unwrap();
+                        let registers = register_x86_64(&registers);
+                        for s in registers.iter() {
+                            if s.0 == "rsp" {
+                                let start_addr = s.1.value.as_ref().unwrap();
+                                next_write.push(data_read_memory_bytes(start_addr, 0, 8));
+                                next_write.push(data_read_memory_bytes(start_addr, 8, 8));
+                                next_write.push(data_read_memory_bytes(start_addr, 16, 8));
+                                next_write.push(data_read_memory_bytes(start_addr, 24, 8));
+                                next_write.push(data_read_memory_bytes(start_addr, 32, 8));
+                                next_write.push(data_read_memory_bytes(start_addr, 40, 8));
+                                next_write.push(data_read_memory_bytes(start_addr, 48, 8));
+                                next_write.push(data_read_memory_bytes(start_addr, 56, 8));
+                                next_write.push(data_read_memory_bytes(start_addr, 62, 8));
+                                next_write.push(data_read_memory_bytes(start_addr, 70, 8));
+                                next_write.push(data_read_memory_bytes(start_addr, 78, 8));
+                                next_write.push(data_read_memory_bytes(start_addr, 86, 8));
+                                next_write.push(data_read_memory_bytes(start_addr, 94, 8));
+                            }
+                            if s.0 == "rip" {
+                                let val = s.1.value.as_ref().unwrap().strip_prefix("0x").unwrap();
+                                let mut cur_pc_lock = current_pc_arc.lock().unwrap();
+                                *cur_pc_lock = u64::from_str_radix(val, 16).unwrap();
+                            }
+                        }
+                        *regs = registers.clone();
+                        let mut stack = stack_arc.lock().unwrap();
+                        stack.clear();
+
+                        // update current asm at pc
+                        let instruction_length = 8;
+                        next_write.push(data_disassemble(
+                            instruction_length * 5,
+                            instruction_length * 15,
+                        ));
+                        let mut asm = asm_arc.lock().unwrap();
+                        asm.clear();
+                    } else if let Some(memory) = kv.get("memory") {
+                        let mut stack = stack_arc.lock().unwrap();
+                        let mem_str = memory.strip_prefix(r#"[{"#).unwrap();
+                        let mem_str = mem_str.strip_suffix(r#"}]"#).unwrap();
+                        let data = parse_key_value_pairs(mem_str);
+                        let begin = data["begin"].to_string();
+                        let begin = begin.strip_prefix("0x").unwrap();
+                        debug!("{:?}", data);
+                        debug!("{}", begin);
+                        // TODO: this is insane and should be cached
+                        stack.insert(
+                            u64::from_str_radix(begin, 16).unwrap(),
+                            u64::from_str_radix(&data["contents"], 16).unwrap(),
+                        );
+                        debug!("{:?}", data);
+                    } else if let Some(asm) = kv.get("asm_insns") {
+                        let new_asms = parse_asm_insns_values(&asm);
+                        let mut asm = asm_arc.lock().unwrap();
+                        *asm = new_asms.clone();
+                    }
+                }
+                MIResponse::Unknown(_) => {
+                    if !next_write.is_empty() {
+                        for w in &next_write {
+                            let mut stdin = gdb_stdin_arc.lock().unwrap();
+                            debug!("writing {}", w);
+                            writeln!(stdin, "{}", w).expect("Failed to send command");
+                        }
+                        next_write.clear();
+                    }
+                }
+                _ => (),
             }
+            debug!("response {:?}", response);
+            parsed_reponses_arc.lock().unwrap().push(response);
         }
     }
 }

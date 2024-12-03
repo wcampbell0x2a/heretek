@@ -85,7 +85,7 @@ struct Args {
     local: Option<String>,
 
     #[arg(short, long)]
-    remove: Option<SocketAddr>,
+    remote: Option<SocketAddr>,
 }
 
 /// App holds the state of the application
@@ -105,8 +105,14 @@ struct App {
 }
 
 impl App {
-    fn new(gdb_stdin: Arc<Mutex<dyn Write + Send>>) -> App {
-        App {
+    fn new_tcp(args: Args) -> (BufReader<Box<dyn Read + Send>>, App) {
+        // fn new(gdb_stdin: Arc<Mutex<dyn Write + Send>>) -> App {
+        let stream =
+            TcpStream::connect_timeout(&args.remote.unwrap(), Duration::from_secs(5)).unwrap();
+        let gdb_stdout =
+            BufReader::new(Box::new(stream.try_clone().unwrap()) as Box<dyn Read + Send>);
+        let gdb_stdin = Arc::new(Mutex::new(stream.try_clone().unwrap()));
+        let app = App {
             input: Input::default(),
             input_mode: InputMode::Normal,
             messages: LimitedBuffer::new(10),
@@ -116,7 +122,37 @@ impl App {
             registers: Arc::new(Mutex::new(vec![])),
             stack: Arc::new(Mutex::new(HashMap::new())),
             asm: Arc::new(Mutex::new(Vec::new())),
-        }
+        };
+
+        (gdb_stdout, app)
+    }
+
+    fn new_local(args: Args) -> (BufReader<Box<dyn Read + Send>>, App) {
+        // Start GDB process
+        let mut gdb_process = Command::new("gdb")
+            .args(["--interpreter=mi2", "--quiet"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("Failed to start GDB");
+        let gdb_stdin = gdb_process.stdin.take().unwrap();
+        let gdb_stdout =
+            BufReader::new(Box::new(gdb_process.stdout.take().unwrap()) as Box<dyn Read + Send>);
+        let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
+
+        let app = App {
+            input: Input::default(),
+            input_mode: InputMode::Normal,
+            messages: LimitedBuffer::new(10),
+            current_pc: Arc::new(Mutex::new(0)),
+            parsed_responses: Arc::new(Mutex::new(LimitedBuffer::new(30))),
+            gdb_stdin,
+            registers: Arc::new(Mutex::new(vec![])),
+            stack: Arc::new(Mutex::new(HashMap::new())),
+            asm: Arc::new(Mutex::new(Vec::new())),
+        };
+
+        (gdb_stdout, app)
     }
 }
 
@@ -143,23 +179,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     // setup terminal
     let mut terminal = ratatui::init();
 
-    let stream = TcpStream::connect("127.0.0.1:12345").unwrap();
-    let gdb_stdout = BufReader::new(stream.try_clone().unwrap());
-    let gdb_stdin = Arc::new(Mutex::new(stream.try_clone().unwrap()));
-
-    // // Start GDB process
-    // let mut gdb_process = Command::new("gdb")
-    //     .args(["--interpreter=mi2", "--quiet"])
-    //     .stdin(Stdio::piped())
-    //     .stdout(Stdio::piped())
-    //     .spawn()
-    //     .expect("Failed to start GDB");
-    // let gdb_stdin = gdb_process.stdin.take().unwrap();
-    // let gdb_stdout = BufReader::new(gdb_process.stdout.take().unwrap());
-    // let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
-
     // create app and run it
-    let mut app = App::new(gdb_stdin);
+    let (gdb_stdout, mut app): (BufReader<Box<dyn Read + Send>>, App) =
+        match (&args.local, &args.remote) {
+            (Some(local), None) => App::new_local(args),
+            (None, Some(remote)) => App::new_tcp(args),
+            _ => panic!("rip"),
+        };
 
     let gdb_stdin_arc = Arc::clone(&app.gdb_stdin);
     let current_pc_arc = Arc::clone(&app.current_pc);
@@ -237,6 +263,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             debug!("{:?}", data);
                             debug!("{}", data["contents"]);
                             debug!("{}", begin);
+                            // TODO: this is insane and should be cached
                             stack.insert(
                                 u64::from_str_radix(begin, 16).unwrap(),
                                 u64::from_str_radix(&data["contents"], 16).unwrap(),
@@ -413,7 +440,7 @@ fn update_from_previous_input(app: &mut App) {
 fn ui(f: &mut Frame, app: &App) {
     let vertical = Layout::vertical([Length(1), Min(30), Length(20), Max(3)]);
     let [title_area, info, parsed, input] = vertical.areas(f.area());
-    let horizontal = Layout::horizontal([Max(30), Fill(1), Min(80), Fill(1)]);
+    let horizontal = Layout::horizontal([Max(30), Max(40), Min(80), Fill(1)]);
     let [register, stack, asm, other] = horizontal.areas(info);
 
     let (msg, style) = match app.input_mode {
@@ -448,7 +475,7 @@ fn ui(f: &mut Frame, app: &App) {
     let txt_input = Paragraph::new(app.input.value())
         .style(match app.input_mode {
             InputMode::Normal => Style::default(),
-            InputMode::Editing => Style::default().fg(Color::Blue),
+            InputMode::Editing => Style::default().fg(Color::Green),
         })
         .scroll((0, scroll as u16))
         .block(Block::default().borders(Borders::ALL).title("Input"));

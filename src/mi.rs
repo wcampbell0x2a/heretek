@@ -126,7 +126,7 @@ pub fn join_registers(
 }
 
 // Function to parse register-values as an array of Registers
-pub fn parse_register_values(input: &str) -> Vec<Register> {
+pub fn parse_register_values(input: &str) -> Vec<Option<Register>> {
     let mut registers = Vec::new();
     let re = Regex::new(r#"\{(.*?)\}"#).unwrap(); // Match entire register block
 

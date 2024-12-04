@@ -523,7 +523,8 @@ fn ui(f: &mut Frame, app: &App) {
     let table = Table::new(rows, widths).block(
         Block::default()
             .borders(Borders::TOP)
-            .title("Registers".fg(PINK)),
+            .title("Registers".fg(PINK))
+            .add_modifier(Modifier::BOLD),
     );
 
     f.render_widget(table, register);
@@ -545,7 +546,7 @@ fn ui(f: &mut Frame, app: &App) {
     let table = Table::new(rows, widths).block(
         Block::default()
             .borders(Borders::TOP)
-            .title("Stack".fg(PINK)),
+            .title("Stack".fg(PINK).add_modifier(Modifier::BOLD)),
     );
 
     f.render_widget(table, stack);
@@ -602,7 +603,12 @@ fn ui(f: &mut Frame, app: &App) {
     if let Some(pc_index) = pc_index {
         let widths = [Constraint::Length(16), Fill(1)];
         let table = Table::new(rows, widths)
-            .block(Block::default().borders(Borders::TOP).title(tital))
+            .block(
+                Block::default()
+                    .borders(Borders::TOP)
+                    .title(tital)
+                    .add_modifier(Modifier::BOLD),
+            )
             .row_highlight_style(Style::new().green())
             .highlight_symbol(">>");
         let start_offset = if pc_index < 5 { 0 } else { pc_index - 5 };
@@ -611,7 +617,10 @@ fn ui(f: &mut Frame, app: &App) {
             .with_selected(pc_index);
         f.render_stateful_widget(table, asm, &mut table_state);
     } else {
-        let block = Block::default().borders(Borders::TOP).title(tital);
+        let block = Block::default()
+            .borders(Borders::TOP)
+            .title(tital)
+            .add_modifier(Modifier::BOLD);
         f.render_widget(block, asm);
     }
 
@@ -628,13 +637,13 @@ fn ui(f: &mut Frame, app: &App) {
     let messages = List::new(messages).block(
         Block::default()
             .borders(Borders::ALL)
-            .title("Messages".fg(BLUE)),
+            .title("Messages".fg(BLUE).add_modifier(Modifier::BOLD)),
     );
     f.render_widget(messages, other);
 
     let response_widget = Paragraph::new(response_text).block(
         Block::default()
-            .title("Parsed Responses".fg(BLUE))
+            .title("Parsed Responses".fg(BLUE).add_modifier(Modifier::BOLD))
             .borders(Borders::ALL),
     );
     f.render_widget(response_widget, parsed);
@@ -652,7 +661,7 @@ fn ui(f: &mut Frame, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Input".fg(YELLOW)),
+                .title("Input".fg(YELLOW).add_modifier(Modifier::BOLD)),
         );
     f.render_widget(txt_input, input);
     match app.input_mode {

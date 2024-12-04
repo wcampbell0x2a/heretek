@@ -146,7 +146,13 @@ pub fn parse_register_values(input: &str) -> Vec<Register> {
         };
 
         let key_values = parse_key_value_pairs(register_str);
+        let mut fail = false;
         for (key, val) in key_values {
+            if val.starts_with("\"{") {
+                // skipping, for now
+                fail = true;
+                break;
+            }
             match key.as_str() {
                 "number" => register.number = val,
                 "value" => register.value = Some(val),
@@ -160,7 +166,11 @@ pub fn parse_register_values(input: &str) -> Vec<Register> {
                 _ => {}
             }
         }
-        registers.push(register);
+        if fail {
+            registers.push(None)
+        } else {
+            registers.push(Some(register));
+        }
     }
 
     registers

@@ -54,10 +54,7 @@ pub fn parse_key_value_pairs(input: &str) -> HashMap<String, String> {
             ',' if !inside_quotes && bracket_count == 0 => {
                 // End of a key-value pair
                 if !current_key.is_empty() {
-                    map.insert(
-                        current_key.trim().to_string(),
-                        normalize_value(&current_value),
-                    );
+                    map.insert(current_key.trim().to_string(), normalize_value(&current_value));
                 }
                 current_key.clear();
                 current_value.clear();
@@ -95,10 +92,7 @@ pub fn parse_key_value_pairs(input: &str) -> HashMap<String, String> {
 
     // Add the last key-value pair
     if !current_key.is_empty() {
-        map.insert(
-            current_key.trim().to_string(),
-            normalize_value(&current_value),
-        );
+        map.insert(current_key.trim().to_string(), normalize_value(&current_value));
     }
 
     map
@@ -193,12 +187,7 @@ pub fn parse_asm_insns_values(input: &str) -> Vec<Asm> {
     for capture in re.captures_iter(input) {
         let cap_str = &capture[0];
         let cap_str = &cap_str[1..cap_str.len() - 1].to_string();
-        let mut asm = Asm {
-            address: 0,
-            inst: String::new(),
-            offset: 0,
-            func_name: None,
-        };
+        let mut asm = Asm { address: 0, inst: String::new(), offset: 0, func_name: None };
 
         let key_values = parse_key_value_pairs(cap_str);
         for (key, val) in key_values {
@@ -328,10 +317,7 @@ mod tests {
         let input = r#"*stopped,reason="breakpoint-hit",disp="keep",bkptno="1""#;
         if let MIResponse::AsyncRecord(reason, key_values) = parse_mi_response(input) {
             assert_eq!(reason, "stopped");
-            assert_eq!(
-                key_values.get("reason").map(|s| s.as_str()),
-                Some("breakpoint-hit")
-            );
+            assert_eq!(key_values.get("reason").map(|s| s.as_str()), Some("breakpoint-hit"));
             assert_eq!(key_values.get("disp").map(|s| s.as_str()), Some("keep"));
             assert_eq!(key_values.get("bkptno").map(|s| s.as_str()), Some("1"));
         } else {

@@ -70,11 +70,7 @@ impl<T> LimitedBuffer<T> {
     }
 
     fn new(capacity: usize) -> Self {
-        Self {
-            offset: 0,
-            buffer: VecDeque::with_capacity(capacity),
-            capacity,
-        }
+        Self { offset: 0, buffer: VecDeque::with_capacity(capacity), capacity }
     }
 
     fn push(&mut self, value: T) {
@@ -129,36 +125,35 @@ impl App {
     /// # Returns
     /// `(gdb_stdin, App)`
     pub fn new_stream(args: Args) -> (BufReader<Box<dyn Read + Send>>, App) {
-        let (reader, gdb_stdin): (
-            BufReader<Box<dyn Read + Send>>,
-            Arc<Mutex<dyn Write + Send>>,
-        ) = match (&args.local, &args.remote) {
-            (true, None) => {
-                let mut gdb_process = Command::new("gdb")
-                    .args(["--interpreter=mi2", "--quiet"])
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .spawn()
-                    .expect("Failed to start GDB");
+        let (reader, gdb_stdin): (BufReader<Box<dyn Read + Send>>, Arc<Mutex<dyn Write + Send>>) =
+            match (&args.local, &args.remote) {
+                (true, None) => {
+                    let mut gdb_process = Command::new("gdb")
+                        .args(["--interpreter=mi2", "--quiet"])
+                        .stdin(Stdio::piped())
+                        .stdout(Stdio::piped())
+                        .spawn()
+                        .expect("Failed to start GDB");
 
-                let reader =
-                    BufReader::new(Box::new(gdb_process.stdout.unwrap()) as Box<dyn Read + Send>);
-                let gdb_stdin = gdb_process.stdin.take().unwrap();
-                let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
+                    let reader = BufReader::new(
+                        Box::new(gdb_process.stdout.unwrap()) as Box<dyn Read + Send>
+                    );
+                    let gdb_stdin = gdb_process.stdin.take().unwrap();
+                    let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
 
-                (reader, gdb_stdin)
-            }
-            (false, Some(remote)) => {
-                let tcp_stream = TcpStream::connect(remote).unwrap(); // Example address
-                let reader = BufReader::new(
-                    Box::new(tcp_stream.try_clone().unwrap()) as Box<dyn Read + Send>
-                );
-                let gdb_stdin = Arc::new(Mutex::new(tcp_stream.try_clone().unwrap()));
+                    (reader, gdb_stdin)
+                }
+                (false, Some(remote)) => {
+                    let tcp_stream = TcpStream::connect(remote).unwrap(); // Example address
+                    let reader = BufReader::new(
+                        Box::new(tcp_stream.try_clone().unwrap()) as Box<dyn Read + Send>
+                    );
+                    let gdb_stdin = Arc::new(Mutex::new(tcp_stream.try_clone().unwrap()));
 
-                (reader, gdb_stdin)
-            }
-            _ => panic!("Invalid configuration"),
-        };
+                    (reader, gdb_stdin)
+                }
+                _ => panic!("Invalid configuration"),
+            };
 
         let app = App {
             mode: Mode::All,
@@ -231,11 +226,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // restore terminal
     disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
     terminal.show_cursor()?;
 
     if let Err(err) = res {
@@ -474,10 +465,7 @@ fn key_enter(app: &mut App) -> Result<(), io::Error> {
 
 fn update_from_previous_input(app: &mut App) {
     if app.messages.buffer.len() >= app.messages.offset {
-        if let Some(msg) = app
-            .messages
-            .buffer
-            .get(app.messages.buffer.len() - app.messages.offset)
+        if let Some(msg) = app.messages.buffer.get(app.messages.buffer.len() - app.messages.offset)
         {
             app.input = Input::new(msg.clone())
         }
@@ -621,24 +609,16 @@ fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
     if let Some(pc_index) = pc_index {
         let widths = [Constraint::Length(16), Fill(1)];
         let table = Table::new(rows, widths)
-            .block(
-                Block::default()
-                    .borders(Borders::TOP)
-                    .title(tital)
-                    .add_modifier(Modifier::BOLD),
-            )
+            .block(Block::default().borders(Borders::TOP).title(tital).add_modifier(Modifier::BOLD))
             .row_highlight_style(Style::new().fg(GREEN))
             .highlight_symbol(">>");
         let start_offset = if pc_index < 5 { 0 } else { pc_index - 5 };
-        let mut table_state = TableState::default()
-            .with_offset(start_offset)
-            .with_selected(pc_index);
+        let mut table_state =
+            TableState::default().with_offset(start_offset).with_selected(pc_index);
         f.render_stateful_widget(table, asm, &mut table_state);
     } else {
-        let block = Block::default()
-            .borders(Borders::TOP)
-            .title(tital)
-            .add_modifier(Modifier::BOLD);
+        let block =
+            Block::default().borders(Borders::TOP).title(tital).add_modifier(Modifier::BOLD);
         f.render_widget(block, asm);
     }
 }

@@ -96,7 +96,15 @@ struct Args {
     remote: Option<SocketAddr>,
 }
 
+enum Mode {
+    All,
+    OnlyRegister,
+    OnlyStack,
+    OnlyInstructions,
+}
+
 struct App {
+    mode: Mode,
     input: Input,
     input_mode: InputMode,
     messages: LimitedBuffer<String>,
@@ -150,6 +158,7 @@ impl App {
         };
 
         let app = App {
+            mode: Mode::All,
             input: Input::default(),
             input_mode: InputMode::Normal,
             messages: LimitedBuffer::new(10),
@@ -372,42 +381,41 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
 
         if crossterm::event::poll(Duration::from_millis(10))? {
             if let Event::Key(key) = event::read()? {
-                match app.input_mode {
-                    InputMode::Normal => match key.code {
-                        KeyCode::Enter => {
-                            key_enter(app)?;
-                        }
-                        KeyCode::Char('i') => {
-                            app.input_mode = InputMode::Editing;
-                        }
-                        KeyCode::Char('q') => {
-                            return Ok(());
-                        }
-                        KeyCode::Down => {
-                            key_down(app);
-                        }
-                        KeyCode::Up => {
-                            key_up(app);
-                        }
-                        _ => {}
-                    },
-                    InputMode::Editing => match key.code {
-                        KeyCode::Enter => {
-                            key_enter(app)?;
-                        }
-                        KeyCode::Esc => {
-                            app.input_mode = InputMode::Normal;
-                        }
-                        KeyCode::Down => {
-                            key_down(app);
-                        }
-                        KeyCode::Up => {
-                            key_up(app);
-                        }
-                        _ => {
-                            app.input.handle_event(&Event::Key(key));
-                        }
-                    },
+                match (&app.input_mode, key.code) {
+                    (InputMode::Normal, KeyCode::Char('i')) => {
+                        app.input_mode = InputMode::Editing;
+                    }
+                    (InputMode::Normal, KeyCode::Char('q')) => {
+                        return Ok(());
+                    }
+                    (InputMode::Normal, KeyCode::Char('0')) => {
+                        app.mode = Mode::All;
+                    }
+                    (InputMode::Normal, KeyCode::Char('1')) => {
+                        app.mode = Mode::OnlyRegister;
+                    }
+                    (InputMode::Normal, KeyCode::Char('2')) => {
+                        app.mode = Mode::OnlyStack;
+                    }
+                    (InputMode::Normal, KeyCode::Char('3')) => {
+                        app.mode = Mode::OnlyInstructions;
+                    }
+                    (InputMode::Editing, KeyCode::Esc) => {
+                        app.input_mode = InputMode::Normal;
+                    }
+                    (_, KeyCode::Enter) => {
+                        key_enter(app)?;
+                    }
+                    (_, KeyCode::Down) => {
+                        key_down(app);
+                    }
+                    (_, KeyCode::Up) => {
+                        key_up(app);
+                    }
+                    (InputMode::Editing, _) => {
+                        app.input.handle_event(&Event::Key(key));
+                    }
+                    _ => (),
                 }
             }
         }
@@ -475,96 +483,100 @@ fn update_from_previous_input(app: &mut App) {
 
 fn ui(f: &mut Frame, app: &App) {
     // TODO: register size should depend on arch
-    let register_size = Min(30);
-    let stack_size = Min(10);
-    let asm_size = Length(10);
+    let top_size = Fill(1);
     let output_size = Length(10);
 
-    let vertical = Layout::vertical([
-        Length(1),
-        register_size,
-        stack_size,
-        asm_size,
-        output_size,
-        Length(3),
-    ]);
-    let [title_area, register, stack, asm, output, input] = vertical.areas(f.area());
+    let vertical = Layout::vertical([Length(1), top_size, output_size, Length(3)]);
+    let [title_area, top, output, input] = vertical.areas(f.area());
 
-    // Title Area
-    let (msg, style) = match app.input_mode {
-        InputMode::Normal => (
-            vec![
-                Span::raw("Press "),
-                Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to exit, "),
-                Span::styled("i", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to enter input"),
-            ],
-            Style::default().add_modifier(Modifier::RAPID_BLINK),
-        ),
-        InputMode::Editing => (
-            vec![
-                Span::raw("Press "),
-                Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to stop editing, "),
-                Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to send input"),
-            ],
-            Style::default(),
-        ),
-    };
-    let text = Text::from(Line::from(msg)).style(style);
-    let help_message = Paragraph::new(text);
-    f.render_widget(help_message, title_area);
+    draw_title_area(app, f, title_area);
+    draw_output(app, f, output);
+    draw_intput(title_area, app, f, input);
 
-    // Registers
-    let mut rows = vec![];
-    if let Ok(regs) = app.registers.lock() {
-        for (name, register) in regs.iter() {
-            if let Some(reg) = register {
-                if reg.value == Some("<unavailable>".to_string()) {
-                    continue;
-                }
-                rows.push(Row::new(vec![
-                    Cell::from(name.to_string()).style(Style::new().fg(PURPLE)),
-                    Cell::from(reg.value.clone().unwrap()),
-                ]));
-            }
+    match app.mode {
+        Mode::All => {
+            let register_size = Min(30);
+            let stack_size = Min(10);
+            let asm_size = Length(10);
+            let vertical = Layout::vertical([register_size, stack_size, asm_size]);
+            let [register, stack, asm] = vertical.areas(top);
+
+            draw_registers(app, f, register);
+            draw_stack(app, f, stack);
+            draw_asm(app, f, asm);
+        }
+        Mode::OnlyRegister => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            draw_registers(app, f, all);
+        }
+        Mode::OnlyStack => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            draw_stack(app, f, all);
+        }
+        Mode::OnlyInstructions => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            draw_asm(app, f, all);
         }
     }
+}
 
-    let widths = [Constraint::Length(5), Constraint::Length(20)];
-    let table = Table::new(rows, widths).block(
-        Block::default()
-            .borders(Borders::TOP)
-            .title("Registers".fg(PINK))
-            .add_modifier(Modifier::BOLD),
-    );
+fn draw_intput(title_area: Rect, app: &App, f: &mut Frame, input: Rect) {
+    // Input
+    let width = title_area.width.max(3) - 3;
+    // keep 2 for borders and 1 for cursor
 
-    f.render_widget(table, register);
+    let scroll = app.input.visual_scroll(width as usize);
+    let txt_input = Paragraph::new(app.input.value())
+        .style(match app.input_mode {
+            InputMode::Normal => Style::default(),
+            InputMode::Editing => Style::default().fg(Color::Green),
+        })
+        .scroll((0, scroll as u16))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Input".fg(YELLOW).add_modifier(Modifier::BOLD)),
+        );
+    f.render_widget(txt_input, input);
+    match app.input_mode {
+        InputMode::Normal =>
+            // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
+            {}
 
-    // Stack
-    let mut rows = vec![];
-    if let Ok(stack) = app.stack.lock() {
-        let mut entries: Vec<_> = stack.clone().into_iter().collect();
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
-        for (addr, value) in entries.iter() {
-            rows.push(Row::new(vec![
-                Cell::from(format!("0x{:02x}", addr)).style(Style::new().fg(PURPLE)),
-                Cell::from(format!("0x{:02x}", value)),
-            ]));
+        InputMode::Editing => {
+            // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
+            f.set_cursor_position((
+                // Put cursor past the end of the input text
+                input.x + ((app.input.visual_cursor()).max(scroll) - scroll) as u16 + 1,
+                // Move one line down, from the border to the input line
+                input.y + 1,
+            ))
         }
     }
+}
 
-    let widths = [Constraint::Length(16), Fill(1)];
-    let table = Table::new(rows, widths).block(
+fn draw_output(app: &App, f: &mut Frame, output: Rect) {
+    let output_lock = app.output.lock().unwrap();
+    let messages: Vec<ListItem> = output_lock
+        .buffer
+        .iter()
+        .map(|m| {
+            let content = vec![Line::from(Span::raw(format!("{}", m)))];
+            ListItem::new(content)
+        })
+        .collect();
+    let output_block = List::new(messages).block(
         Block::default()
-            .borders(Borders::TOP)
-            .title("Stack".fg(PINK).add_modifier(Modifier::BOLD)),
+            .borders(Borders::ALL)
+            .title("Output".fg(BLUE).add_modifier(Modifier::BOLD)),
     );
+    f.render_widget(output_block, output);
+}
 
-    f.render_widget(table, stack);
-
+fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
     // Asm
     // TODO: cache the pc_index if this doesn't change
     let mut rows = vec![];
@@ -626,52 +638,93 @@ fn ui(f: &mut Frame, app: &App) {
             .add_modifier(Modifier::BOLD);
         f.render_widget(block, asm);
     }
+}
 
-    let output_lock = app.output.lock().unwrap();
-    let messages: Vec<ListItem> = output_lock
-        .buffer
-        .iter()
-        .map(|m| {
-            let content = vec![Line::from(Span::raw(format!("{}", m)))];
-            ListItem::new(content)
-        })
-        .collect();
-    let output_block = List::new(messages).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Output".fg(BLUE).add_modifier(Modifier::BOLD)),
-    );
-    f.render_widget(output_block, output);
+fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
+    // Title Area
+    let (msg, style) = match app.input_mode {
+        InputMode::Normal => (
+            vec![
+                Span::raw("Press "),
+                Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" to exit, "),
+                Span::styled("i", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" to enter input | "),
+                Span::styled("0", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" to have all displays | "),
+                Span::styled("1", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" to have display registers | "),
+                Span::styled("2", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" to have display stacks | "),
+                Span::styled("3", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" to have display instructions"),
+            ],
+            Style::default().add_modifier(Modifier::RAPID_BLINK),
+        ),
+        InputMode::Editing => (
+            vec![
+                Span::raw("Press "),
+                Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" to stop editing, "),
+                Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" to send input, "),
+            ],
+            Style::default(),
+        ),
+    };
+    let text = Text::from(Line::from(msg)).style(style);
+    let help_message = Paragraph::new(text);
+    f.render_widget(help_message, title_area);
+}
 
-    // Input
-    let width = title_area.width.max(3) - 3; // keep 2 for borders and 1 for cursor
-
-    let scroll = app.input.visual_scroll(width as usize);
-    let txt_input = Paragraph::new(app.input.value())
-        .style(match app.input_mode {
-            InputMode::Normal => Style::default(),
-            InputMode::Editing => Style::default().fg(Color::Green),
-        })
-        .scroll((0, scroll as u16))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Input".fg(YELLOW).add_modifier(Modifier::BOLD)),
-        );
-    f.render_widget(txt_input, input);
-    match app.input_mode {
-        InputMode::Normal =>
-            // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
-            {}
-
-        InputMode::Editing => {
-            // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
-            f.set_cursor_position((
-                // Put cursor past the end of the input text
-                input.x + ((app.input.visual_cursor()).max(scroll) - scroll) as u16 + 1,
-                // Move one line down, from the border to the input line
-                input.y + 1,
-            ))
+fn draw_stack(app: &App, f: &mut Frame, stack: Rect) {
+    // Stack
+    let mut rows = vec![];
+    if let Ok(stack) = app.stack.lock() {
+        let mut entries: Vec<_> = stack.clone().into_iter().collect();
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        for (addr, value) in entries.iter() {
+            rows.push(Row::new(vec![
+                Cell::from(format!("0x{:02x}", addr)).style(Style::new().fg(PURPLE)),
+                Cell::from(format!("0x{:02x}", value)),
+            ]));
         }
     }
+
+    let widths = [Constraint::Length(16), Fill(1)];
+    let table = Table::new(rows, widths).block(
+        Block::default()
+            .borders(Borders::TOP)
+            .title("Stack".fg(PINK).add_modifier(Modifier::BOLD)),
+    );
+
+    f.render_widget(table, stack);
+}
+
+fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
+    // Registers
+    let mut rows = vec![];
+    if let Ok(regs) = app.registers.lock() {
+        for (name, register) in regs.iter() {
+            if let Some(reg) = register {
+                if reg.value == Some("<unavailable>".to_string()) {
+                    continue;
+                }
+                rows.push(Row::new(vec![
+                    Cell::from(name.to_string()).style(Style::new().fg(PURPLE)),
+                    Cell::from(reg.value.clone().unwrap()),
+                ]));
+            }
+        }
+    }
+
+    let widths = [Constraint::Length(5), Constraint::Length(20)];
+    let table = Table::new(rows, widths).block(
+        Block::default()
+            .borders(Borders::TOP)
+            .title("Registers".fg(PINK))
+            .add_modifier(Modifier::BOLD),
+    );
+
+    f.render_widget(table, register);
 }

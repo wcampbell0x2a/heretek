@@ -330,17 +330,16 @@ fn gdb_interact(
                         *asm = new_asms.clone();
                     }
                 }
-                MIResponse::Unknown(_) => {
-                    if !next_write.is_empty() {
-                        for w in &next_write {
-                            let mut stdin = gdb_stdin_arc.lock().unwrap();
-                            debug!("writing {}", w);
-                            writeln!(stdin, "{}", w).expect("Failed to send command");
-                        }
-                        next_write.clear();
-                    }
-                }
+                MIResponse::Unknown(_) => {}
                 _ => (),
+            }
+            if !next_write.is_empty() {
+                for w in &next_write {
+                    let mut stdin = gdb_stdin_arc.lock().unwrap();
+                    debug!("writing {}", w);
+                    writeln!(stdin, "{}", w).expect("Failed to send command");
+                }
+                next_write.clear();
             }
             debug!("response {:?}", response);
             parsed_reponses_arc.lock().unwrap().push(response);

@@ -166,7 +166,7 @@ impl App {
             input_mode: InputMode::Normal,
             messages: LimitedBuffer::new(10),
             current_pc: Arc::new(Mutex::new(0)),
-            output: Arc::new(Mutex::new(LimitedBuffer::new(7))),
+            output: Arc::new(Mutex::new(LimitedBuffer::new(SAVED_OUTPUT - 3))),
             register_names: Arc::new(Mutex::new(vec![])),
             gdb_stdin,
             registers: Arc::new(Mutex::new(vec![])),
@@ -487,20 +487,20 @@ fn update_from_previous_input(app: &mut App) {
 fn ui(f: &mut Frame, app: &App) {
     // TODO: register size should depend on arch
     let top_size = Fill(1);
-    let output_size = Length(10);
+    let output_size = Length(SAVED_OUTPUT as u16);
 
     let vertical = Layout::vertical([Length(1), top_size, output_size, Length(3)]);
     let [title_area, top, output, input] = vertical.areas(f.area());
 
     draw_title_area(app, f, title_area);
     draw_output(app, f, output);
-    draw_intput(title_area, app, f, input);
+    draw_input(title_area, app, f, input);
 
     match app.mode {
         Mode::All => {
             let register_size = Min(30);
             let stack_size = Min(10);
-            let asm_size = Length(10);
+            let asm_size = Min(15);
             let vertical = Layout::vertical([register_size, stack_size, asm_size]);
             let [register, stack, asm] = vertical.areas(top);
 
@@ -526,7 +526,7 @@ fn ui(f: &mut Frame, app: &App) {
     }
 }
 
-fn draw_intput(title_area: Rect, app: &App, f: &mut Frame, input: Rect) {
+fn draw_input(title_area: Rect, app: &App, f: &mut Frame, input: Rect) {
     // Input
     let width = title_area.width.max(3) - 3;
     // keep 2 for borders and 1 for cursor

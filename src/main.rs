@@ -249,6 +249,7 @@ fn gdb_interact(
             let response = mi::parse_mi_response(&line);
             // TODO: I really hate the flow of this function, the reading and writing should be split into some
             // sort of state machine instead of just writing stuff and hoping the next state makes us read the right thing...
+            debug!("response {:?}", response);
             match &response {
                 MIResponse::AsyncRecord(reason, v) => {
                     if reason == "stopped" {
@@ -349,7 +350,6 @@ fn gdb_interact(
                 }
                 next_write.clear();
             }
-            debug!("response {:?}", response);
         }
     }
 }

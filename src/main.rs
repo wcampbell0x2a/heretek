@@ -587,6 +587,16 @@ fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
             }
             let addr_cell =
                 Cell::from(format!("0x{:02x}", a.address)).style(Style::default().fg(PURPLE));
+            let mut row = vec![addr_cell];
+
+            if let Some(function_name) = &a.func_name {
+                let function_cell = Cell::from(format!("{}+{:02x}", function_name, a.offset))
+                    .style(Style::default().fg(PURPLE));
+                row.push(function_cell);
+            } else {
+                row.push(Cell::from(""));
+            }
+
             let inst_cell = if let Some(pc_index) = pc_index {
                 if pc_index == index {
                     Cell::from(a.inst.to_string()).fg(GREEN)
@@ -596,7 +606,9 @@ fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
             } else {
                 Cell::from(a.inst.to_string()).dark_gray()
             };
-            rows.push(Row::new(vec![addr_cell, inst_cell]));
+            row.push(inst_cell);
+
+            rows.push(Row::new(row));
             index += 1;
         }
     }
@@ -607,7 +619,7 @@ fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
         Title::from("Instructions".fg(ORANGE))
     };
     if let Some(pc_index) = pc_index {
-        let widths = [Constraint::Length(16), Fill(1)];
+        let widths = [Constraint::Length(16), Constraint::Percentage(10), Fill(1)];
         let table = Table::new(rows, widths)
             .block(Block::default().borders(Borders::TOP).title(tital).add_modifier(Modifier::BOLD))
             .row_highlight_style(Style::new().fg(GREEN))

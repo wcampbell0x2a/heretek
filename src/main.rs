@@ -39,11 +39,14 @@ enum InputMode {
     Editing,
 }
 
-// Taco bell colors
-const BLUE: Color = Color::Rgb(54, 57, 154);
-const PURPLE: Color = Color::Rgb(167, 123, 202);
-const PINK: Color = Color::Rgb(239, 24, 151);
-const YELLOW: Color = Color::Rgb(254, 224, 18);
+// Ayu bell colors
+const BLUE: Color = Color::Rgb(0x59, 0xc2, 0xff);
+const PURPLE: Color = Color::Rgb(0xd2, 0xa6, 0xff);
+const ORANGE: Color = Color::Rgb(0xff, 0x8f, 0x40);
+const YELLOW: Color = Color::Rgb(0xe6, 0xb4, 0x50);
+const GREEN: Color = Color::Rgb(0xaa, 0xd9, 0x4c);
+
+const SAVED_OUTPUT: usize = 10;
 
 use std::collections::{HashMap, VecDeque};
 
@@ -532,7 +535,7 @@ fn draw_intput(title_area: Rect, app: &App, f: &mut Frame, input: Rect) {
     let txt_input = Paragraph::new(app.input.value())
         .style(match app.input_mode {
             InputMode::Normal => Style::default(),
-            InputMode::Editing => Style::default().fg(Color::Green),
+            InputMode::Editing => Style::default().fg(GREEN),
         })
         .scroll((0, scroll as u16))
         .block(
@@ -598,7 +601,7 @@ fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
                 Cell::from(format!("0x{:02x}", a.address)).style(Style::default().fg(PURPLE));
             let inst_cell = if let Some(pc_index) = pc_index {
                 if pc_index == index {
-                    Cell::from(a.inst.to_string()).green()
+                    Cell::from(a.inst.to_string()).fg(GREEN)
                 } else {
                     Cell::from(a.inst.to_string()).white()
                 }
@@ -611,9 +614,9 @@ fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
     }
 
     let tital = if let Some(function_name) = function_name {
-        Title::from(format!("Instructions ({})", function_name).fg(PINK))
+        Title::from(format!("Instructions ({})", function_name).fg(ORANGE))
     } else {
-        Title::from("Instructions".fg(PINK))
+        Title::from("Instructions".fg(ORANGE))
     };
     if let Some(pc_index) = pc_index {
         let widths = [Constraint::Length(16), Fill(1)];
@@ -624,7 +627,7 @@ fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
                     .title(tital)
                     .add_modifier(Modifier::BOLD),
             )
-            .row_highlight_style(Style::new().green())
+            .row_highlight_style(Style::new().fg(GREEN))
             .highlight_symbol(">>");
         let start_offset = if pc_index < 5 { 0 } else { pc_index - 5 };
         let mut table_state = TableState::default()
@@ -695,7 +698,7 @@ fn draw_stack(app: &App, f: &mut Frame, stack: Rect) {
     let table = Table::new(rows, widths).block(
         Block::default()
             .borders(Borders::TOP)
-            .title("Stack".fg(PINK).add_modifier(Modifier::BOLD)),
+            .title("Stack".fg(ORANGE).add_modifier(Modifier::BOLD)),
     );
 
     f.render_widget(table, stack);
@@ -722,7 +725,7 @@ fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
     let table = Table::new(rows, widths).block(
         Block::default()
             .borders(Borders::TOP)
-            .title("Registers".fg(PINK))
+            .title("Registers".fg(ORANGE))
             .add_modifier(Modifier::BOLD),
     );
 

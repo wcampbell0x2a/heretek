@@ -101,7 +101,7 @@ struct App {
     input_mode: InputMode,
     messages: LimitedBuffer<String>,
     current_pc: Arc<Mutex<u64>>, // TODO: replace with AtomicU64?
-    parsed_responses: Arc<Mutex<LimitedBuffer<MIResponse>>>,
+    output: Arc<Mutex<LimitedBuffer<String>>>,
     gdb_stdin: Arc<Mutex<dyn Write + Send>>,
     register_names: Arc<Mutex<Vec<String>>>,
     registers: Arc<Mutex<Vec<(String, Option<Register>)>>>,
@@ -154,7 +154,7 @@ impl App {
             input_mode: InputMode::Normal,
             messages: LimitedBuffer::new(10),
             current_pc: Arc::new(Mutex::new(0)),
-            parsed_responses: Arc::new(Mutex::new(LimitedBuffer::new(30))),
+            output: Arc::new(Mutex::new(LimitedBuffer::new(10))),
             register_names: Arc::new(Mutex::new(vec![])),
             gdb_stdin,
             registers: Arc::new(Mutex::new(vec![])),
@@ -194,7 +194,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let gdb_stdin_arc = Arc::clone(&app.gdb_stdin);
     let current_pc_arc = Arc::clone(&app.current_pc);
-    let parsed_reponses_arc = Arc::clone(&app.parsed_responses);
+    let output_arc = Arc::clone(&app.output);
     let register_names_arc = Arc::clone(&app.register_names);
     let registers_arc = Arc::clone(&app.registers);
     let stack_arc = Arc::clone(&app.stack);
@@ -210,7 +210,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             stack_arc,
             asm_arc,
             gdb_stdin_arc,
-            parsed_reponses_arc,
+            output_arc,
         )
     });
 
@@ -241,7 +241,7 @@ fn gdb_interact(
     stack_arc: Arc<Mutex<HashMap<u64, u64>>>,
     asm_arc: Arc<Mutex<Vec<Asm>>>,
     gdb_stdin_arc: Arc<Mutex<dyn Write + Send>>,
-    parsed_reponses_arc: Arc<Mutex<LimitedBuffer<MIResponse>>>,
+    output_arc: Arc<Mutex<LimitedBuffer<String>>>,
 ) {
     let mut next_write = vec![String::new()];
     for line in gdb_stdout.lines() {
@@ -333,6 +333,9 @@ fn gdb_interact(
                         *asm = new_asms.clone();
                     }
                 }
+                MIResponse::StreamOutput(_, s) => {
+                    output_arc.lock().unwrap().push(s.to_string());
+                }
                 MIResponse::Unknown(_) => {}
                 _ => (),
             }
@@ -345,7 +348,6 @@ fn gdb_interact(
                 next_write.clear();
             }
             debug!("response {:?}", response);
-            parsed_reponses_arc.lock().unwrap().push(response);
         }
     }
 }
@@ -472,9 +474,7 @@ fn ui(f: &mut Frame, app: &App) {
         info_size,
         Max(3),
     ]);
-    let [title_area, register, stack, asm, info, input] = vertical.areas(f.area());
-    let horizontal = Layout::horizontal([Fill(1), Fill(1)]);
-    let [parsed, other] = horizontal.areas(info);
+    let [title_area, register, stack, asm, output, input] = vertical.areas(f.area());
 
     // Title Area
     let (msg, style) = match app.input_mode {
@@ -551,17 +551,6 @@ fn ui(f: &mut Frame, app: &App) {
 
     f.render_widget(table, stack);
 
-    // Display parsed responses
-    let response_text = {
-        let responses = app.parsed_responses.lock().unwrap();
-        Text::from(
-            responses
-                .buffer
-                .iter()
-                .map(|response| Line::from(Span::raw(format!("{:?}", response))))
-                .collect::<Vec<_>>(),
-        )
-    };
     // Asm
     // TODO: cache the pc_index if this doesn't change
     let mut rows = vec![];
@@ -624,13 +613,12 @@ fn ui(f: &mut Frame, app: &App) {
         f.render_widget(block, asm);
     }
 
-    let messages: Vec<ListItem> = app
-        .messages
+    let output_lock = app.output.lock().unwrap();
+    let messages: Vec<ListItem> = output_lock
         .buffer
         .iter()
-        .enumerate()
-        .map(|(i, m)| {
-            let content = vec![Line::from(Span::raw(format!("{}: {}", i, m)))];
+        .map(|m| {
+            let content = vec![Line::from(Span::raw(format!("{}", m)))];
             ListItem::new(content)
         })
         .collect();
@@ -639,14 +627,7 @@ fn ui(f: &mut Frame, app: &App) {
             .borders(Borders::ALL)
             .title("Messages".fg(BLUE).add_modifier(Modifier::BOLD)),
     );
-    f.render_widget(messages, other);
-
-    let response_widget = Paragraph::new(response_text).block(
-        Block::default()
-            .title("Parsed Responses".fg(BLUE).add_modifier(Modifier::BOLD))
-            .borders(Borders::ALL),
-    );
-    f.render_widget(response_widget, parsed);
+    f.render_widget(messages, output);
 
     // Input
     let width = title_area.width.max(3) - 3; // keep 2 for borders and 1 for cursor

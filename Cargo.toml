@@ -1,6 +1,6 @@
 [package]
 name = "heretek"
-version = "0.1.0-rc0"
+version = "0.1.0-rc1"
 edition = "2021"
 
 [dependencies]

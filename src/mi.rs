@@ -4,8 +4,6 @@ use std::collections::HashMap;
 use log::debug;
 use regex::Regex;
 
-pub const REGISTER_COUNT_MAX: usize = 25;
-
 // Define Register struct to hold register data
 #[derive(Debug, Clone)]
 pub struct Register {
@@ -108,18 +106,15 @@ pub fn parse_key_value_pairs(input: &str) -> HashMap<String, String> {
 
 pub fn join_registers(
     register_names: &Vec<String>,
-    registers: &[Register],
-) -> Vec<(String, Register)> {
+    registers: &[Option<Register>],
+) -> Vec<(String, Option<Register>)> {
     let mut registers_arch = vec![];
-    for (i, (register, name)) in registers
-        .iter()
-        .take(REGISTER_COUNT_MAX)
-        .zip(register_names.iter().take(REGISTER_COUNT_MAX))
-        .enumerate()
-    {
-        if !register.number.is_empty() {
-            registers_arch.push((name.to_string(), register.clone()));
-            debug!("[{i}] register({name}): {:?}", register);
+    for (i, (register, name)) in registers.iter().zip(register_names.iter()).enumerate() {
+        if let Some(register) = register {
+            if !register.number.is_empty() {
+                registers_arch.push((name.to_string(), Some(register.clone())));
+                debug!("[{i}] register({name}): {:?}", register);
+            }
         }
     }
     registers_arch
@@ -191,11 +186,13 @@ pub fn parse_register_names_values(input: &str) -> Vec<String> {
 // Function to parse register-values as an array of Registers
 pub fn parse_asm_insns_values(input: &str) -> Vec<Asm> {
     let mut asms = Vec::new();
-    let re = Regex::new(r#"\{(.*?)\}"#).unwrap(); // Match entire register block
+    debug!("asm: {:?}", input);
+    let re = Regex::new(r#"\{(?:[^}{]|\{(?:[^}{]|\{(?:[^}{]|\{[^}{]*\})*\})*\})*\}"#).unwrap();
 
     // Capture each register block and parse it
     for capture in re.captures_iter(input) {
-        let cap_str = &capture[1];
+        let cap_str = &capture[0];
+        let cap_str = &cap_str[1..cap_str.len() - 1].to_string();
         let mut asm = Asm {
             address: 0,
             inst: String::new(),

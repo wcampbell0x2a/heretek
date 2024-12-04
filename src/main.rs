@@ -31,7 +31,7 @@ mod mi;
 use mi::{
     data_disassemble, data_read_memory_bytes, join_registers, parse_asm_insns_values,
     parse_key_value_pairs, parse_register_names_values, parse_register_values, Asm, MIResponse,
-    Register, REGISTER_COUNT_MAX,
+    Register,
 };
 
 enum InputMode {
@@ -104,7 +104,7 @@ struct App {
     parsed_responses: Arc<Mutex<LimitedBuffer<MIResponse>>>,
     gdb_stdin: Arc<Mutex<dyn Write + Send>>,
     register_names: Arc<Mutex<Vec<String>>>,
-    registers: Arc<Mutex<Vec<(String, Register)>>>,
+    registers: Arc<Mutex<Vec<(String, Option<Register>)>>>,
     stack: Arc<Mutex<HashMap<u64, u64>>>,
     asm: Arc<Mutex<Vec<Asm>>>,
 }
@@ -236,7 +236,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn gdb_interact(
     gdb_stdout: BufReader<Box<dyn Read + Send>>,
     register_names_arc: Arc<Mutex<Vec<String>>>,
-    registers_arc: Arc<Mutex<Vec<(String, Register)>>>,
+    registers_arc: Arc<Mutex<Vec<(String, Option<Register>)>>>,
     current_pc_arc: Arc<Mutex<u64>>,
     stack_arc: Arc<Mutex<HashMap<u64, u64>>>,
     asm_arc: Arc<Mutex<Vec<Asm>>>,
@@ -275,26 +275,29 @@ fn gdb_interact(
                         let mut regs_names = register_names_arc.lock().unwrap();
                         let registers = join_registers(&regs_names, &registers);
                         for s in registers.iter() {
-                            if s.0 == "rsp" {
-                                let start_addr = s.1.value.as_ref().unwrap();
-                                next_write.push(data_read_memory_bytes(start_addr, 0, 8));
-                                next_write.push(data_read_memory_bytes(start_addr, 8, 8));
-                                next_write.push(data_read_memory_bytes(start_addr, 16, 8));
-                                next_write.push(data_read_memory_bytes(start_addr, 24, 8));
-                                next_write.push(data_read_memory_bytes(start_addr, 32, 8));
-                                next_write.push(data_read_memory_bytes(start_addr, 40, 8));
-                                next_write.push(data_read_memory_bytes(start_addr, 48, 8));
-                                next_write.push(data_read_memory_bytes(start_addr, 56, 8));
-                                next_write.push(data_read_memory_bytes(start_addr, 62, 8));
-                                next_write.push(data_read_memory_bytes(start_addr, 70, 8));
-                                next_write.push(data_read_memory_bytes(start_addr, 78, 8));
-                                next_write.push(data_read_memory_bytes(start_addr, 86, 8));
-                                next_write.push(data_read_memory_bytes(start_addr, 94, 8));
-                            }
-                            if s.0 == "rip" {
-                                let val = s.1.value.as_ref().unwrap().strip_prefix("0x").unwrap();
-                                let mut cur_pc_lock = current_pc_arc.lock().unwrap();
-                                *cur_pc_lock = u64::from_str_radix(val, 16).unwrap();
+                            if let Some(reg) = &s.1 {
+                                if s.0 == "rsp" {
+                                    let start_addr = reg.value.as_ref().unwrap();
+                                    next_write.push(data_read_memory_bytes(start_addr, 0, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 8, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 16, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 24, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 32, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 40, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 48, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 56, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 62, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 70, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 78, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 86, 8));
+                                    next_write.push(data_read_memory_bytes(start_addr, 94, 8));
+                                }
+                                if s.0 == "rip" {
+                                    let val =
+                                        reg.value.as_ref().unwrap().strip_prefix("0x").unwrap();
+                                    let mut cur_pc_lock = current_pc_arc.lock().unwrap();
+                                    *cur_pc_lock = u64::from_str_radix(val, 16).unwrap();
+                                }
                             }
                         }
                         *regs = registers.clone();
@@ -456,10 +459,10 @@ fn update_from_previous_input(app: &mut App) {
 
 fn ui(f: &mut Frame, app: &App) {
     // TODO: register size should depend on arch
-    let register_size = Length(REGISTER_COUNT_MAX as u16 + 1);
+    let register_size = Min(30);
     let stack_size = Min(10);
     let asm_size = Min(10);
-    let info_size = Length(5);
+    let info_size = Min(3);
 
     let vertical = Layout::vertical([
         Length(1),
@@ -504,10 +507,15 @@ fn ui(f: &mut Frame, app: &App) {
     let mut rows = vec![];
     if let Ok(regs) = app.registers.lock() {
         for (name, register) in regs.iter() {
-            rows.push(Row::new(vec![
-                Cell::from(name.to_string()).style(Style::new().fg(PURPLE)),
-                Cell::from(register.value.clone().unwrap()),
-            ]));
+            if let Some(reg) = register {
+                if reg.value == Some("<unavailable>".to_string()) {
+                    continue;
+                }
+                rows.push(Row::new(vec![
+                    Cell::from(name.to_string()).style(Style::new().fg(PURPLE)),
+                    Cell::from(reg.value.clone().unwrap()),
+                ]));
+            }
         }
     }
 

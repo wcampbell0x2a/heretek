@@ -29,9 +29,9 @@ use Constraint::{Fill, Length, Max, Min};
 
 mod mi;
 use mi::{
-    data_disassemble, data_read_memory_bytes, join_registers, parse_asm_insns_values,
-    parse_key_value_pairs, parse_register_names_values, parse_register_values, Asm, MIResponse,
-    Register,
+    data_disassemble, data_read_memory_bytes, data_read_sp_bytes, join_registers,
+    parse_asm_insns_values, parse_key_value_pairs, parse_register_names_values,
+    parse_register_values, read_pc_value, Asm, MIResponse, Register,
 };
 
 enum InputMode {
@@ -264,45 +264,47 @@ fn gdb_interact(
                     }
                 }
                 MIResponse::ExecResult(_, kv) => {
-                    if let Some(register_names) = kv.get("register-names") {
+                    if let Some(value) = kv.get("value") {
+                        // This works b/c we only use this for PC, but will most likely
+                        // be wrong sometime
+                        let mut cur_pc_lock = current_pc_arc.lock().unwrap();
+                        let pc: Vec<&str> = value.split_whitespace().collect();
+                        let pc = pc[0].strip_prefix("0x").unwrap();
+                        *cur_pc_lock = u64::from_str_radix(pc, 16).unwrap();
+                    } else if let Some(register_names) = kv.get("register-names") {
                         let register_names = parse_register_names_values(register_names);
                         let mut regs_names = register_names_arc.lock().unwrap();
                         *regs_names = register_names;
                     } else if let Some(register_values) = kv.get("register-values") {
+                        // parse the response and save it
                         let registers = parse_register_values(register_values);
-                        // Check if response is register data
                         let mut regs = registers_arc.lock().unwrap();
-                        let mut regs_names = register_names_arc.lock().unwrap();
+                        let regs_names = register_names_arc.lock().unwrap();
                         let registers = join_registers(&regs_names, &registers);
-                        for s in registers.iter() {
-                            if let Some(reg) = &s.1 {
-                                if s.0 == "rsp" {
-                                    let start_addr = reg.value.as_ref().unwrap();
-                                    next_write.push(data_read_memory_bytes(start_addr, 0, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 8, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 16, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 24, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 32, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 40, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 48, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 56, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 62, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 70, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 78, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 86, 8));
-                                    next_write.push(data_read_memory_bytes(start_addr, 94, 8));
-                                }
-                                if s.0 == "rip" {
-                                    let val =
-                                        reg.value.as_ref().unwrap().strip_prefix("0x").unwrap();
-                                    let mut cur_pc_lock = current_pc_arc.lock().unwrap();
-                                    *cur_pc_lock = u64::from_str_radix(val, 16).unwrap();
-                                }
-                            }
-                        }
                         *regs = registers.clone();
+
+                        // reset the stack
                         let mut stack = stack_arc.lock().unwrap();
                         stack.clear();
+
+                        // assuming we have a valid $pc, get the bytes
+                        let val = read_pc_value();
+                        next_write.push(val);
+
+                        // assuming we have a valid $sp, get the bytes
+                        next_write.push(data_read_sp_bytes(0, 8));
+                        next_write.push(data_read_sp_bytes(8, 8));
+                        next_write.push(data_read_sp_bytes(16, 8));
+                        next_write.push(data_read_sp_bytes(24, 8));
+                        next_write.push(data_read_sp_bytes(32, 8));
+                        next_write.push(data_read_sp_bytes(40, 8));
+                        next_write.push(data_read_sp_bytes(48, 8));
+                        next_write.push(data_read_sp_bytes(56, 8));
+                        next_write.push(data_read_sp_bytes(62, 8));
+                        next_write.push(data_read_sp_bytes(70, 8));
+                        next_write.push(data_read_sp_bytes(78, 8));
+                        next_write.push(data_read_sp_bytes(86, 8));
+                        next_write.push(data_read_sp_bytes(94, 8));
 
                         // update current asm at pc
                         let instruction_length = 8;

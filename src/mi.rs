@@ -282,6 +282,18 @@ fn unescape_gdb_output(input: &str) -> Cow<str> {
     input.replace("\\n", "\n").replace("\\t", "\t").into()
 }
 
+pub fn read_pc_value() -> String {
+    format!("-data-evaluate-expression $pc")
+}
+
+pub fn data_read_pc_bytes(hex_offset: u64, len: u64) -> String {
+    format!("-data-read-memory-bytes $pc+0x{hex_offset:02x} {len}")
+}
+
+pub fn data_read_sp_bytes(hex_offset: u64, len: u64) -> String {
+    format!("-data-read-memory-bytes $sp+0x{hex_offset:02x} {len}")
+}
+
 pub fn data_read_memory_bytes(addr: &str, hex_offset: u64, len: u64) -> String {
     format!("-data-read-memory-bytes {addr}+0x{hex_offset:02x} {len}")
 }

@@ -264,7 +264,25 @@ fn gdb_interact(
                         next_write.push("-data-list-register-values x".to_string());
                     }
                 }
-                MIResponse::ExecResult(_, kv) => {
+                MIResponse::ExecResult(status, kv) => {
+                    if status == "running" {
+                        // TODO: this causes a bunch of re-drawing, but
+                        // I'm sure in the future we could make sure we are leaving our own
+                        // state or something?
+
+                        // reset the stack
+                        let mut stack = stack_arc.lock().unwrap();
+                        stack.clear();
+
+                        // reset the asm
+                        let mut asm = asm_arc.lock().unwrap();
+                        asm.clear();
+
+                        // reset the regs
+                        let mut regs = registers_arc.lock().unwrap();
+                        regs.clear();
+                    }
+
                     if let Some(value) = kv.get("value") {
                         // This works b/c we only use this for PC, but will most likely
                         // be wrong sometime
@@ -283,10 +301,6 @@ fn gdb_interact(
                         let regs_names = register_names_arc.lock().unwrap();
                         let registers = join_registers(&regs_names, &registers);
                         *regs = registers.clone();
-
-                        // reset the stack
-                        let mut stack = stack_arc.lock().unwrap();
-                        stack.clear();
 
                         // assuming we have a valid $pc, get the bytes
                         let val = read_pc_value();
@@ -313,8 +327,6 @@ fn gdb_interact(
                             instruction_length * 5,
                             instruction_length * 15,
                         ));
-                        let mut asm = asm_arc.lock().unwrap();
-                        asm.clear();
                     } else if let Some(memory) = kv.get("memory") {
                         let mut stack = stack_arc.lock().unwrap();
                         let mem_str = memory.strip_prefix(r#"[{"#).unwrap();

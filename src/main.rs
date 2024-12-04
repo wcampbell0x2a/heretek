@@ -154,7 +154,7 @@ impl App {
             input_mode: InputMode::Normal,
             messages: LimitedBuffer::new(10),
             current_pc: Arc::new(Mutex::new(0)),
-            output: Arc::new(Mutex::new(LimitedBuffer::new(10))),
+            output: Arc::new(Mutex::new(LimitedBuffer::new(7))),
             register_names: Arc::new(Mutex::new(vec![])),
             gdb_stdin,
             registers: Arc::new(Mutex::new(vec![])),
@@ -465,16 +465,16 @@ fn ui(f: &mut Frame, app: &App) {
     // TODO: register size should depend on arch
     let register_size = Min(30);
     let stack_size = Min(10);
-    let asm_size = Min(10);
-    let info_size = Min(3);
+    let asm_size = Length(10);
+    let output_size = Length(10);
 
     let vertical = Layout::vertical([
         Length(1),
         register_size,
         stack_size,
         asm_size,
-        info_size,
-        Max(3),
+        output_size,
+        Length(3),
     ]);
     let [title_area, register, stack, asm, output, input] = vertical.areas(f.area());
 
@@ -624,12 +624,12 @@ fn ui(f: &mut Frame, app: &App) {
             ListItem::new(content)
         })
         .collect();
-    let messages = List::new(messages).block(
+    let output_block = List::new(messages).block(
         Block::default()
             .borders(Borders::ALL)
-            .title("Messages".fg(BLUE).add_modifier(Modifier::BOLD)),
+            .title("Output".fg(BLUE).add_modifier(Modifier::BOLD)),
     );
-    f.render_widget(messages, output);
+    f.render_widget(output_block, output);
 
     // Input
     let width = title_area.width.max(3) - 3; // keep 2 for borders and 1 for cursor

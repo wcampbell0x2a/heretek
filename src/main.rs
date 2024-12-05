@@ -482,7 +482,7 @@ fn ui(f: &mut Frame, app: &App) {
     // If only output, then no top and fill all with output
     if let Mode::OnlyOutput = app.mode {
         let output_size = Fill(1);
-        let vertical = Layout::vertical([Length(1), output_size, Length(3)]);
+        let vertical = Layout::vertical([Length(2), output_size, Length(3)]);
         let [title_area, output, input] = vertical.areas(f.area());
 
         draw_title_area(app, f, title_area);
@@ -494,7 +494,7 @@ fn ui(f: &mut Frame, app: &App) {
     // the rest will include the top
     let output_size = Length(SAVED_OUTPUT as u16);
 
-    let vertical = Layout::vertical([Length(1), top_size, output_size, Length(3)]);
+    let vertical = Layout::vertical([Length(2), top_size, output_size, Length(3)]);
     let [title_area, top, output, input] = vertical.areas(f.area());
 
     draw_title_area(app, f, title_area);
@@ -659,6 +659,22 @@ fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
 }
 
 fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
+    let vertical_title = Layout::vertical([Length(1), Length(1)]);
+    let [first, second] = vertical_title.areas(title_area);
+    f.render_widget(
+        Block::new()
+            .borders(Borders::TOP)
+            .title(vec![
+                "|".fg(Color::Rgb(100, 100, 100)),
+                env!("CARGO_PKG_NAME").bold(),
+                "-".fg(Color::Rgb(100, 100, 100)),
+                "v".into(),
+                env!("CARGO_PKG_VERSION").into(),
+                "|".fg(Color::Rgb(100, 100, 100)),
+            ])
+            .title_alignment(Alignment::Center),
+        first,
+    );
     // Title Area
     let (msg, style) = match app.input_mode {
         InputMode::Normal => (
@@ -694,7 +710,7 @@ fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
     };
     let text = Text::from(Line::from(msg)).style(style);
     let help_message = Paragraph::new(text);
-    f.render_widget(help_message, title_area);
+    f.render_widget(help_message, second);
 }
 
 fn draw_stack(app: &App, f: &mut Frame, stack: Rect) {

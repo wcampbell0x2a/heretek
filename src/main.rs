@@ -12,7 +12,6 @@ use env_logger::{Builder, Env};
 use log::debug;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::prelude::*;
-use ratatui::style::Styled;
 use ratatui::widgets::block::Title;
 use ratatui::widgets::{Cell, Row, Table, TableState};
 use ratatui::{
@@ -25,13 +24,13 @@ use ratatui::{
 };
 use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
-use Constraint::{Fill, Length, Max, Min};
+use Constraint::{Fill, Length, Min};
 
 mod mi;
 use mi::{
-    data_disassemble, data_read_memory_bytes, data_read_sp_bytes, join_registers,
-    parse_asm_insns_values, parse_key_value_pairs, parse_register_names_values,
-    parse_register_values, read_pc_value, Asm, MIResponse, Register,
+    data_disassemble, data_read_sp_bytes, join_registers, parse_asm_insns_values,
+    parse_key_value_pairs, parse_register_names_values, parse_register_values, read_pc_value, Asm,
+    MIResponse, Register,
 };
 
 enum InputMode {
@@ -100,6 +99,7 @@ enum Mode {
     OnlyRegister,
     OnlyStack,
     OnlyInstructions,
+    OnlyOutput,
 }
 
 struct App {
@@ -108,7 +108,7 @@ struct App {
     input_mode: InputMode,
     messages: LimitedBuffer<String>,
     current_pc: Arc<Mutex<u64>>, // TODO: replace with AtomicU64?
-    output: Arc<Mutex<LimitedBuffer<String>>>,
+    output: Arc<Mutex<Vec<String>>>,
     gdb_stdin: Arc<Mutex<dyn Write + Send>>,
     register_names: Arc<Mutex<Vec<String>>>,
     registers: Arc<Mutex<Vec<(String, Option<Register>)>>>,
@@ -161,7 +161,7 @@ impl App {
             input_mode: InputMode::Normal,
             messages: LimitedBuffer::new(10),
             current_pc: Arc::new(Mutex::new(0)),
-            output: Arc::new(Mutex::new(LimitedBuffer::new(SAVED_OUTPUT - 3))),
+            output: Arc::new(Mutex::new(Vec::new())),
             register_names: Arc::new(Mutex::new(vec![])),
             gdb_stdin,
             registers: Arc::new(Mutex::new(vec![])),
@@ -244,7 +244,7 @@ fn gdb_interact(
     stack_arc: Arc<Mutex<HashMap<u64, u64>>>,
     asm_arc: Arc<Mutex<Vec<Asm>>>,
     gdb_stdin_arc: Arc<Mutex<dyn Write + Send>>,
-    output_arc: Arc<Mutex<LimitedBuffer<String>>>,
+    output_arc: Arc<Mutex<Vec<String>>>,
 ) {
     let mut next_write = vec![String::new()];
     for line in gdb_stdout.lines() {
@@ -382,17 +382,20 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     (InputMode::Normal, KeyCode::Char('q')) => {
                         return Ok(());
                     }
-                    (InputMode::Normal, KeyCode::Char('0')) => {
+                    (InputMode::Normal, KeyCode::F(1)) => {
                         app.mode = Mode::All;
                     }
-                    (InputMode::Normal, KeyCode::Char('1')) => {
+                    (InputMode::Normal, KeyCode::F(2)) => {
                         app.mode = Mode::OnlyRegister;
                     }
-                    (InputMode::Normal, KeyCode::Char('2')) => {
+                    (InputMode::Normal, KeyCode::F(3)) => {
                         app.mode = Mode::OnlyStack;
                     }
-                    (InputMode::Normal, KeyCode::Char('3')) => {
+                    (InputMode::Normal, KeyCode::F(4)) => {
                         app.mode = Mode::OnlyInstructions;
+                    }
+                    (InputMode::Normal, KeyCode::F(5)) => {
+                        app.mode = Mode::OnlyOutput;
                     }
                     (InputMode::Editing, KeyCode::Esc) => {
                         app.input_mode = InputMode::Normal;
@@ -475,6 +478,20 @@ fn update_from_previous_input(app: &mut App) {
 fn ui(f: &mut Frame, app: &App) {
     // TODO: register size should depend on arch
     let top_size = Fill(1);
+
+    // If only output, then no top and fill all with output
+    if let Mode::OnlyOutput = app.mode {
+        let output_size = Fill(1);
+        let vertical = Layout::vertical([Length(1), output_size, Length(3)]);
+        let [title_area, output, input] = vertical.areas(f.area());
+
+        draw_title_area(app, f, title_area);
+        draw_output(app, f, output);
+        draw_input(title_area, app, f, input);
+        return;
+    }
+
+    // the rest will include the top
     let output_size = Length(SAVED_OUTPUT as u16);
 
     let vertical = Layout::vertical([Length(1), top_size, output_size, Length(3)]);
@@ -511,6 +528,7 @@ fn ui(f: &mut Frame, app: &App) {
             let [all] = vertical.areas(top);
             draw_asm(app, f, all);
         }
+        _ => (),
     }
 }
 
@@ -551,15 +569,20 @@ fn draw_input(title_area: Rect, app: &App, f: &mut Frame, input: Rect) {
 
 fn draw_output(app: &App, f: &mut Frame, output: Rect) {
     let output_lock = app.output.lock().unwrap();
-    let messages: Vec<ListItem> = output_lock
-        .buffer
+
+    let len = output_lock.len();
+    let max = output.height;
+    let output_buf =
+        if len <= max as usize { &output_lock[..] } else { &output_lock[len - max as usize..] };
+
+    let outputs: Vec<ListItem> = output_buf
         .iter()
         .map(|m| {
             let content = vec![Line::from(Span::raw(format!("{}", m)))];
             ListItem::new(content)
         })
         .collect();
-    let output_block = List::new(messages).block(
+    let output_block = List::new(outputs).block(
         Block::default()
             .borders(Borders::ALL)
             .title("Output".fg(BLUE).add_modifier(Modifier::BOLD)),
@@ -645,14 +668,16 @@ fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
                 Span::raw(" to exit, "),
                 Span::styled("i", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(" to enter input | "),
-                Span::styled("0", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to have all displays | "),
-                Span::styled("1", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to have display registers | "),
-                Span::styled("2", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to have display stacks | "),
-                Span::styled("3", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to have display instructions"),
+                Span::styled("F1", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" displays | "),
+                Span::styled("F2", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" registers | "),
+                Span::styled("F3", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" stacks | "),
+                Span::styled("F4", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" instructions | "),
+                Span::styled("F5", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" output"),
             ],
             Style::default().add_modifier(Modifier::RAPID_BLINK),
         ),

@@ -108,6 +108,7 @@ struct App {
     input_mode: InputMode,
     messages: LimitedBuffer<String>,
     current_pc: Arc<Mutex<u64>>, // TODO: replace with AtomicU64?
+    output_scroll: usize,
     output: Arc<Mutex<Vec<String>>>,
     gdb_stdin: Arc<Mutex<dyn Write + Send>>,
     register_names: Arc<Mutex<Vec<String>>>,
@@ -161,6 +162,7 @@ impl App {
             input_mode: InputMode::Normal,
             messages: LimitedBuffer::new(10),
             current_pc: Arc::new(Mutex::new(0)),
+            output_scroll: 0,
             output: Arc::new(Mutex::new(Vec::new())),
             register_names: Arc::new(Mutex::new(vec![])),
             gdb_stdin,
@@ -375,41 +377,65 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
 
         if crossterm::event::poll(Duration::from_millis(10))? {
             if let Event::Key(key) = event::read()? {
-                match (&app.input_mode, key.code) {
-                    (InputMode::Normal, KeyCode::Char('i')) => {
+                match (&app.input_mode, key.code, &app.mode) {
+                    (InputMode::Normal, KeyCode::Char('i'), _) => {
                         app.input_mode = InputMode::Editing;
                     }
-                    (InputMode::Normal, KeyCode::Char('q')) => {
+                    (InputMode::Normal, KeyCode::Char('q'), _) => {
                         return Ok(());
                     }
-                    (InputMode::Normal, KeyCode::F(1)) => {
+                    (InputMode::Normal, KeyCode::F(1), _) => {
                         app.mode = Mode::All;
                     }
-                    (InputMode::Normal, KeyCode::F(2)) => {
+                    (InputMode::Normal, KeyCode::F(2), _) => {
                         app.mode = Mode::OnlyRegister;
                     }
-                    (InputMode::Normal, KeyCode::F(3)) => {
+                    (InputMode::Normal, KeyCode::F(3), _) => {
                         app.mode = Mode::OnlyStack;
                     }
-                    (InputMode::Normal, KeyCode::F(4)) => {
+                    (InputMode::Normal, KeyCode::F(4), _) => {
                         app.mode = Mode::OnlyInstructions;
                     }
-                    (InputMode::Normal, KeyCode::F(5)) => {
+                    (InputMode::Normal, KeyCode::F(5), _) => {
                         app.mode = Mode::OnlyOutput;
                     }
-                    (InputMode::Editing, KeyCode::Esc) => {
+                    (InputMode::Editing, KeyCode::Esc, _) => {
                         app.input_mode = InputMode::Normal;
                     }
-                    (_, KeyCode::Enter) => {
+                    (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyOutput) => {
+                        let output_lock = app.output.lock().unwrap();
+                        if app.output_scroll < output_lock.len().saturating_sub(1) {
+                            app.output_scroll += 1;
+                        }
+                    }
+                    (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyOutput) => {
+                        if app.output_scroll > 0 {
+                            app.output_scroll -= 1;
+                        }
+                    }
+                    (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyOutput) => {
+                        let output_lock = app.output.lock().unwrap();
+                        if app.output_scroll < output_lock.len().saturating_sub(1) {
+                            app.output_scroll += 50;
+                        }
+                    }
+                    (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyOutput) => {
+                        if app.output_scroll > 50 {
+                            app.output_scroll -= 50;
+                        } else {
+                            app.output_scroll = 0;
+                        }
+                    }
+                    (_, KeyCode::Enter, _) => {
                         key_enter(app)?;
                     }
-                    (_, KeyCode::Down) => {
+                    (_, KeyCode::Down, _) => {
                         key_down(app);
                     }
-                    (_, KeyCode::Up) => {
+                    (_, KeyCode::Up, _) => {
                         key_up(app);
                     }
-                    (InputMode::Editing, _) => {
+                    (InputMode::Editing, _, _) => {
                         app.input.handle_event(&Event::Key(key));
                     }
                     _ => (),
@@ -486,7 +512,7 @@ fn ui(f: &mut Frame, app: &App) {
         let [title_area, output, input] = vertical.areas(f.area());
 
         draw_title_area(app, f, title_area);
-        draw_output(app, f, output);
+        draw_output(app, f, output, true);
         draw_input(title_area, app, f, input);
         return;
     }
@@ -498,7 +524,7 @@ fn ui(f: &mut Frame, app: &App) {
     let [title_area, top, output, input] = vertical.areas(f.area());
 
     draw_title_area(app, f, title_area);
-    draw_output(app, f, output);
+    draw_output(app, f, output, false);
     draw_input(title_area, app, f, input);
 
     match app.mode {
@@ -567,25 +593,42 @@ fn draw_input(title_area: Rect, app: &App, f: &mut Frame, input: Rect) {
     }
 }
 
-fn draw_output(app: &App, f: &mut Frame, output: Rect) {
+fn draw_output(app: &App, f: &mut Frame, output: Rect, full: bool) {
     let output_lock = app.output.lock().unwrap();
 
     let len = output_lock.len();
     let max = output.height;
-    let output_buf =
-        if len <= max as usize { &output_lock[..] } else { &output_lock[len - max as usize..] };
+    let skip = if full {
+        if len <= max as usize {
+            0
+        } else {
+            app.output_scroll
+        }
+    } else {
+        if len <= max as usize {
+            0
+        } else {
+            len - max as usize
+        }
+    };
 
-    let outputs: Vec<ListItem> = output_buf
+    debug!("skip: {}", skip);
+    debug!("scroll: {}", app.output_scroll);
+    let height = output.height as usize;
+    let outputs: Vec<ListItem> = output_lock
         .iter()
+        .skip(skip)
+        .take(height)
         .map(|m| {
             let content = vec![Line::from(Span::raw(format!("{}", m)))];
             ListItem::new(content)
         })
         .collect();
+    let help = if full { "(up(k), down(j), 50 up(K), 50 down(J))" } else { "" };
     let output_block = List::new(outputs).block(
         Block::default()
             .borders(Borders::ALL)
-            .title("Output".fg(BLUE).add_modifier(Modifier::BOLD)),
+            .title(format!("Output {help}").fg(BLUE).add_modifier(Modifier::BOLD)),
     );
     f.render_widget(output_block, output);
 }

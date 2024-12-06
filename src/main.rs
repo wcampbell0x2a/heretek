@@ -110,6 +110,7 @@ struct App {
     current_pc: Arc<Mutex<u64>>, // TODO: replace with AtomicU64?
     output_scroll: usize,
     output: Arc<Mutex<Vec<String>>>,
+    stream_output_prompt: Arc<Mutex<String>>,
     gdb_stdin: Arc<Mutex<dyn Write + Send>>,
     register_names: Arc<Mutex<Vec<String>>>,
     registers: Arc<Mutex<Vec<(String, Option<Register>)>>>,
@@ -164,6 +165,7 @@ impl App {
             current_pc: Arc::new(Mutex::new(0)),
             output_scroll: 0,
             output: Arc::new(Mutex::new(Vec::new())),
+            stream_output_prompt: Arc::new(Mutex::new(String::new())),
             register_names: Arc::new(Mutex::new(vec![])),
             gdb_stdin,
             registers: Arc::new(Mutex::new(vec![])),
@@ -204,6 +206,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let gdb_stdin_arc = Arc::clone(&app.gdb_stdin);
     let current_pc_arc = Arc::clone(&app.current_pc);
     let output_arc = Arc::clone(&app.output);
+    let stream_output_prompt_arc = Arc::clone(&app.stream_output_prompt);
     let register_names_arc = Arc::clone(&app.register_names);
     let registers_arc = Arc::clone(&app.registers);
     let stack_arc = Arc::clone(&app.stack);
@@ -220,6 +223,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             asm_arc,
             gdb_stdin_arc,
             output_arc,
+            stream_output_prompt_arc,
         )
     });
 
@@ -247,6 +251,7 @@ fn gdb_interact(
     asm_arc: Arc<Mutex<Vec<Asm>>>,
     gdb_stdin_arc: Arc<Mutex<dyn Write + Send>>,
     output_arc: Arc<Mutex<Vec<String>>>,
+    stream_output_prompt_arc: Arc<Mutex<String>>,
 ) {
     let mut next_write = vec![String::new()];
     for line in gdb_stdout.lines() {
@@ -353,10 +358,29 @@ fn gdb_interact(
                         *asm = new_asms.clone();
                     }
                 }
-                MIResponse::StreamOutput(_, s) => {
-                    output_arc.lock().unwrap().push(s.to_string());
+                MIResponse::StreamOutput(t, s) => {
+                    // let split: Vec<String> = s.to_string().split('\n').collect();
+                    let mut split: Vec<String> =
+                        s.split('\n').map(String::from).map(|a| a.trim_end().to_string()).collect();
+                    for s in split {
+                        if !s.is_empty() {
+                            debug!("{s}");
+                            output_arc.lock().unwrap().push(s);
+                        }
+                    }
+
+                    // console-stream-output
+                    if t == "~" {
+                        if !s.contains('\n') {
+                            let mut stream_lock = stream_output_prompt_arc.lock().unwrap();
+                            *stream_lock = s.to_string();
+                        }
+                    }
                 }
-                MIResponse::Unknown(_) => {}
+                MIResponse::Unknown(s) => {
+                    let mut stream_lock = stream_output_prompt_arc.lock().unwrap();
+                    *stream_lock = s.to_string();
+                }
                 _ => (),
             }
             if !next_write.is_empty() {
@@ -564,7 +588,10 @@ fn draw_input(title_area: Rect, app: &App, f: &mut Frame, input: Rect) {
     // keep 2 for borders and 1 for cursor
 
     let scroll = app.input.visual_scroll(width as usize);
-    let txt_input = Paragraph::new(app.input.value())
+    let stream_lock = app.stream_output_prompt.lock().unwrap();
+    let prompt_len = stream_lock.len();
+
+    let txt_input = Paragraph::new(format!("{}{}", stream_lock, app.input.value()))
         .style(match app.input_mode {
             InputMode::Normal => Style::default(),
             InputMode::Editing => Style::default().fg(GREEN),
@@ -585,7 +612,10 @@ fn draw_input(title_area: Rect, app: &App, f: &mut Frame, input: Rect) {
             // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
             f.set_cursor_position((
                 // Put cursor past the end of the input text
-                input.x + ((app.input.visual_cursor()).max(scroll) - scroll) as u16 + 1,
+                input.x
+                    + ((app.input.visual_cursor()).max(scroll) - scroll) as u16
+                    + 1
+                    + prompt_len as u16,
                 // Move one line down, from the border to the input line
                 input.y + 1,
             ))
@@ -608,17 +638,14 @@ fn draw_output(app: &App, f: &mut Frame, output: Rect, full: bool) {
         if len <= max as usize {
             0
         } else {
-            len - max as usize
+            len - max as usize + 2
         }
     };
 
-    debug!("skip: {}", skip);
-    debug!("scroll: {}", app.output_scroll);
-    let height = output.height as usize;
     let outputs: Vec<ListItem> = output_lock
         .iter()
         .skip(skip)
-        .take(height)
+        .take(max as usize)
         .map(|m| {
             let content = vec![Line::from(Span::raw(format!("{}", m)))];
             ListItem::new(content)

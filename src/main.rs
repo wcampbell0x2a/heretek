@@ -384,19 +384,19 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     (InputMode::Normal, KeyCode::Char('q'), _) => {
                         return Ok(());
                     }
-                    (InputMode::Normal, KeyCode::F(1), _) => {
+                    (_, KeyCode::F(1), _) => {
                         app.mode = Mode::All;
                     }
-                    (InputMode::Normal, KeyCode::F(2), _) => {
+                    (_, KeyCode::F(2), _) => {
                         app.mode = Mode::OnlyRegister;
                     }
-                    (InputMode::Normal, KeyCode::F(3), _) => {
+                    (_, KeyCode::F(3), _) => {
                         app.mode = Mode::OnlyStack;
                     }
-                    (InputMode::Normal, KeyCode::F(4), _) => {
+                    (_, KeyCode::F(4), _) => {
                         app.mode = Mode::OnlyInstructions;
                     }
-                    (InputMode::Normal, KeyCode::F(5), _) => {
+                    (_, KeyCode::F(5), _) => {
                         app.mode = Mode::OnlyOutput;
                     }
                     (InputMode::Editing, KeyCode::Esc, _) => {
@@ -728,7 +728,7 @@ fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
                 Span::styled("i", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(" to enter input | "),
                 Span::styled("F1", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" displays | "),
+                Span::raw(" main | "),
                 Span::styled("F2", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(" registers | "),
                 Span::styled("F3", Style::default().add_modifier(Modifier::BOLD)),
@@ -746,7 +746,17 @@ fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
                 Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(" to stop editing, "),
                 Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to send input, "),
+                Span::raw(" to send input | "),
+                Span::styled("F1", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" main | "),
+                Span::styled("F2", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" registers | "),
+                Span::styled("F3", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" stacks | "),
+                Span::styled("F4", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" instructions | "),
+                Span::styled("F5", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" output"),
             ],
             Style::default(),
         ),

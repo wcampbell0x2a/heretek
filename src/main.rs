@@ -200,11 +200,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         .target(env_logger::Target::Pipe(Box::new(std::io::sink()))) // Disable stdout/stderr
         .init();
 
-    // Setup terminal
-    let mut terminal = ratatui::init();
-
     // Start rx thread
     let (gdb_stdout, mut app) = App::new_stream(args);
+
+    // Setup terminal
+    let mut terminal = ratatui::init();
 
     let gdb_stdin_arc = Arc::clone(&app.gdb_stdin);
     let current_pc_arc = Arc::clone(&app.current_pc);

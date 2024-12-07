@@ -44,6 +44,7 @@ const PURPLE: Color = Color::Rgb(0xd2, 0xa6, 0xff);
 const ORANGE: Color = Color::Rgb(0xff, 0x8f, 0x40);
 const YELLOW: Color = Color::Rgb(0xe6, 0xb4, 0x50);
 const GREEN: Color = Color::Rgb(0xaa, 0xd9, 0x4c);
+const RED: Color = Color::Rgb(0xff, 0x33, 0x33);
 
 const SAVED_OUTPUT: usize = 10;
 
@@ -112,6 +113,7 @@ struct App {
     output: Arc<Mutex<Vec<String>>>,
     stream_output_prompt: Arc<Mutex<String>>,
     gdb_stdin: Arc<Mutex<dyn Write + Send>>,
+    register_changed: Arc<Mutex<Vec<u8>>>,
     register_names: Arc<Mutex<Vec<String>>>,
     registers: Arc<Mutex<Vec<(String, Option<Register>)>>>,
     stack: Arc<Mutex<HashMap<u64, u64>>>,
@@ -166,6 +168,7 @@ impl App {
             output_scroll: 0,
             output: Arc::new(Mutex::new(Vec::new())),
             stream_output_prompt: Arc::new(Mutex::new(String::new())),
+            register_changed: Arc::new(Mutex::new(vec![])),
             register_names: Arc::new(Mutex::new(vec![])),
             gdb_stdin,
             registers: Arc::new(Mutex::new(vec![])),
@@ -207,6 +210,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let current_pc_arc = Arc::clone(&app.current_pc);
     let output_arc = Arc::clone(&app.output);
     let stream_output_prompt_arc = Arc::clone(&app.stream_output_prompt);
+    let register_changed_arc = Arc::clone(&app.register_changed);
     let register_names_arc = Arc::clone(&app.register_names);
     let registers_arc = Arc::clone(&app.registers);
     let stack_arc = Arc::clone(&app.stack);
@@ -216,6 +220,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     thread::spawn(move || {
         gdb_interact(
             gdb_stdout,
+            register_changed_arc,
             register_names_arc,
             registers_arc,
             current_pc_arc,
@@ -244,6 +249,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn gdb_interact(
     gdb_stdout: BufReader<Box<dyn Read + Send>>,
+    register_changed_arc: Arc<Mutex<Vec<u8>>>,
     register_names_arc: Arc<Mutex<Vec<String>>>,
     registers_arc: Arc<Mutex<Vec<(String, Option<Register>)>>>,
     current_pc_arc: Arc<Mutex<u64>>,
@@ -272,6 +278,7 @@ fn gdb_interact(
                         next_write.push("-data-list-register-names".to_string());
                         // When a breakpoint is hit, query for register values
                         next_write.push("-data-list-register-values x".to_string());
+                        next_write.push("-data-list-changed-registers".to_string());
                     }
                 }
                 MIResponse::ExecResult(status, kv) => {
@@ -304,6 +311,15 @@ fn gdb_interact(
                         let register_names = parse_register_names_values(register_names);
                         let mut regs_names = register_names_arc.lock().unwrap();
                         *regs_names = register_names;
+                    } else if let Some(changed_registers) = kv.get("changed-registers") {
+                        let changed_registers = parse_register_names_values(changed_registers);
+                        debug!("cr: {:?}", changed_registers);
+                        let result: Vec<u8> = changed_registers
+                            .iter()
+                            .map(|s| s.parse::<u8>().expect("Invalid number"))
+                            .collect();
+                        let mut reg_changed = register_changed_arc.lock().unwrap();
+                        *reg_changed = result;
                     } else if let Some(register_values) = kv.get("register-values") {
                         // parse the response and save it
                         let registers = parse_register_values(register_values);
@@ -820,16 +836,20 @@ fn draw_stack(app: &App, f: &mut Frame, stack: Rect) {
 fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
     // Registers
     let mut rows = vec![];
+    let reg_changed_lock = app.register_changed.lock().unwrap();
     if let Ok(regs) = app.registers.lock() {
-        for (name, register) in regs.iter() {
+        for (i, (name, register)) in regs.iter().enumerate() {
             if let Some(reg) = register {
                 if reg.value == Some("<unavailable>".to_string()) {
                     continue;
                 }
-                rows.push(Row::new(vec![
-                    Cell::from(name.to_string()).style(Style::new().fg(PURPLE)),
-                    Cell::from(reg.value.clone().unwrap()),
-                ]));
+                let changed = reg_changed_lock.contains(&(i as u8));
+                let mut addr = Cell::from(name.to_string()).style(Style::new().fg(PURPLE));
+                let val = Cell::from(reg.value.clone().unwrap());
+                if changed {
+                    addr = addr.style(Style::new().fg(RED));
+                }
+                rows.push(Row::new(vec![addr, val]));
             }
         }
     }

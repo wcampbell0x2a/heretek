@@ -663,6 +663,7 @@ fn draw_output(app: &App, f: &mut Frame, output: Rect, full: bool) {
         .skip(skip)
         .take(max as usize)
         .map(|m| {
+            let m = m.replace('\t', "    ");
             let content = vec![Line::from(Span::raw(format!("{}", m)))];
             ListItem::new(content)
         })

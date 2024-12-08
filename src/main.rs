@@ -1,11 +1,12 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::Duration;
+use std::{env, thread};
 use std::{error::Error, io};
 
 use clap::Parser;
@@ -50,11 +51,24 @@ const RED: Color = Color::Rgb(0xff, 0x33, 0x33);
 
 const HEAP_COLOR: Color = GREEN;
 const STACK_COLOR: Color = PURPLE;
+const TEXT_COLOR: Color = RED;
 
 const SAVED_OUTPUT: usize = 10;
 
 use std::collections::{HashMap, VecDeque};
 
+fn resolve_home(path: &str) -> Option<PathBuf> {
+    if path.starts_with("~/") {
+        if let Ok(home) = env::var("HOME") {
+            return Some(Path::new(&home).join(&path[2..]));
+        }
+        None
+    } else {
+        Some(PathBuf::from(path))
+    }
+}
+
+#[derive(Debug, Clone)]
 struct LimitedBuffer<T> {
     offset: usize,
     buffer: VecDeque<T>,
@@ -108,7 +122,10 @@ enum Mode {
     OnlyOutput,
 }
 
+// TODO: this could be split up, some of these fields
+// are always set after the file is loaded in gdb
 struct App {
+    filepath: Arc<Mutex<Option<PathBuf>>>,
     mode: Mode,
     input: Input,
     input_mode: InputMode,
@@ -166,6 +183,7 @@ impl App {
             };
 
         let app = App {
+            filepath: Arc::new(Mutex::new(None)),
             mode: Mode::All,
             input: Input::default(),
             input_mode: InputMode::Normal,
@@ -184,6 +202,14 @@ impl App {
         };
 
         (reader, app)
+    }
+
+    // Parse a "file filepath" command and save
+    fn save_filepath(&mut self, val: &str) {
+        let filepath: Vec<&str> = val.split_whitespace().collect();
+        let filepath = resolve_home(filepath[1]).unwrap();
+        debug!("filepath: {filepath:?}");
+        self.filepath = Arc::new(Mutex::new(Some(filepath)));
     }
 }
 
@@ -213,6 +239,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Setup terminal
     let mut terminal = ratatui::init();
 
+    let filepath_arc = Arc::clone(&app.filepath);
     let gdb_stdin_arc = Arc::clone(&app.gdb_stdin);
     let current_pc_arc = Arc::clone(&app.current_pc);
     let output_arc = Arc::clone(&app.output);
@@ -228,6 +255,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     thread::spawn(move || {
         gdb_interact(
             gdb_stdout,
+            filepath_arc,
             register_changed_arc,
             register_names_arc,
             registers_arc,
@@ -258,6 +286,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn gdb_interact(
     gdb_stdout: BufReader<Box<dyn Read + Send>>,
+    filepath_arc: Arc<Mutex<Option<PathBuf>>>,
     register_changed_arc: Arc<Mutex<Vec<u8>>>,
     register_names_arc: Arc<Mutex<Vec<String>>>,
     registers_arc: Arc<Mutex<Vec<(String, Option<Register>)>>>,
@@ -427,6 +456,7 @@ fn recv_exec_results_register_value(
     let registers = parse_register_values(register_values);
     let mut regs = registers_arc.lock().unwrap();
     let regs_names = register_names_arc.lock().unwrap();
+    // for r in registers {}
     let registers = join_registers(&regs_names, &registers);
     *regs = registers.clone();
 
@@ -484,7 +514,7 @@ fn recv_exec_result_value(current_pc_arc: &Arc<Mutex<u64>>, value: &String) {
     *cur_pc_lock = u64::from_str_radix(pc, 16).unwrap();
 }
 
-fn write_mi(gdb_stdin_arc: &Arc<Mutex<dyn Write + Send>>, w: &String) {
+fn write_mi(gdb_stdin_arc: &Arc<Mutex<dyn Write + Send>>, w: &str) {
     let mut stdin = gdb_stdin_arc.lock().unwrap();
     debug!("writing {}", w);
     writeln!(stdin, "{}", w).expect("Failed to send command");
@@ -593,18 +623,30 @@ fn key_enter(app: &mut App) -> Result<(), io::Error> {
     if app.input.value().is_empty() {
         app.messages.offset = 0;
 
-        if let Some(val) = app.messages.as_slice().iter().last() {
-            let mut stdin = app.gdb_stdin.lock().unwrap();
-            writeln!(stdin, "{}", val)?;
-            debug!("writing {}", val);
+        let messages = app.messages.clone();
+        let messages = messages.as_slice().iter();
+        if let Some(val) = messages.last() {
+            if val.starts_with("file") {
+                app.save_filepath(val);
+            }
+            write_mi(&app.gdb_stdin, val);
+            // let mut stdin = app.gdb_stdin.lock().unwrap();
+            // writeln!(stdin, "{}", val)?;
+            // debug!("writing {}", val);
             app.input.reset();
         }
     } else {
         app.messages.offset = 0;
         app.messages.push(app.input.value().into());
-        let mut stdin = app.gdb_stdin.lock().unwrap();
-        writeln!(stdin, "{}", app.input.value())?;
-        debug!("writing {}", app.input.value());
+        let val = app.input.clone();
+        let val = val.value();
+        if val.starts_with("file") {
+            app.save_filepath(val);
+        }
+        write_mi(&app.gdb_stdin, val);
+        // let mut stdin = app.gdb_stdin.lock().unwrap();
+        // writeln!(stdin, "{}", app.input.value())?;
+        // debug!("writing {}", app.input.value());
         app.input.reset();
     }
 
@@ -928,8 +970,16 @@ fn draw_stack(app: &App, f: &mut Frame, stack: Rect) {
 fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
     // Registers
     let mut rows = vec![];
-    let reg_changed_lock = app.register_changed.lock().unwrap();
+
     if let Ok(regs) = app.registers.lock() {
+        if regs.is_empty() {
+            return;
+        }
+
+        let reg_changed_lock = app.register_changed.lock().unwrap();
+        let filepath_lock = app.filepath.lock().unwrap();
+        let binding = filepath_lock.as_ref().unwrap();
+        let filepath = binding.to_string_lossy();
         for (i, (name, register)) in regs.iter().enumerate() {
             if let Some(reg) = register {
                 if let Some(reg_value) = &reg.value {
@@ -938,24 +988,35 @@ fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
                     }
                     let val = u64::from_str_radix(&reg_value[2..], 16).unwrap();
                     let changed = reg_changed_lock.contains(&(i as u8));
-                    let mut addr = Cell::from(name.to_string()).style(Style::new().fg(PURPLE));
+                    let mut reg_name = Cell::from(name.to_string()).style(Style::new().fg(PURPLE));
 
                     let mut is_stack = false;
                     let mut is_heap = false;
+                    let mut is_text = false;
                     if val != 0 {
                         // look through, add see if the value is part of the stack
                         let memory_map = app.memory_map.lock().unwrap();
                         if memory_map.is_some() {
                             for r in memory_map.as_ref().unwrap() {
+                                // Check stack
+                                // TODO: which ones are stack could be cached
                                 if r.is_stack() {
                                     if r.contains(val) {
                                         is_stack = true;
                                         break;
                                     }
-                                }
-                                if r.is_heap() {
+                                } else if r.is_heap() {
+                                    // Check heap
+                                    // TODO: which ones are heap could be cached
                                     if r.contains(val) {
                                         is_heap = true;
+                                        break;
+                                    }
+                                // TODO(23): This could be expanded to all segments loaded in
+                                // as executable
+                                } else if r.is_path(&filepath) {
+                                    if r.contains(val) {
+                                        is_text = true;
                                         break;
                                     }
                                 }
@@ -963,17 +1024,21 @@ fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
                         }
                     }
 
+                    // Apply color to val
                     let mut val = Cell::from(reg.value.clone().unwrap());
                     if is_stack {
                         val = val.style(Style::new().fg(STACK_COLOR))
-                    }
-                    if is_heap {
+                    } else if is_heap {
                         val = val.style(Style::new().fg(HEAP_COLOR))
+                    } else if is_text {
+                        val = val.style(Style::new().fg(TEXT_COLOR))
                     }
+
+                    // Apply color to reg name
                     if changed {
-                        addr = addr.style(Style::new().fg(RED));
+                        reg_name = reg_name.style(Style::new().fg(RED));
                     }
-                    rows.push(Row::new(vec![addr, val]));
+                    rows.push(Row::new(vec![reg_name, val]));
                 }
             }
         }

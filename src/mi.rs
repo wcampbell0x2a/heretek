@@ -27,6 +27,10 @@ impl MemoryMapping {
         self.path == "[heap]"
     }
 
+    pub fn is_path(&self, filepath: &str) -> bool {
+        self.path == filepath
+    }
+
     pub fn contains(&self, addr: u64) -> bool {
         (addr > self.start_address) && (addr < self.end_address)
     }

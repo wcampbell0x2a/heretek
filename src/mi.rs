@@ -1,8 +1,62 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use log::debug;
 use regex::Regex;
+
+pub const MEMORY_MAP_START_STR: &str =
+    "          Start Addr           End Addr       Size     Offset  Perms  objfile";
+
+#[derive(Debug, Clone)]
+pub struct MemoryMapping {
+    start_address: u64,
+    end_address: u64,
+    size: u64,
+    offset: u64,
+    permissions: String,
+    path: String,
+}
+
+impl MemoryMapping {
+    pub fn is_stack(&self) -> bool {
+        self.path == "[stack]"
+    }
+
+    pub fn is_heap(&self) -> bool {
+        self.path == "[heap]"
+    }
+
+    pub fn contains(&self, addr: u64) -> bool {
+        (addr > self.start_address) && (addr < self.end_address)
+    }
+}
+
+impl FromStr for MemoryMapping {
+    type Err = String;
+
+    fn from_str(line: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 6 {
+            return Err(format!("Invalid line format: {}", line));
+        }
+
+        Ok(MemoryMapping {
+            start_address: u64::from_str_radix(&parts[0][2..], 16)
+                .map_err(|_| "Invalid start address")?,
+            end_address: u64::from_str_radix(&parts[1][2..], 16)
+                .map_err(|_| "Invalid end address")?,
+            size: u64::from_str_radix(&parts[2][2..], 16).map_err(|_| "Invalid size")?,
+            offset: u64::from_str_radix(&parts[3][2..], 16).map_err(|_| "Invalid offset")?,
+            permissions: parts[4].to_string(),
+            path: parts[5..].join(" "), // Combine the rest as the path
+        })
+    }
+}
+
+pub fn parse_memory_mappings(input: &str) -> Vec<MemoryMapping> {
+    input.lines().skip(1).filter_map(|line| line.parse::<MemoryMapping>().ok()).collect()
+}
 
 // Define Register struct to hold register data
 #[derive(Debug, Clone)]

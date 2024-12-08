@@ -886,6 +886,7 @@ fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
                     let mut addr = Cell::from(name.to_string()).style(Style::new().fg(PURPLE));
 
                     let mut is_stack = false;
+                    let mut is_heap = false;
                     if val != 0 {
                         // look through, add see if the value is part of the stack
                         let memory_map = app.memory_map.lock().unwrap();
@@ -897,6 +898,12 @@ fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
                                         break;
                                     }
                                 }
+                                if r.is_heap() {
+                                    if r.contains(val) {
+                                        is_heap = true;
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }
@@ -904,6 +911,9 @@ fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
                     let mut val = Cell::from(reg.value.clone().unwrap());
                     if is_stack {
                         val = val.style(Style::new().fg(BLUE))
+                    }
+                    if is_heap {
+                        val = val.style(Style::new().fg(PURPLE))
                     }
                     if changed {
                         addr = addr.style(Style::new().fg(RED));

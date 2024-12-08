@@ -23,6 +23,10 @@ impl MemoryMapping {
         self.path == "[stack]"
     }
 
+    pub fn is_heap(&self) -> bool {
+        self.path == "[heap]"
+    }
+
     pub fn contains(&self, addr: u64) -> bool {
         (addr > self.start_address) && (addr < self.end_address)
     }

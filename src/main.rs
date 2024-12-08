@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::process::{Command, Stdio};
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -29,8 +30,9 @@ use Constraint::{Fill, Length, Min};
 mod mi;
 use mi::{
     data_disassemble, data_read_sp_bytes, join_registers, parse_asm_insns_values,
-    parse_key_value_pairs, parse_register_names_values, parse_register_values, read_pc_value, Asm,
-    MIResponse, Register,
+    parse_key_value_pairs, parse_memory_mappings, parse_register_names_values,
+    parse_register_values, read_pc_value, Asm, MIResponse, MemoryMapping, Register,
+    MEMORY_MAP_START_STR,
 };
 
 enum InputMode {
@@ -108,6 +110,7 @@ struct App {
     input: Input,
     input_mode: InputMode,
     messages: LimitedBuffer<String>,
+    memory_map: Arc<Mutex<Option<Vec<MemoryMapping>>>>,
     current_pc: Arc<Mutex<u64>>, // TODO: replace with AtomicU64?
     output_scroll: usize,
     output: Arc<Mutex<Vec<String>>>,
@@ -166,6 +169,7 @@ impl App {
             messages: LimitedBuffer::new(10),
             current_pc: Arc::new(Mutex::new(0)),
             output_scroll: 0,
+            memory_map: Arc::new(Mutex::new(None)),
             output: Arc::new(Mutex::new(Vec::new())),
             stream_output_prompt: Arc::new(Mutex::new(String::new())),
             register_changed: Arc::new(Mutex::new(vec![])),
@@ -213,6 +217,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let register_changed_arc = Arc::clone(&app.register_changed);
     let register_names_arc = Arc::clone(&app.register_names);
     let registers_arc = Arc::clone(&app.registers);
+    let memory_map_arc = Arc::clone(&app.memory_map);
     let stack_arc = Arc::clone(&app.stack);
     let asm_arc = Arc::clone(&app.asm);
 
@@ -229,6 +234,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             gdb_stdin_arc,
             output_arc,
             stream_output_prompt_arc,
+            memory_map_arc,
         )
     });
 
@@ -258,7 +264,9 @@ fn gdb_interact(
     gdb_stdin_arc: Arc<Mutex<dyn Write + Send>>,
     output_arc: Arc<Mutex<Vec<String>>>,
     stream_output_prompt_arc: Arc<Mutex<String>>,
+    memory_map_arc: Arc<Mutex<Option<Vec<MemoryMapping>>>>,
 ) {
+    let mut current_map = (false, String::new());
     let mut next_write = vec![String::new()];
     for line in gdb_stdout.lines() {
         if let Ok(line) = line {
@@ -278,7 +286,11 @@ fn gdb_interact(
                         next_write.push("-data-list-register-names".to_string());
                         // When a breakpoint is hit, query for register values
                         next_write.push("-data-list-register-values x".to_string());
+                        // get a list of changed registers
                         next_write.push("-data-list-changed-registers".to_string());
+                        // get the memory mapping
+                        next_write
+                            .push(r#"-interpreter-exec console "info proc mappings""#.to_string());
                     }
                 }
                 MIResponse::ExecResult(status, kv) => {
@@ -298,6 +310,16 @@ fn gdb_interact(
                         // reset the regs
                         let mut regs = registers_arc.lock().unwrap();
                         regs.clear();
+                    }
+                    if status == "done" {
+                        // Check if we were looking for a mapping
+                        // TODO: This should be an enum or something?
+                        if current_map.0 {
+                            let m = parse_memory_mappings(&current_map.1);
+                            let mut memory_map = memory_map_arc.lock().unwrap();
+                            *memory_map = Some(m);
+                            current_map = (false, String::new());
+                        }
                     }
 
                     if let Some(value) = kv.get("value") {
@@ -375,8 +397,18 @@ fn gdb_interact(
                     }
                 }
                 MIResponse::StreamOutput(t, s) => {
-                    // let split: Vec<String> = s.to_string().split('\n').collect();
-                    let mut split: Vec<String> =
+                    // when we find the start of a memory map, we sent this
+                    // and it's quite noisy to the regular output so don't
+                    // include
+                    if s.trim_end() == MEMORY_MAP_START_STR {
+                        current_map.0 = true;
+                    }
+                    if current_map.0 {
+                        current_map.1.push_str(s);
+                        continue;
+                    }
+
+                    let split: Vec<String> =
                         s.split('\n').map(String::from).map(|a| a.trim_end().to_string()).collect();
                     for s in split {
                         if !s.is_empty() {
@@ -401,14 +433,18 @@ fn gdb_interact(
             }
             if !next_write.is_empty() {
                 for w in &next_write {
-                    let mut stdin = gdb_stdin_arc.lock().unwrap();
-                    debug!("writing {}", w);
-                    writeln!(stdin, "{}", w).expect("Failed to send command");
+                    write_mi(&gdb_stdin_arc, w);
                 }
                 next_write.clear();
             }
         }
     }
+}
+
+fn write_mi(gdb_stdin_arc: &Arc<Mutex<dyn Write + Send>>, w: &String) {
+    let mut stdin = gdb_stdin_arc.lock().unwrap();
+    debug!("writing {}", w);
+    writeln!(stdin, "{}", w).expect("Failed to send command");
 }
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<()> {
@@ -841,16 +877,39 @@ fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
     if let Ok(regs) = app.registers.lock() {
         for (i, (name, register)) in regs.iter().enumerate() {
             if let Some(reg) = register {
-                if reg.value == Some("<unavailable>".to_string()) {
-                    continue;
+                if let Some(reg_value) = &reg.value {
+                    if reg_value == &"<unavailable>".to_string() {
+                        continue;
+                    }
+                    let val = u64::from_str_radix(&reg_value[2..], 16).unwrap();
+                    let changed = reg_changed_lock.contains(&(i as u8));
+                    let mut addr = Cell::from(name.to_string()).style(Style::new().fg(PURPLE));
+
+                    let mut is_stack = false;
+                    if val != 0 {
+                        // look through, add see if the value is part of the stack
+                        let memory_map = app.memory_map.lock().unwrap();
+                        if memory_map.is_some() {
+                            for r in memory_map.as_ref().unwrap() {
+                                if r.is_stack() {
+                                    if r.contains(val) {
+                                        is_stack = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let mut val = Cell::from(reg.value.clone().unwrap());
+                    if is_stack {
+                        val = val.style(Style::new().fg(BLUE))
+                    }
+                    if changed {
+                        addr = addr.style(Style::new().fg(RED));
+                    }
+                    rows.push(Row::new(vec![addr, val]));
                 }
-                let changed = reg_changed_lock.contains(&(i as u8));
-                let mut addr = Cell::from(name.to_string()).style(Style::new().fg(PURPLE));
-                let val = Cell::from(reg.value.clone().unwrap());
-                if changed {
-                    addr = addr.style(Style::new().fg(RED));
-                }
-                rows.push(Row::new(vec![addr, val]));
             }
         }
     }

@@ -48,6 +48,9 @@ const YELLOW: Color = Color::Rgb(0xe6, 0xb4, 0x50);
 const GREEN: Color = Color::Rgb(0xaa, 0xd9, 0x4c);
 const RED: Color = Color::Rgb(0xff, 0x33, 0x33);
 
+const HEAP_COLOR: Color = GREEN;
+const STACK_COLOR: Color = PURPLE;
+
 const SAVED_OUTPUT: usize = 10;
 
 use std::collections::{HashMap, VecDeque};
@@ -821,7 +824,13 @@ fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
                 Span::styled("F4", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(" instructions | "),
                 Span::styled("F5", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" output"),
+                Span::raw(" output | "),
+                Span::styled("Heap", Style::default().fg(HEAP_COLOR).add_modifier(Modifier::BOLD)),
+                Span::raw(" | "),
+                Span::styled(
+                    "Stack",
+                    Style::default().fg(STACK_COLOR).add_modifier(Modifier::BOLD),
+                ),
             ],
             Style::default().add_modifier(Modifier::RAPID_BLINK),
         ),
@@ -841,7 +850,13 @@ fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
                 Span::styled("F4", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(" instructions | "),
                 Span::styled("F5", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" output"),
+                Span::raw(" output | "),
+                Span::styled("Heap", Style::default().fg(HEAP_COLOR).add_modifier(Modifier::BOLD)),
+                Span::raw(" | "),
+                Span::styled(
+                    "Stack",
+                    Style::default().fg(STACK_COLOR).add_modifier(Modifier::BOLD),
+                ),
             ],
             Style::default(),
         ),
@@ -915,10 +930,10 @@ fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
 
                     let mut val = Cell::from(reg.value.clone().unwrap());
                     if is_stack {
-                        val = val.style(Style::new().fg(BLUE))
+                        val = val.style(Style::new().fg(STACK_COLOR))
                     }
                     if is_heap {
-                        val = val.style(Style::new().fg(PURPLE))
+                        val = val.style(Style::new().fg(HEAP_COLOR))
                     }
                     if changed {
                         addr = addr.style(Style::new().fg(RED));

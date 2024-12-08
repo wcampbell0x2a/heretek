@@ -400,6 +400,11 @@ fn gdb_interact(
                     // when we find the start of a memory map, we sent this
                     // and it's quite noisy to the regular output so don't
                     // include
+                    if s.starts_with("process") || s.starts_with("Mapped address spaces:") {
+                        // HACK: completely skip the following, as they are a side
+                        // effect of not having a GDB MI way of getting a memory map
+                        continue;
+                    }
                     if s.trim_end() == MEMORY_MAP_START_STR {
                         current_map.0 = true;
                     }

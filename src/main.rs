@@ -10,8 +10,9 @@ use std::{env, thread};
 use std::{error::Error, io};
 
 use clap::Parser;
+use deku::ctx::Endian;
 use env_logger::{Builder, Env};
-use log::debug;
+use log::{debug, trace};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::prelude::*;
 use ratatui::widgets::block::Title;
@@ -30,10 +31,10 @@ use Constraint::{Fill, Length, Min};
 
 mod mi;
 use mi::{
-    data_disassemble, data_read_sp_bytes, join_registers, parse_asm_insns_values,
-    parse_key_value_pairs, parse_memory_mappings, parse_register_names_values,
-    parse_register_values, read_pc_value, Asm, MIResponse, MemoryMapping, Register,
-    MEMORY_MAP_START_STR,
+    data_disassemble, data_read_memory_bytes, data_read_sp_bytes, join_registers,
+    parse_asm_insns_values, parse_key_value_pairs, parse_memory_mappings,
+    parse_register_names_values, parse_register_values, read_pc_value, Asm, MIResponse,
+    MemoryMapping, Register, MEMORY_MAP_START_STR,
 };
 
 enum InputMode {
@@ -126,6 +127,7 @@ enum Mode {
 // are always set after the file is loaded in gdb
 struct App {
     filepath: Arc<Mutex<Option<PathBuf>>>,
+    endian: Arc<Mutex<Option<Endian>>>,
     mode: Mode,
     input: Input,
     input_mode: InputMode,
@@ -138,8 +140,8 @@ struct App {
     gdb_stdin: Arc<Mutex<dyn Write + Send>>,
     register_changed: Arc<Mutex<Vec<u8>>>,
     register_names: Arc<Mutex<Vec<String>>>,
-    registers: Arc<Mutex<Vec<(String, Option<Register>)>>>,
-    stack: Arc<Mutex<HashMap<u64, u64>>>,
+    registers: Arc<Mutex<Vec<(String, Option<Register>, Vec<u64>)>>>,
+    stack: Arc<Mutex<HashMap<u64, Vec<u64>>>>,
     asm: Arc<Mutex<Vec<Asm>>>,
 }
 
@@ -184,6 +186,7 @@ impl App {
 
         let app = App {
             filepath: Arc::new(Mutex::new(None)),
+            endian: Arc::new(Mutex::new(None)),
             mode: Mode::All,
             input: Input::default(),
             input_mode: InputMode::Normal,
@@ -208,9 +211,22 @@ impl App {
     fn save_filepath(&mut self, val: &str) {
         let filepath: Vec<&str> = val.split_whitespace().collect();
         let filepath = resolve_home(filepath[1]).unwrap();
-        debug!("filepath: {filepath:?}");
+        // debug!("filepath: {filepath:?}");
         self.filepath = Arc::new(Mutex::new(Some(filepath)));
     }
+}
+
+#[derive(Debug)]
+enum Written {
+    /// Requested Register Value deref
+    // TODO: Could this just be the register name?
+    RegisterValue((String, u64)),
+    /// Requested Stack Bytes
+    ///
+    /// None - This is the first time this is requested
+    /// Some - This has alrady been read, and this is a deref, trust
+    ///        the base_reg of .0
+    Stack(Option<String>),
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -240,6 +256,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut terminal = ratatui::init();
 
     let filepath_arc = Arc::clone(&app.filepath);
+    let endian_arc = Arc::clone(&app.endian);
     let gdb_stdin_arc = Arc::clone(&app.gdb_stdin);
     let current_pc_arc = Arc::clone(&app.current_pc);
     let output_arc = Arc::clone(&app.output);
@@ -255,6 +272,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     thread::spawn(move || {
         gdb_interact(
             gdb_stdout,
+            endian_arc,
             filepath_arc,
             register_changed_arc,
             register_names_arc,
@@ -286,12 +304,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn gdb_interact(
     gdb_stdout: BufReader<Box<dyn Read + Send>>,
+    endian_arc: Arc<Mutex<Option<deku::ctx::Endian>>>,
     filepath_arc: Arc<Mutex<Option<PathBuf>>>,
     register_changed_arc: Arc<Mutex<Vec<u8>>>,
     register_names_arc: Arc<Mutex<Vec<String>>>,
-    registers_arc: Arc<Mutex<Vec<(String, Option<Register>)>>>,
+    registers_arc: Arc<Mutex<Vec<(String, Option<Register>, Vec<u64>)>>>,
     current_pc_arc: Arc<Mutex<u64>>,
-    stack_arc: Arc<Mutex<HashMap<u64, u64>>>,
+    stack_arc: Arc<Mutex<HashMap<u64, Vec<u64>>>>,
     asm_arc: Arc<Mutex<Vec<Asm>>>,
     gdb_stdin_arc: Arc<Mutex<dyn Write + Send>>,
     output_arc: Arc<Mutex<Vec<String>>>,
@@ -300,6 +319,8 @@ fn gdb_interact(
 ) {
     let mut current_map = (false, String::new());
     let mut next_write = vec![String::new()];
+    let mut written = VecDeque::new();
+
     for line in gdb_stdout.lines() {
         if let Ok(line) = line {
             let response = mi::parse_mi_response(&line);
@@ -309,11 +330,13 @@ fn gdb_interact(
             match &response {
                 MIResponse::AsyncRecord(reason, v) => {
                     if reason == "stopped" {
-                        debug!("{v:?}");
+                        // debug!("{v:?}");
                         // TODO: we could cache this, per file opened
                         if let Some(arch) = v.get("arch") {
-                            debug!("{arch}");
+                            // debug!("{arch}");
                         }
+                        // Get endian
+                        next_write.push(r#"-interpreter-exec console "show endian""#.to_string());
                         // TODO: we could cache this, per file opened
                         next_write.push("-data-list-register-names".to_string());
                         // When a breakpoint is hit, query for register values
@@ -353,6 +376,12 @@ fn gdb_interact(
                             current_map = (false, String::new());
                         }
                     }
+                    if status == "error" {
+                        // assume this is from us, pop off an unexpected
+                        // if we can
+                        let removed = written.pop_front();
+                        // trace!("ERROR: {:02x?}", removed);
+                    }
 
                     if let Some(value) = kv.get("value") {
                         recv_exec_result_value(&current_pc_arc, value);
@@ -363,17 +392,38 @@ fn gdb_interact(
                     } else if let Some(register_values) = kv.get("register-values") {
                         recv_exec_results_register_value(
                             register_values,
+                            &endian_arc,
                             &registers_arc,
                             &register_names_arc,
                             &mut next_write,
+                            &mut written,
                         );
                     } else if let Some(memory) = kv.get("memory") {
-                        recv_exec_result_memory(&stack_arc, memory);
+                        recv_exec_result_memory(
+                            &stack_arc,
+                            &endian_arc,
+                            &registers_arc,
+                            memory,
+                            &mut written,
+                            &mut next_write,
+                        );
                     } else if let Some(asm) = kv.get("asm_insns") {
                         recv_exec_result_asm_insns(asm, &asm_arc);
                     }
                 }
                 MIResponse::StreamOutput(t, s) => {
+                    if s.starts_with("The target endianness") {
+                        let mut endian = endian_arc.lock().unwrap();
+                        *endian = if s.contains("little") {
+                            Some(deku::ctx::Endian::Little)
+                        } else {
+                            Some(deku::ctx::Endian::Big)
+                        };
+                        debug!("endian: {endian:?}");
+
+                        // don't include this is output
+                        continue;
+                    }
                     // when we find the start of a memory map, we sent this
                     // and it's quite noisy to the regular output so don't
                     // include
@@ -394,7 +444,7 @@ fn gdb_interact(
                         s.split('\n').map(String::from).map(|a| a.trim_end().to_string()).collect();
                     for s in split {
                         if !s.is_empty() {
-                            debug!("{s}");
+                            // debug!("{s}");
                             output_arc.lock().unwrap().push(s);
                         }
                     }
@@ -429,35 +479,158 @@ fn recv_exec_result_asm_insns(asm: &String, asm_arc: &Arc<Mutex<Vec<Asm>>>) {
     *asm = new_asms.clone();
 }
 
-fn recv_exec_result_memory(stack_arc: &Arc<Mutex<HashMap<u64, u64>>>, memory: &String) {
-    let mut stack = stack_arc.lock().unwrap();
+fn recv_exec_result_memory(
+    stack_arc: &Arc<Mutex<HashMap<u64, Vec<u64>>>>,
+    endian_arc: &Arc<Mutex<Option<Endian>>>,
+    registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Vec<u64>)>>>,
+    memory: &String,
+    written: &mut VecDeque<Written>,
+    next_write: &mut Vec<String>,
+) {
+    if written.is_empty() {
+        return;
+    }
+    let last_written = written.pop_front().unwrap();
+
+    match last_written {
+        Written::RegisterValue((base_reg, n)) => {
+            let mut regs = registers_arc.lock().unwrap();
+            let (data, _) = read_memory(memory);
+            for (_, b, extra) in regs.iter_mut() {
+                if let Some(b) = b {
+                    if b.number == base_reg {
+                        let mut val = u64::from_str_radix(&data["contents"], 16).unwrap();
+                        debug!("val: {:02x?}", val);
+                        let endian = endian_arc.lock().unwrap();
+                        if endian.unwrap() == Endian::Big {
+                            val = val.to_le();
+                        } else {
+                            val = val.to_be();
+                        }
+                        if extra.iter().last() == Some(&val) {
+                            trace!("loop detected!");
+                            return;
+                        }
+                        extra.push(val);
+                        debug!("extra val: {:02x?}", val);
+
+                        if val != 0 {
+                            // TODO: endian
+                            debug!("1: trying to read: {:02x}", val);
+                            let num = format!("0x{:02x}", val);
+                            next_write.push(data_read_memory_bytes(&num, 0, 8));
+                            written.push_back(Written::RegisterValue((b.number.clone(), val)));
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        // We got here from a recusrive stack call (not the first one)
+        // we use the begin here as the base key, instead of the base
+        // addr we read
+        Written::Stack(Some(begin)) => {
+            let mut stack = stack_arc.lock().unwrap();
+            let (data, _) = read_memory(memory);
+            debug!("stack: {:02x?}", data);
+
+            update_stack(data, endian_arc, begin, &mut stack, next_write, written);
+        }
+        Written::Stack(None) => {
+            let mut stack = stack_arc.lock().unwrap();
+            let (data, begin) = read_memory(memory);
+            debug!("stack: {:02x?}", data);
+
+            update_stack(data, endian_arc, begin, &mut stack, next_write, written);
+        }
+    }
+}
+
+fn update_stack(
+    data: HashMap<String, String>,
+    endian_arc: &Arc<Mutex<Option<Endian>>>,
+    begin: String,
+    stack: &mut std::sync::MutexGuard<HashMap<u64, Vec<u64>>>,
+    next_write: &mut Vec<String>,
+    written: &mut VecDeque<Written>,
+) {
+    // TODO: this is insane and should be cached
+    let mut val = u64::from_str_radix(&data["contents"], 16).unwrap();
+    let endian = endian_arc.lock().unwrap();
+    if endian.unwrap() == Endian::Big {
+        val = val.to_le();
+    } else {
+        val = val.to_be();
+    }
+
+    // Begin is always correct endian
+    let key = u64::from_str_radix(&begin, 16).unwrap();
+    if let Some(row) = stack.get(&key) {
+        if row.iter().last() == Some(&val) {
+            trace!("loop detected!");
+            return;
+        }
+    }
+    stack.entry(key).and_modify(|v| v.push(val)).or_insert(vec![val]);
+
+    debug!("stack: {:02x?}", stack);
+
+    if val != 0 {
+        // TODO: endian?
+        debug!("2: trying to read: {}", data["contents"]);
+        let num = format!("0x{:02x}", val);
+        next_write.push(data_read_memory_bytes(&num, 0, 8));
+        written.push_back(Written::Stack(Some(begin)));
+    }
+}
+
+fn read_memory(memory: &String) -> (HashMap<String, String>, String) {
     let mem_str = memory.strip_prefix(r#"[{"#).unwrap();
     let mem_str = mem_str.strip_suffix(r#"}]"#).unwrap();
     let data = parse_key_value_pairs(mem_str);
     let begin = data["begin"].to_string();
-    let begin = begin.strip_prefix("0x").unwrap();
-    debug!("{:?}", data);
-    debug!("{}", begin);
-    // TODO: this is insane and should be cached
-    stack.insert(
-        u64::from_str_radix(begin, 16).unwrap(),
-        u64::from_str_radix(&data["contents"], 16).unwrap(),
-    );
-    debug!("{:?}", data);
+    let begin = begin.strip_prefix("0x").unwrap().to_string();
+    (data, begin)
 }
 
 fn recv_exec_results_register_value(
     register_values: &String,
-    registers_arc: &Arc<Mutex<Vec<(String, Option<Register>)>>>,
+    endian_arc: &Arc<Mutex<Option<Endian>>>,
+    registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Vec<u64>)>>>,
     register_names_arc: &Arc<Mutex<Vec<String>>>,
     next_write: &mut Vec<String>,
+    written: &mut VecDeque<Written>,
 ) {
     // parse the response and save it
     let registers = parse_register_values(register_values);
     let mut regs = registers_arc.lock().unwrap();
     let regs_names = register_names_arc.lock().unwrap();
-    // for r in registers {}
+    for r in &registers {
+        if let Some(r) = r {
+            if r.is_set() {
+                if let Some(val) = &r.value {
+                    // trace!("{val:02x?}");
+                    // TODO: this should be able to expect
+                    if let Ok(mut val_u64) = u64::from_str_radix(&val[2..], 16) {
+                        // NOTE: This is already in the right endian
+                        // avoid trying to read null :^)
+                        if val_u64 != 0 {
+                            // TODO: we shouldn't do this for known CODE locations
+                            next_write.push(data_read_memory_bytes(
+                                &format!("0x{:02x?}", val_u64),
+                                0,
+                                8,
+                            ));
+                            written.push_back(Written::RegisterValue((r.number.clone(), val_u64)));
+                        }
+                    }
+                }
+            }
+        }
+    }
     let registers = join_registers(&regs_names, &registers);
+    let registers: Vec<(String, Option<Register>, Vec<u64>)> =
+        registers.iter().map(|(a, b)| (a.clone(), b.clone(), vec![])).collect();
     *regs = registers.clone();
 
     // assuming we have a valid $pc, get the bytes
@@ -466,18 +639,31 @@ fn recv_exec_results_register_value(
 
     // assuming we have a valid $sp, get the bytes
     next_write.push(data_read_sp_bytes(0, 8));
+    written.push_back(Written::Stack(None));
     next_write.push(data_read_sp_bytes(8, 8));
+    written.push_back(Written::Stack(None));
     next_write.push(data_read_sp_bytes(16, 8));
+    written.push_back(Written::Stack(None));
     next_write.push(data_read_sp_bytes(24, 8));
+    written.push_back(Written::Stack(None));
     next_write.push(data_read_sp_bytes(32, 8));
+    written.push_back(Written::Stack(None));
     next_write.push(data_read_sp_bytes(40, 8));
+    written.push_back(Written::Stack(None));
     next_write.push(data_read_sp_bytes(48, 8));
+    written.push_back(Written::Stack(None));
     next_write.push(data_read_sp_bytes(56, 8));
+    written.push_back(Written::Stack(None));
     next_write.push(data_read_sp_bytes(62, 8));
+    written.push_back(Written::Stack(None));
     next_write.push(data_read_sp_bytes(70, 8));
+    written.push_back(Written::Stack(None));
     next_write.push(data_read_sp_bytes(78, 8));
+    written.push_back(Written::Stack(None));
     next_write.push(data_read_sp_bytes(86, 8));
+    written.push_back(Written::Stack(None));
     next_write.push(data_read_sp_bytes(94, 8));
+    written.push_back(Written::Stack(None));
 
     // update current asm at pc
     let instruction_length = 8;
@@ -489,7 +675,7 @@ fn recv_exec_result_changed_values(
     register_changed_arc: &Arc<Mutex<Vec<u8>>>,
 ) {
     let changed_registers = parse_register_names_values(changed_registers);
-    debug!("cr: {:?}", changed_registers);
+    // debug!("cr: {:?}", changed_registers);
     let result: Vec<u8> =
         changed_registers.iter().map(|s| s.parse::<u8>().expect("Invalid number")).collect();
     let mut reg_changed = register_changed_arc.lock().unwrap();
@@ -630,9 +816,6 @@ fn key_enter(app: &mut App) -> Result<(), io::Error> {
                 app.save_filepath(val);
             }
             write_mi(&app.gdb_stdin, val);
-            // let mut stdin = app.gdb_stdin.lock().unwrap();
-            // writeln!(stdin, "{}", val)?;
-            // debug!("writing {}", val);
             app.input.reset();
         }
     } else {
@@ -644,9 +827,6 @@ fn key_enter(app: &mut App) -> Result<(), io::Error> {
             app.save_filepath(val);
         }
         write_mi(&app.gdb_stdin, val);
-        // let mut stdin = app.gdb_stdin.lock().unwrap();
-        // writeln!(stdin, "{}", app.input.value())?;
-        // debug!("writing {}", app.input.value());
         app.input.reset();
     }
 
@@ -734,11 +914,7 @@ fn draw_input(title_area: Rect, app: &App, f: &mut Frame, input: Rect) {
             InputMode::Editing => Style::default().fg(GREEN),
         })
         .scroll((0, scroll as u16))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Input".fg(YELLOW).add_modifier(Modifier::BOLD)),
-        );
+        .block(Block::default().borders(Borders::ALL).title("Input".fg(YELLOW)));
     f.render_widget(txt_input, input);
     match app.input_mode {
         InputMode::Normal =>
@@ -790,11 +966,8 @@ fn draw_output(app: &App, f: &mut Frame, output: Rect, full: bool) {
         })
         .collect();
     let help = if full { "(up(k), down(j), 50 up(K), 50 down(J))" } else { "" };
-    let output_block = List::new(outputs).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(format!("Output {help}").fg(BLUE).add_modifier(Modifier::BOLD)),
-    );
+    let output_block = List::new(outputs)
+        .block(Block::default().borders(Borders::ALL).title(format!("Output {help}").fg(BLUE)));
     f.render_widget(output_block, output);
 }
 
@@ -852,7 +1025,7 @@ fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
     if let Some(pc_index) = pc_index {
         let widths = [Constraint::Length(16), Constraint::Percentage(10), Fill(1)];
         let table = Table::new(rows, widths)
-            .block(Block::default().borders(Borders::TOP).title(tital).add_modifier(Modifier::BOLD))
+            .block(Block::default().borders(Borders::TOP).title(tital))
             .row_highlight_style(Style::new().fg(GREEN))
             .highlight_symbol(">>");
         let start_offset = if pc_index < 5 { 0 } else { pc_index - 5 };
@@ -860,8 +1033,7 @@ fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
             TableState::default().with_offset(start_offset).with_selected(pc_index);
         f.render_stateful_widget(table, asm, &mut table_state);
     } else {
-        let block =
-            Block::default().borders(Borders::TOP).title(tital).add_modifier(Modifier::BOLD);
+        let block = Block::default().borders(Borders::TOP).title(tital);
         f.render_widget(block, asm);
     }
 }
@@ -908,6 +1080,8 @@ fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
                     "Stack",
                     Style::default().fg(STACK_COLOR).add_modifier(Modifier::BOLD),
                 ),
+                Span::raw(" | "),
+                Span::styled("Code", Style::default().fg(TEXT_COLOR).add_modifier(Modifier::BOLD)),
             ],
             Style::default().add_modifier(Modifier::RAPID_BLINK),
         ),
@@ -934,6 +1108,8 @@ fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
                     "Stack",
                     Style::default().fg(STACK_COLOR).add_modifier(Modifier::BOLD),
                 ),
+                Span::raw(" | "),
+                Span::styled("Code", Style::default().fg(TEXT_COLOR).add_modifier(Modifier::BOLD)),
             ],
             Style::default(),
         ),
@@ -949,30 +1125,52 @@ fn draw_stack(app: &App, f: &mut Frame, stack: Rect) {
     if let Ok(stack) = app.stack.lock() {
         let mut entries: Vec<_> = stack.clone().into_iter().collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
-        for (addr, value) in entries.iter() {
-            rows.push(Row::new(vec![
-                Cell::from(format!("0x{:02x}", addr)).style(Style::new().fg(PURPLE)),
-                Cell::from(format!("0x{:02x}", value)),
-            ]));
+        for (addr, values) in entries.iter() {
+            // TODO: increase scope
+            let filepath_lock = app.filepath.lock().unwrap();
+            let binding = filepath_lock.as_ref().unwrap();
+            let filepath = binding.to_string_lossy();
+
+            let addr = Cell::from(format!("0x{:02x}", addr)).style(Style::new().fg(PURPLE));
+            // let val = Cell::from(format!("0x{:02x}", value));
+            let mut cells = vec![addr];
+            for v in values {
+                let mut cell = Cell::from(format!("0x{:02x}", v));
+                let (is_stack, is_heap, is_text) = classify_val(*v, app, &filepath);
+                apply_val_color(&mut cell, is_stack, is_heap, is_text);
+                cells.push(cell);
+            }
+            let row = Row::new(cells);
+            rows.push(row);
         }
     }
 
-    let widths = [Constraint::Length(16), Fill(1)];
-    let table = Table::new(rows, widths).block(
-        Block::default()
-            .borders(Borders::TOP)
-            .title("Stack".fg(ORANGE).add_modifier(Modifier::BOLD)),
-    );
+    let widths = [
+        Constraint::Length(16),
+        Fill(1),
+        Fill(1),
+        Fill(1),
+        Fill(1),
+        Fill(1),
+        Fill(1),
+        Fill(1),
+        Fill(1),
+    ];
+    let table = Table::new(rows, widths)
+        .block(Block::default().borders(Borders::TOP).title("Stack".fg(ORANGE)));
 
     f.render_widget(table, stack);
 }
 
+/// Registers
 fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
-    // Registers
+    let block = Block::default().borders(Borders::TOP).title("Registers".fg(ORANGE));
+
     let mut rows = vec![];
 
     if let Ok(regs) = app.registers.lock() {
         if regs.is_empty() {
+            f.render_widget(block, register);
             return;
         }
 
@@ -980,77 +1178,99 @@ fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
         let filepath_lock = app.filepath.lock().unwrap();
         let binding = filepath_lock.as_ref().unwrap();
         let filepath = binding.to_string_lossy();
-        for (i, (name, register)) in regs.iter().enumerate() {
+        for (i, (name, register, vals)) in regs.iter().enumerate() {
             if let Some(reg) = register {
+                if !reg.is_set() {
+                    continue;
+                }
                 if let Some(reg_value) = &reg.value {
-                    if reg_value == &"<unavailable>".to_string() {
-                        continue;
-                    }
-                    let val = u64::from_str_radix(&reg_value[2..], 16).unwrap();
-                    let changed = reg_changed_lock.contains(&(i as u8));
-                    let mut reg_name = Cell::from(name.to_string()).style(Style::new().fg(PURPLE));
+                    if let Ok(val) = u64::from_str_radix(&reg_value[2..], 16) {
+                        let changed = reg_changed_lock.contains(&(i as u8));
+                        let mut reg_name =
+                            Cell::from(name.to_string()).style(Style::new().fg(PURPLE));
+                        let (is_stack, is_heap, is_text) = classify_val(val, app, &filepath);
 
-                    let mut is_stack = false;
-                    let mut is_heap = false;
-                    let mut is_text = false;
-                    if val != 0 {
-                        // look through, add see if the value is part of the stack
-                        let memory_map = app.memory_map.lock().unwrap();
-                        if memory_map.is_some() {
-                            for r in memory_map.as_ref().unwrap() {
-                                // Check stack
-                                // TODO: which ones are stack could be cached
-                                if r.is_stack() {
-                                    if r.contains(val) {
-                                        is_stack = true;
-                                        break;
-                                    }
-                                } else if r.is_heap() {
-                                    // Check heap
-                                    // TODO: which ones are heap could be cached
-                                    if r.contains(val) {
-                                        is_heap = true;
-                                        break;
-                                    }
-                                // TODO(23): This could be expanded to all segments loaded in
-                                // as executable
-                                } else if r.is_path(&filepath) {
-                                    if r.contains(val) {
-                                        is_text = true;
-                                        break;
-                                    }
-                                }
+                        let mut extra_vals = Vec::new();
+                        if !is_text && val != 0 && !vals.is_empty() {
+                            for v in vals {
+                                let mut cell = Cell::from(format!("0x{:02x}", v));
+                                let (is_stack, is_heap, is_text) = classify_val(*v, app, &filepath);
+                                apply_val_color(&mut cell, is_stack, is_heap, is_text);
+                                extra_vals.push(cell);
                             }
                         }
-                    }
 
-                    // Apply color to val
-                    let mut val = Cell::from(reg.value.clone().unwrap());
-                    if is_stack {
-                        val = val.style(Style::new().fg(STACK_COLOR))
-                    } else if is_heap {
-                        val = val.style(Style::new().fg(HEAP_COLOR))
-                    } else if is_text {
-                        val = val.style(Style::new().fg(TEXT_COLOR))
-                    }
+                        let mut cell = Cell::from(reg.value.clone().unwrap());
+                        apply_val_color(&mut cell, is_stack, is_heap, is_text);
 
-                    // Apply color to reg name
-                    if changed {
-                        reg_name = reg_name.style(Style::new().fg(RED));
+                        // Apply color to reg name
+                        if changed {
+                            reg_name = reg_name.style(Style::new().fg(RED));
+                        }
+                        let mut row = vec![reg_name, cell];
+                        row.append(&mut extra_vals);
+                        rows.push(Row::new(row));
                     }
-                    rows.push(Row::new(vec![reg_name, val]));
                 }
             }
         }
     }
 
-    let widths = [Constraint::Length(5), Constraint::Length(20)];
-    let table = Table::new(rows, widths).block(
-        Block::default()
-            .borders(Borders::TOP)
-            .title("Registers".fg(ORANGE))
-            .add_modifier(Modifier::BOLD),
-    );
-
+    let widths = [
+        Constraint::Length(5),
+        Constraint::Length(20),
+        Constraint::Length(20),
+        Constraint::Length(20),
+        Constraint::Length(20),
+        Constraint::Length(20),
+        Constraint::Length(20),
+        Constraint::Length(20),
+        Constraint::Length(20),
+        Constraint::Length(20),
+        Constraint::Length(20),
+    ];
+    let table = Table::new(rows, widths).block(block);
     f.render_widget(table, register);
+}
+
+fn classify_val(val: u64, app: &App, filepath: &std::borrow::Cow<str>) -> (bool, bool, bool) {
+    let mut is_stack = false;
+    let mut is_heap = false;
+    let mut is_text = false;
+    if val != 0 {
+        // look through, add see if the value is part of the stack
+        let memory_map = app.memory_map.lock().unwrap();
+        // trace!("{:02x?}", memory_map);
+        if memory_map.is_some() {
+            for r in memory_map.as_ref().unwrap() {
+                if r.contains(val) {
+                    if r.is_stack() {
+                        is_stack = true;
+                        break;
+                    } else if r.is_heap() {
+                        is_heap = true;
+                        break;
+                    } else if r.is_path(filepath) {
+                        // TODO(23): This could be expanded to all segments loaded in
+                        // as executable
+                        is_text = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    (is_stack, is_heap, is_text)
+}
+
+/// Apply color to val
+fn apply_val_color(cell: &mut Cell, is_stack: bool, is_heap: bool, is_text: bool) {
+    // TOOD: remove clone
+    if is_stack {
+        *cell = cell.clone().style(Style::new().fg(STACK_COLOR))
+    } else if is_heap {
+        *cell = cell.clone().style(Style::new().fg(HEAP_COLOR))
+    } else if is_text {
+        *cell = cell.clone().style(Style::new().fg(TEXT_COLOR))
+    }
 }

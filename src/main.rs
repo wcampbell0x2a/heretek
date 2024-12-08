@@ -326,77 +326,22 @@ fn gdb_interact(
                     }
 
                     if let Some(value) = kv.get("value") {
-                        // This works b/c we only use this for PC, but will most likely
-                        // be wrong sometime
-                        let mut cur_pc_lock = current_pc_arc.lock().unwrap();
-                        let pc: Vec<&str> = value.split_whitespace().collect();
-                        let pc = pc[0].strip_prefix("0x").unwrap();
-                        *cur_pc_lock = u64::from_str_radix(pc, 16).unwrap();
+                        recv_exec_result_value(&current_pc_arc, value);
                     } else if let Some(register_names) = kv.get("register-names") {
-                        let register_names = parse_register_names_values(register_names);
-                        let mut regs_names = register_names_arc.lock().unwrap();
-                        *regs_names = register_names;
+                        recv_exec_result_register_names(register_names, &register_names_arc);
                     } else if let Some(changed_registers) = kv.get("changed-registers") {
-                        let changed_registers = parse_register_names_values(changed_registers);
-                        debug!("cr: {:?}", changed_registers);
-                        let result: Vec<u8> = changed_registers
-                            .iter()
-                            .map(|s| s.parse::<u8>().expect("Invalid number"))
-                            .collect();
-                        let mut reg_changed = register_changed_arc.lock().unwrap();
-                        *reg_changed = result;
+                        recv_exec_result_changed_values(changed_registers, &register_changed_arc);
                     } else if let Some(register_values) = kv.get("register-values") {
-                        // parse the response and save it
-                        let registers = parse_register_values(register_values);
-                        let mut regs = registers_arc.lock().unwrap();
-                        let regs_names = register_names_arc.lock().unwrap();
-                        let registers = join_registers(&regs_names, &registers);
-                        *regs = registers.clone();
-
-                        // assuming we have a valid $pc, get the bytes
-                        let val = read_pc_value();
-                        next_write.push(val);
-
-                        // assuming we have a valid $sp, get the bytes
-                        next_write.push(data_read_sp_bytes(0, 8));
-                        next_write.push(data_read_sp_bytes(8, 8));
-                        next_write.push(data_read_sp_bytes(16, 8));
-                        next_write.push(data_read_sp_bytes(24, 8));
-                        next_write.push(data_read_sp_bytes(32, 8));
-                        next_write.push(data_read_sp_bytes(40, 8));
-                        next_write.push(data_read_sp_bytes(48, 8));
-                        next_write.push(data_read_sp_bytes(56, 8));
-                        next_write.push(data_read_sp_bytes(62, 8));
-                        next_write.push(data_read_sp_bytes(70, 8));
-                        next_write.push(data_read_sp_bytes(78, 8));
-                        next_write.push(data_read_sp_bytes(86, 8));
-                        next_write.push(data_read_sp_bytes(94, 8));
-
-                        // update current asm at pc
-                        let instruction_length = 8;
-                        next_write.push(data_disassemble(
-                            instruction_length * 5,
-                            instruction_length * 15,
-                        ));
-                    } else if let Some(memory) = kv.get("memory") {
-                        let mut stack = stack_arc.lock().unwrap();
-                        let mem_str = memory.strip_prefix(r#"[{"#).unwrap();
-                        let mem_str = mem_str.strip_suffix(r#"}]"#).unwrap();
-                        let data = parse_key_value_pairs(mem_str);
-                        let begin = data["begin"].to_string();
-                        let begin = begin.strip_prefix("0x").unwrap();
-                        debug!("{:?}", data);
-                        debug!("{}", begin);
-                        // TODO: this is insane and should be cached
-                        stack.insert(
-                            u64::from_str_radix(begin, 16).unwrap(),
-                            u64::from_str_radix(&data["contents"], 16).unwrap(),
+                        recv_exec_results_register_value(
+                            register_values,
+                            &registers_arc,
+                            &register_names_arc,
+                            &mut next_write,
                         );
-                        debug!("{:?}", data);
+                    } else if let Some(memory) = kv.get("memory") {
+                        recv_exec_result_memory(&stack_arc, memory);
                     } else if let Some(asm) = kv.get("asm_insns") {
-                        let new_asms = parse_asm_insns_values(asm);
-                        let mut asm = asm_arc.lock().unwrap();
-                        *asm = new_asms.clone();
+                        recv_exec_result_asm_insns(asm, &asm_arc);
                     }
                 }
                 MIResponse::StreamOutput(t, s) => {
@@ -447,6 +392,96 @@ fn gdb_interact(
             }
         }
     }
+}
+
+fn recv_exec_result_asm_insns(asm: &String, asm_arc: &Arc<Mutex<Vec<Asm>>>) {
+    let new_asms = parse_asm_insns_values(asm);
+    let mut asm = asm_arc.lock().unwrap();
+    *asm = new_asms.clone();
+}
+
+fn recv_exec_result_memory(stack_arc: &Arc<Mutex<HashMap<u64, u64>>>, memory: &String) {
+    let mut stack = stack_arc.lock().unwrap();
+    let mem_str = memory.strip_prefix(r#"[{"#).unwrap();
+    let mem_str = mem_str.strip_suffix(r#"}]"#).unwrap();
+    let data = parse_key_value_pairs(mem_str);
+    let begin = data["begin"].to_string();
+    let begin = begin.strip_prefix("0x").unwrap();
+    debug!("{:?}", data);
+    debug!("{}", begin);
+    // TODO: this is insane and should be cached
+    stack.insert(
+        u64::from_str_radix(begin, 16).unwrap(),
+        u64::from_str_radix(&data["contents"], 16).unwrap(),
+    );
+    debug!("{:?}", data);
+}
+
+fn recv_exec_results_register_value(
+    register_values: &String,
+    registers_arc: &Arc<Mutex<Vec<(String, Option<Register>)>>>,
+    register_names_arc: &Arc<Mutex<Vec<String>>>,
+    next_write: &mut Vec<String>,
+) {
+    // parse the response and save it
+    let registers = parse_register_values(register_values);
+    let mut regs = registers_arc.lock().unwrap();
+    let regs_names = register_names_arc.lock().unwrap();
+    let registers = join_registers(&regs_names, &registers);
+    *regs = registers.clone();
+
+    // assuming we have a valid $pc, get the bytes
+    let val = read_pc_value();
+    next_write.push(val);
+
+    // assuming we have a valid $sp, get the bytes
+    next_write.push(data_read_sp_bytes(0, 8));
+    next_write.push(data_read_sp_bytes(8, 8));
+    next_write.push(data_read_sp_bytes(16, 8));
+    next_write.push(data_read_sp_bytes(24, 8));
+    next_write.push(data_read_sp_bytes(32, 8));
+    next_write.push(data_read_sp_bytes(40, 8));
+    next_write.push(data_read_sp_bytes(48, 8));
+    next_write.push(data_read_sp_bytes(56, 8));
+    next_write.push(data_read_sp_bytes(62, 8));
+    next_write.push(data_read_sp_bytes(70, 8));
+    next_write.push(data_read_sp_bytes(78, 8));
+    next_write.push(data_read_sp_bytes(86, 8));
+    next_write.push(data_read_sp_bytes(94, 8));
+
+    // update current asm at pc
+    let instruction_length = 8;
+    next_write.push(data_disassemble(instruction_length * 5, instruction_length * 15));
+}
+
+fn recv_exec_result_changed_values(
+    changed_registers: &String,
+    register_changed_arc: &Arc<Mutex<Vec<u8>>>,
+) {
+    let changed_registers = parse_register_names_values(changed_registers);
+    debug!("cr: {:?}", changed_registers);
+    let result: Vec<u8> =
+        changed_registers.iter().map(|s| s.parse::<u8>().expect("Invalid number")).collect();
+    let mut reg_changed = register_changed_arc.lock().unwrap();
+    *reg_changed = result;
+}
+
+fn recv_exec_result_register_names(
+    register_names: &String,
+    register_names_arc: &Arc<Mutex<Vec<String>>>,
+) {
+    let register_names = parse_register_names_values(register_names);
+    let mut regs_names = register_names_arc.lock().unwrap();
+    *regs_names = register_names;
+}
+
+fn recv_exec_result_value(current_pc_arc: &Arc<Mutex<u64>>, value: &String) {
+    // This works b/c we only use this for PC, but will most likely
+    // be wrong sometime
+    let mut cur_pc_lock = current_pc_arc.lock().unwrap();
+    let pc: Vec<&str> = value.split_whitespace().collect();
+    let pc = pc[0].strip_prefix("0x").unwrap();
+    *cur_pc_lock = u64::from_str_radix(pc, 16).unwrap();
 }
 
 fn write_mi(gdb_stdin_arc: &Arc<Mutex<dyn Write + Send>>, w: &String) {

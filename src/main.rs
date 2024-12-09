@@ -158,7 +158,7 @@ impl App {
             match (&args.local, &args.remote) {
                 (true, None) => {
                     let mut gdb_process = Command::new("gdb")
-                        .args(["--interpreter=mi2", "--quiet"])
+                        .args(["--interpreter=mi2", "--quiet", "-nx"])
                         .stdin(Stdio::piped())
                         .stdout(Stdio::piped())
                         .spawn()

@@ -1,12 +1,13 @@
 [package]
 name = "heretek"
-version = "0.1.0-rc3"
+version = "0.1.0-rc4"
 edition = "2021"
 
 [dependencies]
 chrono = "0.4.38"
 clap = { version = "4.5.21", features = ["derive"] }
 crossterm = "0.28.1"
+deku = { version = "0.18.1", default-features = false, features = ["alloc", "std"] }
 env_logger = "0.11.5"
 log = "0.4.22"
 ratatui = "0.29.0"

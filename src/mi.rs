@@ -76,6 +76,13 @@ pub struct Register {
     pub error: Option<String>,
 }
 
+impl Register {
+    /// Value is not set to anything readable
+    pub fn is_set(&self) -> bool {
+        self.error.is_none() && self.value != Some("<unavailable>".to_string())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Asm {
     pub address: u64,
@@ -165,7 +172,7 @@ pub fn join_registers(
         if let Some(register) = register {
             if !register.number.is_empty() {
                 registers_arch.push((name.to_string(), Some(register.clone())));
-                debug!("[{i}] register({name}): {:?}", register);
+                // debug!("[{i}] register({name}): {:?}", register);
             }
         }
     }
@@ -175,11 +182,13 @@ pub fn join_registers(
 // Function to parse register-values as an array of Registers
 pub fn parse_register_values(input: &str) -> Vec<Option<Register>> {
     let mut registers = Vec::new();
-    let re = Regex::new(r#"\{(.*?)\}"#).unwrap(); // Match entire register block
+    let re = Regex::new(r#"\{(?:[^}{]|\{(?:[^}{]|\{(?:[^}{]|\{[^}{]*\})*\})*\})*\}"#).unwrap();
 
     // Capture each register block and parse it
     for capture in re.captures_iter(input) {
-        let register_str = &capture[1];
+        let cap_str = &capture[0];
+        let cap_str = &cap_str[1..cap_str.len() - 1].to_string();
+        debug!("CAPTURE: {}", cap_str);
         let mut register = Register {
             number: String::new(),
             value: None,
@@ -192,7 +201,7 @@ pub fn parse_register_values(input: &str) -> Vec<Option<Register>> {
             error: None,
         };
 
-        let key_values = parse_key_value_pairs(register_str);
+        let key_values = parse_key_value_pairs(cap_str);
         let mut fail = false;
         for (key, val) in key_values {
             if val.starts_with("\"{") {
@@ -238,7 +247,7 @@ pub fn parse_register_names_values(input: &str) -> Vec<String> {
 // Function to parse register-values as an array of Registers
 pub fn parse_asm_insns_values(input: &str) -> Vec<Asm> {
     let mut asms = Vec::new();
-    debug!("asm: {:?}", input);
+    // debug!("asm: {:?}", input);
     let re = Regex::new(r#"\{(?:[^}{]|\{(?:[^}{]|\{(?:[^}{]|\{[^}{]*\})*\})*\})*\}"#).unwrap();
 
     // Capture each register block and parse it
@@ -279,7 +288,7 @@ pub enum MIResponse {
 }
 
 pub fn parse_mi_response(line: &str) -> MIResponse {
-    debug!("line: {}", line);
+    // debug!("line: {}", line);
     if line.starts_with('^') {
         parse_exec_result(&line[1..])
     } else if line.starts_with('*') {
@@ -342,6 +351,7 @@ pub fn data_read_sp_bytes(hex_offset: u64, len: u64) -> String {
 }
 
 pub fn data_read_memory_bytes(addr: &str, hex_offset: u64, len: u64) -> String {
+    assert!(addr.starts_with("0x"));
     format!("-data-read-memory-bytes {addr}+0x{hex_offset:02x} {len}")
 }
 
@@ -361,10 +371,10 @@ mod tests {
             let registers = parse_register_values(register_values);
             assert_eq!(registers.len(), 2);
 
-            assert_eq!(registers[0].number, "0");
-            assert_eq!(registers[0].value.as_deref(), Some("0x0"));
-            assert_eq!(registers[1].number, "1");
-            assert_eq!(registers[1].value.as_deref(), Some("0x1"));
+            assert_eq!(registers[0].as_ref().unwrap().number, "0");
+            assert_eq!(registers[0].as_ref().unwrap().value.as_deref(), Some("0x0"));
+            assert_eq!(registers[1].as_ref().unwrap().number, "1");
+            assert_eq!(registers[1].as_ref().unwrap().value.as_deref(), Some("0x1"));
         } else {
             panic!("Expected ExecResult response");
         }
@@ -425,6 +435,7 @@ mod tests {
             assert_eq!(data.get("reason"), Some(&"breakpoint-hit".to_string()));
             assert_eq!(data.get("disp"), Some(&"keep".to_string()));
             assert_eq!(data.get("bkptno"), Some(&"1".to_string()));
+            // TODO: fix frame
         } else {
             panic!("Unexpected MIResponse type");
         }
@@ -450,6 +461,7 @@ mod tests {
                 assert_eq!(data.get("thread-id"), Some(&"1".to_string()));
                 assert_eq!(data.get("stopped-threads"), Some(&"all".to_string()));
                 assert_eq!(data.get("core"), Some(&"2".to_string()));
+                // TODO: fix frame
             }
             _ => panic!("Failed to parse AsyncRecord"),
         }

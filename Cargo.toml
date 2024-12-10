@@ -6,7 +6,7 @@ description = "Yet Another GDB TUI"
 license = "MIT/Apache-2.0"
 
 [dependencies]
-chrono = "0.4.38"
+chrono = "0.4.39"
 clap = { version = "4.5.21", features = ["derive"] }
 crossterm = "0.28.1"
 deku = { version = "0.18.1", default-features = false, features = ["alloc", "std"] }

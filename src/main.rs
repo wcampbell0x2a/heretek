@@ -113,6 +113,10 @@ struct Args {
     /// `mkfifo gdb_sock; cat gdb_pipe | gdb --interpreter=mi | nc -l -p 12345 > gdb_pipe`
     #[arg(short, long)]
     remote: Option<SocketAddr>,
+
+    /// Switch into 32-bit mode
+    #[arg(long = "32")]
+    thirty_two_bit: bool,
 }
 
 enum Mode {
@@ -126,6 +130,7 @@ enum Mode {
 // TODO: this could be split up, some of these fields
 // are always set after the file is loaded in gdb
 struct App {
+    thirty_two_bit: Arc<Mutex<bool>>,
     filepath: Arc<Mutex<Option<PathBuf>>>,
     endian: Arc<Mutex<Option<Endian>>>,
     mode: Mode,
@@ -185,6 +190,7 @@ impl App {
             };
 
         let app = App {
+            thirty_two_bit: Arc::new(Mutex::new(args.thirty_two_bit)),
             filepath: Arc::new(Mutex::new(None)),
             endian: Arc::new(Mutex::new(None)),
             mode: Mode::All,
@@ -256,6 +262,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut terminal = ratatui::init();
 
     let filepath_arc = Arc::clone(&app.filepath);
+    let thirty_two_bit_arc = Arc::clone(&app.thirty_two_bit);
     let endian_arc = Arc::clone(&app.endian);
     let gdb_stdin_arc = Arc::clone(&app.gdb_stdin);
     let current_pc_arc = Arc::clone(&app.current_pc);
@@ -272,6 +279,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     thread::spawn(move || {
         gdb_interact(
             gdb_stdout,
+            thirty_two_bit_arc,
             endian_arc,
             filepath_arc,
             register_changed_arc,
@@ -304,6 +312,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn gdb_interact(
     gdb_stdout: BufReader<Box<dyn Read + Send>>,
+    thirty_two_bit_arc: Arc<Mutex<bool>>,
     endian_arc: Arc<Mutex<Option<deku::ctx::Endian>>>,
     filepath_arc: Arc<Mutex<Option<PathBuf>>>,
     register_changed_arc: Arc<Mutex<Vec<u8>>>,
@@ -392,6 +401,7 @@ fn gdb_interact(
                     } else if let Some(register_values) = kv.get("register-values") {
                         recv_exec_results_register_value(
                             register_values,
+                            &thirty_two_bit_arc,
                             &endian_arc,
                             &registers_arc,
                             &register_names_arc,
@@ -401,6 +411,7 @@ fn gdb_interact(
                     } else if let Some(memory) = kv.get("memory") {
                         recv_exec_result_memory(
                             &stack_arc,
+                            &thirty_two_bit_arc,
                             &endian_arc,
                             &registers_arc,
                             memory,
@@ -481,6 +492,7 @@ fn recv_exec_result_asm_insns(asm: &String, asm_arc: &Arc<Mutex<Vec<Asm>>>) {
 
 fn recv_exec_result_memory(
     stack_arc: &Arc<Mutex<HashMap<u64, Vec<u64>>>>,
+    thirty_two_bit_arc: &Arc<Mutex<bool>>,
     endian_arc: &Arc<Mutex<Option<Endian>>>,
     registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Vec<u64>)>>>,
     memory: &String,
@@ -494,31 +506,48 @@ fn recv_exec_result_memory(
 
     match last_written {
         Written::RegisterValue((base_reg, n)) => {
+            let thirty = thirty_two_bit_arc.lock().unwrap();
             let mut regs = registers_arc.lock().unwrap();
+
             let (data, _) = read_memory(memory);
             for (_, b, extra) in regs.iter_mut() {
                 if let Some(b) = b {
                     if b.number == base_reg {
-                        let mut val = u64::from_str_radix(&data["contents"], 16).unwrap();
-                        debug!("val: {:02x?}", val);
-                        let endian = endian_arc.lock().unwrap();
-                        if endian.unwrap() == Endian::Big {
-                            val = val.to_le();
+                        let (val, len) = if *thirty {
+                            let mut val = u32::from_str_radix(&data["contents"], 16).unwrap();
+                            debug!("val: {:02x?}", val);
+                            let endian = endian_arc.lock().unwrap();
+                            if endian.unwrap() == Endian::Big {
+                                val = val.to_le();
+                            } else {
+                                val = val.to_be();
+                            }
+
+                            (val as u64, 4)
                         } else {
-                            val = val.to_be();
-                        }
-                        if extra.iter().last() == Some(&val) {
+                            let mut val = u64::from_str_radix(&data["contents"], 16).unwrap();
+                            debug!("val: {:02x?}", val);
+                            let endian = endian_arc.lock().unwrap();
+                            if endian.unwrap() == Endian::Big {
+                                val = val.to_le();
+                            } else {
+                                val = val.to_be();
+                            }
+
+                            (val, 8)
+                        };
+                        if extra.iter().last() == Some(&(val)) {
                             trace!("loop detected!");
                             return;
                         }
-                        extra.push(val);
+                        extra.push(val as u64);
                         debug!("extra val: {:02x?}", val);
 
                         if val != 0 {
                             // TODO: endian
                             debug!("1: trying to read: {:02x}", val);
                             let num = format!("0x{:02x}", val);
-                            next_write.push(data_read_memory_bytes(&num, 0, 8));
+                            next_write.push(data_read_memory_bytes(&num, 0, len));
                             written.push_back(Written::RegisterValue((b.number.clone(), val)));
                         }
                         break;
@@ -534,20 +563,37 @@ fn recv_exec_result_memory(
             let (data, _) = read_memory(memory);
             debug!("stack: {:02x?}", data);
 
-            update_stack(data, endian_arc, begin, &mut stack, next_write, written);
+            update_stack(
+                data,
+                thirty_two_bit_arc,
+                endian_arc,
+                begin,
+                &mut stack,
+                next_write,
+                written,
+            );
         }
         Written::Stack(None) => {
             let mut stack = stack_arc.lock().unwrap();
             let (data, begin) = read_memory(memory);
             debug!("stack: {:02x?}", data);
 
-            update_stack(data, endian_arc, begin, &mut stack, next_write, written);
+            update_stack(
+                data,
+                thirty_two_bit_arc,
+                endian_arc,
+                begin,
+                &mut stack,
+                next_write,
+                written,
+            );
         }
     }
 }
 
 fn update_stack(
     data: HashMap<String, String>,
+    thirty_two_bit_arc: &Arc<Mutex<bool>>,
     endian_arc: &Arc<Mutex<Option<Endian>>>,
     begin: String,
     stack: &mut std::sync::MutexGuard<HashMap<u64, Vec<u64>>>,
@@ -555,13 +601,28 @@ fn update_stack(
     written: &mut VecDeque<Written>,
 ) {
     // TODO: this is insane and should be cached
-    let mut val = u64::from_str_radix(&data["contents"], 16).unwrap();
-    let endian = endian_arc.lock().unwrap();
-    if endian.unwrap() == Endian::Big {
-        val = val.to_le();
+    let thirty = thirty_two_bit_arc.lock().unwrap();
+    let (val, len) = if *thirty {
+        let mut val = u32::from_str_radix(&data["contents"], 16).unwrap();
+        let endian = endian_arc.lock().unwrap();
+        if endian.unwrap() == Endian::Big {
+            val = val.to_le();
+        } else {
+            val = val.to_be();
+        }
+
+        (val as u64, 4)
     } else {
-        val = val.to_be();
-    }
+        let mut val = u64::from_str_radix(&data["contents"], 16).unwrap();
+        let endian = endian_arc.lock().unwrap();
+        if endian.unwrap() == Endian::Big {
+            val = val.to_le();
+        } else {
+            val = val.to_be();
+        }
+
+        (val, 8)
+    };
 
     // Begin is always correct endian
     let key = u64::from_str_radix(&begin, 16).unwrap();
@@ -579,7 +640,7 @@ fn update_stack(
         // TODO: endian?
         debug!("2: trying to read: {}", data["contents"]);
         let num = format!("0x{:02x}", val);
-        next_write.push(data_read_memory_bytes(&num, 0, 8));
+        next_write.push(data_read_memory_bytes(&num, 0, len));
         written.push_back(Written::Stack(Some(begin)));
     }
 }
@@ -595,12 +656,14 @@ fn read_memory(memory: &String) -> (HashMap<String, String>, String) {
 
 fn recv_exec_results_register_value(
     register_values: &String,
+    thirty_two_bit_arc: &Arc<Mutex<bool>>,
     endian_arc: &Arc<Mutex<Option<Endian>>>,
     registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Vec<u64>)>>>,
     register_names_arc: &Arc<Mutex<Vec<String>>>,
     next_write: &mut Vec<String>,
     written: &mut VecDeque<Written>,
 ) {
+    let thirty = thirty_two_bit_arc.lock().unwrap();
     // parse the response and save it
     let registers = parse_register_values(register_values);
     let mut regs = registers_arc.lock().unwrap();
@@ -609,19 +672,39 @@ fn recv_exec_results_register_value(
         if let Some(r) = r {
             if r.is_set() {
                 if let Some(val) = &r.value {
-                    // trace!("{val:02x?}");
-                    // TODO: this should be able to expect
-                    if let Ok(mut val_u64) = u64::from_str_radix(&val[2..], 16) {
-                        // NOTE: This is already in the right endian
-                        // avoid trying to read null :^)
-                        if val_u64 != 0 {
-                            // TODO: we shouldn't do this for known CODE locations
-                            next_write.push(data_read_memory_bytes(
-                                &format!("0x{:02x?}", val_u64),
-                                0,
-                                8,
-                            ));
-                            written.push_back(Written::RegisterValue((r.number.clone(), val_u64)));
+                    if *thirty {
+                        // TODO: this should be able to expect
+                        if let Ok(mut val_u32) = u32::from_str_radix(&val[2..], 16) {
+                            // NOTE: This is already in the right endian
+                            // avoid trying to read null :^)
+                            if val_u32 != 0 {
+                                // TODO: we shouldn't do this for known CODE locations
+                                next_write.push(data_read_memory_bytes(
+                                    &format!("0x{:02x?}", val_u32),
+                                    0,
+                                    4,
+                                ));
+                                written.push_back(Written::RegisterValue((
+                                    r.number.clone(),
+                                    val_u32 as u64,
+                                )));
+                            }
+                        }
+                    } else {
+                        // TODO: this should be able to expect
+                        if let Ok(mut val_u64) = u64::from_str_radix(&val[2..], 16) {
+                            // NOTE: This is already in the right endian
+                            // avoid trying to read null :^)
+                            if val_u64 != 0 {
+                                // TODO: we shouldn't do this for known CODE locations
+                                next_write.push(data_read_memory_bytes(
+                                    &format!("0x{:02x?}", val_u64),
+                                    0,
+                                    8,
+                                ));
+                                written
+                                    .push_back(Written::RegisterValue((r.number.clone(), val_u64)));
+                            }
                         }
                     }
                 }
@@ -637,33 +720,63 @@ fn recv_exec_results_register_value(
     let val = read_pc_value();
     next_write.push(val);
 
-    // assuming we have a valid $sp, get the bytes
-    next_write.push(data_read_sp_bytes(0, 8));
-    written.push_back(Written::Stack(None));
-    next_write.push(data_read_sp_bytes(8, 8));
-    written.push_back(Written::Stack(None));
-    next_write.push(data_read_sp_bytes(16, 8));
-    written.push_back(Written::Stack(None));
-    next_write.push(data_read_sp_bytes(24, 8));
-    written.push_back(Written::Stack(None));
-    next_write.push(data_read_sp_bytes(32, 8));
-    written.push_back(Written::Stack(None));
-    next_write.push(data_read_sp_bytes(40, 8));
-    written.push_back(Written::Stack(None));
-    next_write.push(data_read_sp_bytes(48, 8));
-    written.push_back(Written::Stack(None));
-    next_write.push(data_read_sp_bytes(56, 8));
-    written.push_back(Written::Stack(None));
-    next_write.push(data_read_sp_bytes(62, 8));
-    written.push_back(Written::Stack(None));
-    next_write.push(data_read_sp_bytes(70, 8));
-    written.push_back(Written::Stack(None));
-    next_write.push(data_read_sp_bytes(78, 8));
-    written.push_back(Written::Stack(None));
-    next_write.push(data_read_sp_bytes(86, 8));
-    written.push_back(Written::Stack(None));
-    next_write.push(data_read_sp_bytes(94, 8));
-    written.push_back(Written::Stack(None));
+    if *thirty {
+        // assuming we have a valid $sp, get the bytes
+        next_write.push(data_read_sp_bytes(0, 4));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(4, 4));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(8, 4));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(12, 4));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(16, 4));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(20, 4));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(24, 4));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(28, 4));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(32, 4));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(36, 4));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(40, 4));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(44, 4));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(48, 4));
+        written.push_back(Written::Stack(None));
+    } else {
+        // assuming we have a valid $sp, get the bytes
+        next_write.push(data_read_sp_bytes(0, 8));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(8, 8));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(16, 8));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(24, 8));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(32, 8));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(40, 8));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(48, 8));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(56, 8));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(62, 8));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(70, 8));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(78, 8));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(86, 8));
+        written.push_back(Written::Stack(None));
+        next_write.push(data_read_sp_bytes(94, 8));
+        written.push_back(Written::Stack(None));
+    }
 
     // update current asm at pc
     let instruction_length = 8;

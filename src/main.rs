@@ -113,6 +113,10 @@ struct Args {
     /// `mkfifo gdb_sock; cat gdb_pipe | gdb --interpreter=mi | nc -l -p 12345 > gdb_pipe`
     #[arg(short, long)]
     remote: Option<SocketAddr>,
+
+    /// Change into 32-bit mode
+    #[arg(long = "32")]
+    thirty_two_bit: bool,
 }
 
 enum Mode {

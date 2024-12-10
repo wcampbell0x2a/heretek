@@ -34,7 +34,7 @@ use mi::{
     data_disassemble, data_read_memory_bytes, data_read_sp_bytes, join_registers,
     parse_asm_insns_values, parse_key_value_pairs, parse_memory_mappings,
     parse_register_names_values, parse_register_values, read_pc_value, Asm, MIResponse,
-    MemoryMapping, Register, MEMORY_MAP_START_STR,
+    MemoryMapping, Register, MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_OLD,
 };
 
 enum InputMode {
@@ -453,12 +453,14 @@ fn gdb_interact(
                     // when we find the start of a memory map, we sent this
                     // and it's quite noisy to the regular output so don't
                     // include
+                    // TODO: We should only be checking for these when we expect them
                     if s.starts_with("process") || s.starts_with("Mapped address spaces:") {
                         // HACK: completely skip the following, as they are a side
                         // effect of not having a GDB MI way of getting a memory map
                         continue;
                     }
-                    if s.trim_end() == MEMORY_MAP_START_STR {
+                    let split: Vec<&str> = s.split_whitespace().collect();
+                    if split == MEMORY_MAP_START_STR_NEW || split == MEMORY_MAP_START_STR_OLD {
                         current_map.0 = true;
                     }
                     if current_map.0 {

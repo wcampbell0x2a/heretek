@@ -5,8 +5,13 @@ use std::str::FromStr;
 use log::debug;
 use regex::Regex;
 
-pub const MEMORY_MAP_START_STR: &str =
-    "          Start Addr           End Addr       Size     Offset  Perms  objfile";
+/// Seen on gdb 15.1
+pub const MEMORY_MAP_START_STR_NEW: [&str; 8] =
+    ["Start", "Addr", "End", "Addr", "Size", "Offset", "Perms", "objfile"];
+
+/// Seen on gdb 7.12
+pub const MEMORY_MAP_START_STR_OLD: [&str; 7] =
+    ["Start", "Addr", "End", "Addr", "Size", "Offset", "objfile"];
 
 #[derive(Debug, Clone)]
 pub struct MemoryMapping {
@@ -14,7 +19,7 @@ pub struct MemoryMapping {
     end_address: u64,
     size: u64,
     offset: u64,
-    permissions: String,
+    permissions: Option<String>,
     path: String,
 }
 
@@ -41,20 +46,31 @@ impl FromStr for MemoryMapping {
 
     fn from_str(line: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 6 {
+        if parts.len() == 5 {
+            Ok(MemoryMapping {
+                start_address: u64::from_str_radix(&parts[0][2..], 16)
+                    .map_err(|_| "Invalid start address")?,
+                end_address: u64::from_str_radix(&parts[1][2..], 16)
+                    .map_err(|_| "Invalid end address")?,
+                size: u64::from_str_radix(&parts[2][2..], 16).map_err(|_| "Invalid size")?,
+                offset: u64::from_str_radix(&parts[3][2..], 16).map_err(|_| "Invalid offset")?,
+                permissions: None,
+                path: parts[4..].join(" "), // Combine the rest as the path
+            })
+        } else if parts.len() == 6 {
+            Ok(MemoryMapping {
+                start_address: u64::from_str_radix(&parts[0][2..], 16)
+                    .map_err(|_| "Invalid start address")?,
+                end_address: u64::from_str_radix(&parts[1][2..], 16)
+                    .map_err(|_| "Invalid end address")?,
+                size: u64::from_str_radix(&parts[2][2..], 16).map_err(|_| "Invalid size")?,
+                offset: u64::from_str_radix(&parts[3][2..], 16).map_err(|_| "Invalid offset")?,
+                permissions: Some(parts[4].to_string()),
+                path: parts[5..].join(" "), // Combine the rest as the path
+            })
+        } else {
             return Err(format!("Invalid line format: {}", line));
         }
-
-        Ok(MemoryMapping {
-            start_address: u64::from_str_radix(&parts[0][2..], 16)
-                .map_err(|_| "Invalid start address")?,
-            end_address: u64::from_str_radix(&parts[1][2..], 16)
-                .map_err(|_| "Invalid end address")?,
-            size: u64::from_str_radix(&parts[2][2..], 16).map_err(|_| "Invalid size")?,
-            offset: u64::from_str_radix(&parts[3][2..], 16).map_err(|_| "Invalid offset")?,
-            permissions: parts[4].to_string(),
-            path: parts[5..].join(" "), // Combine the rest as the path
-        })
     }
 }
 

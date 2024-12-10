@@ -12,7 +12,7 @@ use std::{error::Error, io};
 use clap::Parser;
 use deku::ctx::Endian;
 use env_logger::{Builder, Env};
-use log::{debug, trace};
+use log::{debug, info, trace};
 use ratatui::layout::{Constraint, Layout};
 use ratatui::prelude::*;
 use ratatui::widgets::block::Title;
@@ -435,6 +435,21 @@ fn gdb_interact(
                         // don't include this is output
                         continue;
                     }
+
+                    // When using attach, assume the first symbols found are the text field
+                    // StreamOutput("~", "Reading symbols from /home/wcampbell/a.out...\n")
+                    let mut filepath_lock = filepath_arc.lock().unwrap();
+                    if filepath_lock.is_none() {
+                        let symbols = "Reading symbols from ";
+                        if s.starts_with(symbols) {
+                            let filepath = &s[symbols.len()..];
+                            if let Some(filepath) = filepath.strip_suffix("...\n") {
+                                info!("new filepath: {filepath}");
+                                *filepath_lock = Some(PathBuf::from(filepath));
+                            }
+                        }
+                    }
+
                     // when we find the start of a memory map, we sent this
                     // and it's quite noisy to the regular output so don't
                     // include

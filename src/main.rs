@@ -443,7 +443,8 @@ fn gdb_interact(
                         let symbols = "Reading symbols from ";
                         if s.starts_with(symbols) {
                             let filepath = &s[symbols.len()..];
-                            if let Some(filepath) = filepath.strip_suffix("...\n") {
+                            let filepath = filepath.trim_end();
+                            if let Some(filepath) = filepath.strip_suffix("...") {
                                 info!("new filepath: {filepath}");
                                 *filepath_lock = Some(PathBuf::from(filepath));
                             }

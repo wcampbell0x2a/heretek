@@ -34,7 +34,7 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
                     if let Ok(val) = u64::from_str_radix(&reg_value[2..], 16) {
                         let changed = reg_changed_lock.contains(&(i as u8));
                         let mut reg_name =
-                            Cell::from(name.to_string()).style(Style::new().fg(PURPLE));
+                            Cell::from(format!("  {name}")).style(Style::new().fg(PURPLE));
                         let (is_stack, is_heap, is_text) = app.classify_val(val, &filepath);
 
                         let mut extra_vals = Vec::new();

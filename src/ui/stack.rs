@@ -20,7 +20,7 @@ pub fn draw_stack(app: &App, f: &mut Frame, stack: Rect) {
             let binding = filepath_lock.as_ref().unwrap();
             let filepath = binding.to_string_lossy();
 
-            let addr = Cell::from(format!("0x{:02x}", addr)).style(Style::new().fg(PURPLE));
+            let addr = Cell::from(format!("  0x{:02x}", addr)).style(Style::new().fg(PURPLE));
             let mut cells = vec![addr];
             for v in values {
                 let mut cell = Cell::from(format!("0x{:02x}", v));

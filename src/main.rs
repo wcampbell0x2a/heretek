@@ -1,9 +1,8 @@
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{env, thread};
@@ -12,19 +11,13 @@ use std::{error::Error, io};
 use clap::Parser;
 use deku::ctx::Endian;
 use env_logger::{Builder, Env};
-use log::{debug, info, trace};
-use ratatui::layout::{Constraint, Layout};
-use ratatui::prelude::*;
-use ratatui::widgets::block::Title;
-use ratatui::widgets::{Cell, Row, ScrollbarState, Table, TableState};
-use ratatui::{
-    crossterm::{
-        event::{self, DisableMouseCapture, Event, KeyCode},
-        execute,
-        terminal::{disable_raw_mode, LeaveAlternateScreen},
-    },
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+use ratatui::crossterm::{
+    event::{self, DisableMouseCapture, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, LeaveAlternateScreen},
 };
+use ratatui::prelude::*;
+use ratatui::widgets::ScrollbarState;
 use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
 

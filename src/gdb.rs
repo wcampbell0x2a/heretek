@@ -1,12 +1,10 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use clap::Parser;
 use deku::ctx::Endian;
 use log::{debug, info, trace};
-use ratatui::prelude::*;
 
 use crate::mi::{
     data_disassemble, data_read_memory_bytes, data_read_sp_bytes, join_registers,

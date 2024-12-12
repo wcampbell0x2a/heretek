@@ -11,6 +11,7 @@ use std::{error::Error, io};
 use clap::Parser;
 use deku::ctx::Endian;
 use env_logger::{Builder, Env};
+use log::debug;
 use ratatui::crossterm::{
     event::{self, DisableMouseCapture, Event, KeyCode},
     execute,
@@ -18,6 +19,7 @@ use ratatui::crossterm::{
 };
 use ratatui::prelude::*;
 use ratatui::widgets::ScrollbarState;
+use regex::Regex;
 use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
 
@@ -101,6 +103,7 @@ enum Mode {
     OnlyStack,
     OnlyInstructions,
     OnlyOutput,
+    OnlyMapping,
 }
 
 // TODO: this could be split up, some of these fields
@@ -346,6 +349,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     (_, KeyCode::F(5), _) => {
                         app.mode = Mode::OnlyOutput;
                     }
+                    (_, KeyCode::F(6), _) => {
+                        app.mode = Mode::OnlyMapping;
+                    }
                     (InputMode::Editing, KeyCode::Esc, _) => {
                         app.input_mode = InputMode::Normal;
                     }
@@ -432,10 +438,13 @@ fn key_enter(app: &mut App) -> Result<(), io::Error> {
         let messages = app.messages.clone();
         let messages = messages.as_slice().iter();
         if let Some(val) = messages.last() {
+            let mut val = val.to_owned();
             if val.starts_with("file") {
-                app.save_filepath(val);
+                app.save_filepath(&val);
             }
-            gdb::write_mi(&app.gdb_stdin, val);
+            replace_mapping_start(app, &mut val);
+            replace_mapping_end(app, &mut val);
+            gdb::write_mi(&app.gdb_stdin, &val);
             app.input.reset();
         }
     } else {
@@ -443,14 +452,57 @@ fn key_enter(app: &mut App) -> Result<(), io::Error> {
         app.messages.push(app.input.value().into());
         let val = app.input.clone();
         let val = val.value();
+        let mut val = val.to_owned();
         if val.starts_with("file") {
-            app.save_filepath(val);
+            app.save_filepath(&val);
         }
-        gdb::write_mi(&app.gdb_stdin, val);
+        replace_mapping_start(app, &mut val);
+        replace_mapping_end(app, &mut val);
+        gdb::write_mi(&app.gdb_stdin, &val);
         app.input.reset();
     }
 
     Ok(())
+}
+
+fn replace_mapping_start(app: &mut App, val: &mut String) {
+    let memory_map = app.memory_map.lock().unwrap();
+    if let Some(ref memory_map) = *memory_map {
+        let pattern = Regex::new(r"\$HERETEK_MAPPING_START_([\w\[\]/.-]+)").unwrap();
+        *val = pattern
+            .replace_all(&*val, |caps: &regex::Captures| {
+                let filename = &caps[1];
+                format!(
+                    "0x{:02x}",
+                    memory_map
+                        .iter()
+                        .find(|a| a.path == filename)
+                        .map(|a| a.start_address)
+                        .unwrap_or(0)
+                )
+            })
+            .to_string();
+    }
+}
+
+fn replace_mapping_end(app: &mut App, val: &mut String) {
+    let memory_map = app.memory_map.lock().unwrap();
+    if let Some(ref memory_map) = *memory_map {
+        let pattern = Regex::new(r"\$HERETEK_MAPPING_END_([\w\[\]/.-]+)").unwrap();
+        *val = pattern
+            .replace_all(&*val, |caps: &regex::Captures| {
+                let filename = &caps[1];
+                format!(
+                    "0x{:02x}",
+                    memory_map
+                        .iter()
+                        .find(|a| a.path == filename)
+                        .map(|a| a.end_address)
+                        .unwrap_or(0)
+                )
+            })
+            .to_string();
+    }
 }
 
 fn update_from_previous_input(app: &mut App) {

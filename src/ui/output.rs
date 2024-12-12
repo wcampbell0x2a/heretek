@@ -1,14 +1,14 @@
 use ratatui::layout::Rect;
 use ratatui::prelude::Stylize;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem};
+use ratatui::widgets::{Block, Borders, List, ListItem, Scrollbar, ScrollbarOrientation};
 use ratatui::Frame;
 
 use super::BLUE;
 
 use crate::App;
 
-pub fn draw_output(app: &App, f: &mut Frame, output: Rect, full: bool) {
+pub fn draw_output(app: &mut App, f: &mut Frame, output: Rect, full: bool) {
     let output_lock = app.output.lock().unwrap();
 
     let len = output_lock.len();
@@ -37,8 +37,14 @@ pub fn draw_output(app: &App, f: &mut Frame, output: Rect, full: bool) {
             ListItem::new(content)
         })
         .collect();
+    app.output_scroll_state = app.output_scroll_state.content_length(len);
     let help = if full { "(up(k), down(j), 50 up(K), 50 down(J))" } else { "" };
     let output_block = List::new(outputs)
         .block(Block::default().borders(Borders::ALL).title(format!("Output {help}").fg(BLUE)));
     f.render_widget(output_block, output);
+    f.render_stateful_widget(
+        Scrollbar::new(ScrollbarOrientation::VerticalRight),
+        output,
+        &mut app.output_scroll_state,
+    );
 }

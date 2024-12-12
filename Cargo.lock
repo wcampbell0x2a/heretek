@@ -402,6 +402,7 @@ dependencies = [
  "deku",
  "env_logger",
  "log",
+ "once_cell",
  "ratatui",
  "regex",
  "tui-input",

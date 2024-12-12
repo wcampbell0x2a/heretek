@@ -3,7 +3,16 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use log::debug;
-use regex::Regex;
+use regex::{CaptureMatches, Regex};
+
+fn match_inner_items(haystack: &str) -> CaptureMatches {
+    // compile once and re-use
+    // NOTE: this only parses nested 3 {} deep, more and this will fail!
+    static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
+        Regex::new(r#"\{(?:[^}{]|\{(?:[^}{]|\{(?:[^}{]|\{[^}{]*\})*\})*\})*\}"#).unwrap()
+    });
+    RE.captures_iter(haystack)
+}
 
 /// Seen on gdb 15.1
 pub const MEMORY_MAP_START_STR_NEW: [&str; 8] =
@@ -198,10 +207,9 @@ pub fn join_registers(
 // Function to parse register-values as an array of Registers
 pub fn parse_register_values(input: &str) -> Vec<Option<Register>> {
     let mut registers = Vec::new();
-    let re = Regex::new(r#"\{(?:[^}{]|\{(?:[^}{]|\{(?:[^}{]|\{[^}{]*\})*\})*\})*\}"#).unwrap();
 
     // Capture each register block and parse it
-    for capture in re.captures_iter(input) {
+    for capture in match_inner_items(input) {
         let cap_str = &capture[0];
         let cap_str = &cap_str[1..cap_str.len() - 1].to_string();
         debug!("CAPTURE: {}", cap_str);
@@ -263,11 +271,9 @@ pub fn parse_register_names_values(input: &str) -> Vec<String> {
 // Function to parse register-values as an array of Registers
 pub fn parse_asm_insns_values(input: &str) -> Vec<Asm> {
     let mut asms = Vec::new();
-    // debug!("asm: {:?}", input);
-    let re = Regex::new(r#"\{(?:[^}{]|\{(?:[^}{]|\{(?:[^}{]|\{[^}{]*\})*\})*\})*\}"#).unwrap();
 
     // Capture each register block and parse it
-    for capture in re.captures_iter(input) {
+    for capture in match_inner_items(input) {
         let cap_str = &capture[0];
         let cap_str = &cap_str[1..cap_str.len() - 1].to_string();
         let mut asm = Asm { address: 0, inst: String::new(), offset: 0, func_name: None };

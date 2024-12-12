@@ -17,6 +17,7 @@ use ratatui::crossterm::{
     terminal::{disable_raw_mode, LeaveAlternateScreen},
 };
 use ratatui::prelude::*;
+use ratatui::widgets::ScrollbarState;
 use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
 
@@ -115,6 +116,7 @@ struct App {
     memory_map: Arc<Mutex<Option<Vec<MemoryMapping>>>>,
     current_pc: Arc<Mutex<u64>>, // TODO: replace with AtomicU64?
     output_scroll: usize,
+    output_scroll_state: ScrollbarState,
     output: Arc<Mutex<Vec<String>>>,
     stream_output_prompt: Arc<Mutex<String>>,
     gdb_stdin: Arc<Mutex<dyn Write + Send>>,
@@ -174,6 +176,7 @@ impl App {
             messages: LimitedBuffer::new(10),
             current_pc: Arc::new(Mutex::new(0)),
             output_scroll: 0,
+            output_scroll_state: ScrollbarState::new(0),
             memory_map: Arc::new(Mutex::new(None)),
             output: Arc::new(Mutex::new(Vec::new())),
             stream_output_prompt: Arc::new(Mutex::new(String::new())),
@@ -350,17 +353,23 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                         let output_lock = app.output.lock().unwrap();
                         if app.output_scroll < output_lock.len().saturating_sub(1) {
                             app.output_scroll += 1;
+                            app.output_scroll_state =
+                                app.output_scroll_state.position(app.output_scroll);
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyOutput) => {
                         if app.output_scroll > 0 {
                             app.output_scroll -= 1;
+                            app.output_scroll_state =
+                                app.output_scroll_state.position(app.output_scroll);
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyOutput) => {
                         let output_lock = app.output.lock().unwrap();
                         if app.output_scroll < output_lock.len().saturating_sub(1) {
                             app.output_scroll += 50;
+                            app.output_scroll_state =
+                                app.output_scroll_state.position(app.output_scroll);
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyOutput) => {
@@ -369,6 +378,8 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                         } else {
                             app.output_scroll = 0;
                         }
+                        app.output_scroll_state =
+                            app.output_scroll_state.position(app.output_scroll);
                     }
                     (_, KeyCode::Enter, _) => {
                         key_enter(app)?;

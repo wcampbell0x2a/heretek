@@ -28,7 +28,7 @@ const TEXT_COLOR: Color = RED;
 
 const SAVED_OUTPUT: usize = 10;
 
-pub fn ui(f: &mut Frame, app: &App) {
+pub fn ui(f: &mut Frame, app: &mut App) {
     // TODO: register size should depend on arch
     let top_size = Fill(1);
 

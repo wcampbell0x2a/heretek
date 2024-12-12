@@ -27,7 +27,6 @@ use ratatui::{
 };
 use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
-use Constraint::{Fill, Length, Min};
 
 mod mi;
 use mi::{
@@ -36,25 +35,12 @@ use mi::{
     parse_register_names_values, parse_register_values, read_pc_value, Asm, MIResponse,
     MemoryMapping, Register, MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_OLD,
 };
+mod ui;
 
 enum InputMode {
     Normal,
     Editing,
 }
-
-// Ayu bell colors
-const BLUE: Color = Color::Rgb(0x59, 0xc2, 0xff);
-const PURPLE: Color = Color::Rgb(0xd2, 0xa6, 0xff);
-const ORANGE: Color = Color::Rgb(0xff, 0x8f, 0x40);
-const YELLOW: Color = Color::Rgb(0xe6, 0xb4, 0x50);
-const GREEN: Color = Color::Rgb(0xaa, 0xd9, 0x4c);
-const RED: Color = Color::Rgb(0xff, 0x33, 0x33);
-
-const HEAP_COLOR: Color = GREEN;
-const STACK_COLOR: Color = PURPLE;
-const TEXT_COLOR: Color = RED;
-
-const SAVED_OUTPUT: usize = 10;
 
 use std::collections::{HashMap, VecDeque};
 
@@ -219,6 +205,36 @@ impl App {
         let filepath = resolve_home(filepath[1]).unwrap();
         // debug!("filepath: {filepath:?}");
         self.filepath = Arc::new(Mutex::new(Some(filepath)));
+    }
+
+    pub fn classify_val(&self, val: u64, filepath: &std::borrow::Cow<str>) -> (bool, bool, bool) {
+        let mut is_stack = false;
+        let mut is_heap = false;
+        let mut is_text = false;
+        if val != 0 {
+            // look through, add see if the value is part of the stack
+            let memory_map = self.memory_map.lock().unwrap();
+            // trace!("{:02x?}", memory_map);
+            if memory_map.is_some() {
+                for r in memory_map.as_ref().unwrap() {
+                    if r.contains(val) {
+                        if r.is_stack() {
+                            is_stack = true;
+                            break;
+                        } else if r.is_heap() {
+                            is_heap = true;
+                            break;
+                        } else if r.is_path(filepath) {
+                            // TODO(23): This could be expanded to all segments loaded in
+                            // as executable
+                            is_text = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        (is_stack, is_heap, is_text)
     }
 }
 
@@ -839,7 +855,7 @@ fn write_mi(gdb_stdin_arc: &Arc<Mutex<dyn Write + Send>>, w: &str) {
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<()> {
     loop {
-        terminal.draw(|f| ui(f, app))?;
+        terminal.draw(|f| ui::ui(f, app))?;
 
         if crossterm::event::poll(Duration::from_millis(10))? {
             if let Event::Key(key) = event::read()? {
@@ -970,438 +986,5 @@ fn update_from_previous_input(app: &mut App) {
         {
             app.input = Input::new(msg.clone())
         }
-    }
-}
-
-fn ui(f: &mut Frame, app: &App) {
-    // TODO: register size should depend on arch
-    let top_size = Fill(1);
-
-    // If only output, then no top and fill all with output
-    if let Mode::OnlyOutput = app.mode {
-        let output_size = Fill(1);
-        let vertical = Layout::vertical([Length(2), output_size, Length(3)]);
-        let [title_area, output, input] = vertical.areas(f.area());
-
-        draw_title_area(app, f, title_area);
-        draw_output(app, f, output, true);
-        draw_input(title_area, app, f, input);
-        return;
-    }
-
-    // the rest will include the top
-    let output_size = Length(SAVED_OUTPUT as u16);
-
-    let vertical = Layout::vertical([Length(2), top_size, output_size, Length(3)]);
-    let [title_area, top, output, input] = vertical.areas(f.area());
-
-    draw_title_area(app, f, title_area);
-    draw_output(app, f, output, false);
-    draw_input(title_area, app, f, input);
-
-    match app.mode {
-        Mode::All => {
-            let register_size = Min(30);
-            let stack_size = Min(10);
-            let asm_size = Min(15);
-            let vertical = Layout::vertical([register_size, stack_size, asm_size]);
-            let [register, stack, asm] = vertical.areas(top);
-
-            draw_registers(app, f, register);
-            draw_stack(app, f, stack);
-            draw_asm(app, f, asm);
-        }
-        Mode::OnlyRegister => {
-            let vertical = Layout::vertical([Fill(1)]);
-            let [all] = vertical.areas(top);
-            draw_registers(app, f, all);
-        }
-        Mode::OnlyStack => {
-            let vertical = Layout::vertical([Fill(1)]);
-            let [all] = vertical.areas(top);
-            draw_stack(app, f, all);
-        }
-        Mode::OnlyInstructions => {
-            let vertical = Layout::vertical([Fill(1)]);
-            let [all] = vertical.areas(top);
-            draw_asm(app, f, all);
-        }
-        _ => (),
-    }
-}
-
-fn draw_input(title_area: Rect, app: &App, f: &mut Frame, input: Rect) {
-    // Input
-    let width = title_area.width.max(3) - 3;
-    // keep 2 for borders and 1 for cursor
-
-    let scroll = app.input.visual_scroll(width as usize);
-    let stream_lock = app.stream_output_prompt.lock().unwrap();
-    let prompt_len = stream_lock.len();
-
-    let txt_input = Paragraph::new(format!("{}{}", stream_lock, app.input.value()))
-        .style(match app.input_mode {
-            InputMode::Normal => Style::default(),
-            InputMode::Editing => Style::default().fg(GREEN),
-        })
-        .scroll((0, scroll as u16))
-        .block(Block::default().borders(Borders::ALL).title("Input".fg(YELLOW)));
-    f.render_widget(txt_input, input);
-    match app.input_mode {
-        InputMode::Normal =>
-            // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
-            {}
-
-        InputMode::Editing => {
-            // Make the cursor visible and ask tui-rs to put it at the specified coordinates after rendering
-            f.set_cursor_position((
-                // Put cursor past the end of the input text
-                input.x
-                    + ((app.input.visual_cursor()).max(scroll) - scroll) as u16
-                    + 1
-                    + prompt_len as u16,
-                // Move one line down, from the border to the input line
-                input.y + 1,
-            ))
-        }
-    }
-}
-
-fn draw_output(app: &App, f: &mut Frame, output: Rect, full: bool) {
-    let output_lock = app.output.lock().unwrap();
-
-    let len = output_lock.len();
-    let max = output.height;
-    let skip = if full {
-        if len <= max as usize {
-            0
-        } else {
-            app.output_scroll
-        }
-    } else {
-        if len <= max as usize {
-            0
-        } else {
-            len - max as usize + 2
-        }
-    };
-
-    let outputs: Vec<ListItem> = output_lock
-        .iter()
-        .skip(skip)
-        .take(max as usize)
-        .map(|m| {
-            let m = m.replace('\t', "    ");
-            let content = vec![Line::from(Span::raw(format!("{}", m)))];
-            ListItem::new(content)
-        })
-        .collect();
-    let help = if full { "(up(k), down(j), 50 up(K), 50 down(J))" } else { "" };
-    let output_block = List::new(outputs)
-        .block(Block::default().borders(Borders::ALL).title(format!("Output {help}").fg(BLUE)));
-    f.render_widget(output_block, output);
-}
-
-fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
-    // Asm
-    // TODO: cache the pc_index if this doesn't change
-    let mut rows = vec![];
-    let mut pc_index = None;
-    let mut function_name = None;
-    if let Ok(asm) = app.asm.lock() {
-        let mut entries: Vec<_> = asm.clone().into_iter().collect();
-        entries.sort_by(|a, b| a.address.cmp(&b.address));
-        let mut index = 0;
-        let app_cur_lock = app.current_pc.lock().unwrap();
-        for a in entries.iter() {
-            if a.address == *app_cur_lock {
-                pc_index = Some(index);
-                if let Some(func_name) = &a.func_name {
-                    function_name = Some(func_name.clone());
-                }
-            }
-            let addr_cell =
-                Cell::from(format!("0x{:02x}", a.address)).style(Style::default().fg(PURPLE));
-            let mut row = vec![addr_cell];
-
-            if let Some(function_name) = &a.func_name {
-                let function_cell = Cell::from(format!("{}+{:02x}", function_name, a.offset))
-                    .style(Style::default().fg(PURPLE));
-                row.push(function_cell);
-            } else {
-                row.push(Cell::from(""));
-            }
-
-            let inst_cell = if let Some(pc_index) = pc_index {
-                if pc_index == index {
-                    Cell::from(a.inst.to_string()).fg(GREEN)
-                } else {
-                    Cell::from(a.inst.to_string()).white()
-                }
-            } else {
-                Cell::from(a.inst.to_string()).dark_gray()
-            };
-            row.push(inst_cell);
-
-            rows.push(Row::new(row));
-            index += 1;
-        }
-    }
-
-    let tital = if let Some(function_name) = function_name {
-        Title::from(format!("Instructions ({})", function_name).fg(ORANGE))
-    } else {
-        Title::from("Instructions".fg(ORANGE))
-    };
-    if let Some(pc_index) = pc_index {
-        let widths = [Constraint::Length(16), Constraint::Percentage(10), Fill(1)];
-        let table = Table::new(rows, widths)
-            .block(Block::default().borders(Borders::TOP).title(tital))
-            .row_highlight_style(Style::new().fg(GREEN))
-            .highlight_symbol(">>");
-        let start_offset = if pc_index < 5 { 0 } else { pc_index - 5 };
-        let mut table_state =
-            TableState::default().with_offset(start_offset).with_selected(pc_index);
-        f.render_stateful_widget(table, asm, &mut table_state);
-    } else {
-        let block = Block::default().borders(Borders::TOP).title(tital);
-        f.render_widget(block, asm);
-    }
-}
-
-fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
-    let vertical_title = Layout::vertical([Length(1), Length(1)]);
-    let [first, second] = vertical_title.areas(title_area);
-    f.render_widget(
-        Block::new()
-            .borders(Borders::TOP)
-            .title(vec![
-                "|".fg(Color::Rgb(100, 100, 100)),
-                env!("CARGO_PKG_NAME").bold(),
-                "-".fg(Color::Rgb(100, 100, 100)),
-                "v".into(),
-                env!("CARGO_PKG_VERSION").into(),
-                "|".fg(Color::Rgb(100, 100, 100)),
-            ])
-            .title_alignment(Alignment::Center),
-        first,
-    );
-    // Title Area
-    let (msg, style) = match app.input_mode {
-        InputMode::Normal => (
-            vec![
-                Span::raw("Press "),
-                Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to exit, "),
-                Span::styled("i", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to enter input | "),
-                Span::styled("F1", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" main | "),
-                Span::styled("F2", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" registers | "),
-                Span::styled("F3", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" stacks | "),
-                Span::styled("F4", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" instructions | "),
-                Span::styled("F5", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" output | "),
-                Span::styled("Heap", Style::default().fg(HEAP_COLOR).add_modifier(Modifier::BOLD)),
-                Span::raw(" | "),
-                Span::styled(
-                    "Stack",
-                    Style::default().fg(STACK_COLOR).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(" | "),
-                Span::styled("Code", Style::default().fg(TEXT_COLOR).add_modifier(Modifier::BOLD)),
-            ],
-            Style::default().add_modifier(Modifier::RAPID_BLINK),
-        ),
-        InputMode::Editing => (
-            vec![
-                Span::raw("Press "),
-                Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to stop editing, "),
-                Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to send input | "),
-                Span::styled("F1", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" main | "),
-                Span::styled("F2", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" registers | "),
-                Span::styled("F3", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" stacks | "),
-                Span::styled("F4", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" instructions | "),
-                Span::styled("F5", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" output | "),
-                Span::styled("Heap", Style::default().fg(HEAP_COLOR).add_modifier(Modifier::BOLD)),
-                Span::raw(" | "),
-                Span::styled(
-                    "Stack",
-                    Style::default().fg(STACK_COLOR).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(" | "),
-                Span::styled("Code", Style::default().fg(TEXT_COLOR).add_modifier(Modifier::BOLD)),
-            ],
-            Style::default(),
-        ),
-    };
-    let text = Text::from(Line::from(msg)).style(style);
-    let help_message = Paragraph::new(text);
-    f.render_widget(help_message, second);
-}
-
-fn draw_stack(app: &App, f: &mut Frame, stack: Rect) {
-    // Stack
-    let mut rows = vec![];
-    if let Ok(stack) = app.stack.lock() {
-        let mut entries: Vec<_> = stack.clone().into_iter().collect();
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
-        for (addr, values) in entries.iter() {
-            // TODO: increase scope
-            let filepath_lock = app.filepath.lock().unwrap();
-            let binding = filepath_lock.as_ref().unwrap();
-            let filepath = binding.to_string_lossy();
-
-            let addr = Cell::from(format!("0x{:02x}", addr)).style(Style::new().fg(PURPLE));
-            // let val = Cell::from(format!("0x{:02x}", value));
-            let mut cells = vec![addr];
-            for v in values {
-                let mut cell = Cell::from(format!("0x{:02x}", v));
-                let (is_stack, is_heap, is_text) = classify_val(*v, app, &filepath);
-                apply_val_color(&mut cell, is_stack, is_heap, is_text);
-                cells.push(cell);
-            }
-            let row = Row::new(cells);
-            rows.push(row);
-        }
-    }
-
-    let widths = [
-        Constraint::Length(16),
-        Fill(1),
-        Fill(1),
-        Fill(1),
-        Fill(1),
-        Fill(1),
-        Fill(1),
-        Fill(1),
-        Fill(1),
-    ];
-    let table = Table::new(rows, widths)
-        .block(Block::default().borders(Borders::TOP).title("Stack".fg(ORANGE)));
-
-    f.render_widget(table, stack);
-}
-
-/// Registers
-fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
-    let block = Block::default().borders(Borders::TOP).title("Registers".fg(ORANGE));
-
-    let mut rows = vec![];
-
-    if let Ok(regs) = app.registers.lock() {
-        if regs.is_empty() {
-            f.render_widget(block, register);
-            return;
-        }
-
-        let reg_changed_lock = app.register_changed.lock().unwrap();
-        let filepath_lock = app.filepath.lock().unwrap();
-        let binding = filepath_lock.as_ref().unwrap();
-        let filepath = binding.to_string_lossy();
-        for (i, (name, register, vals)) in regs.iter().enumerate() {
-            if let Some(reg) = register {
-                if !reg.is_set() {
-                    continue;
-                }
-                if let Some(reg_value) = &reg.value {
-                    if let Ok(val) = u64::from_str_radix(&reg_value[2..], 16) {
-                        let changed = reg_changed_lock.contains(&(i as u8));
-                        let mut reg_name =
-                            Cell::from(name.to_string()).style(Style::new().fg(PURPLE));
-                        let (is_stack, is_heap, is_text) = classify_val(val, app, &filepath);
-
-                        let mut extra_vals = Vec::new();
-                        if !is_text && val != 0 && !vals.is_empty() {
-                            for v in vals {
-                                let mut cell = Cell::from(format!("0x{:02x}", v));
-                                let (is_stack, is_heap, is_text) = classify_val(*v, app, &filepath);
-                                apply_val_color(&mut cell, is_stack, is_heap, is_text);
-                                extra_vals.push(cell);
-                            }
-                        }
-
-                        let mut cell = Cell::from(reg.value.clone().unwrap());
-                        apply_val_color(&mut cell, is_stack, is_heap, is_text);
-
-                        // Apply color to reg name
-                        if changed {
-                            reg_name = reg_name.style(Style::new().fg(RED));
-                        }
-                        let mut row = vec![reg_name, cell];
-                        row.append(&mut extra_vals);
-                        rows.push(Row::new(row));
-                    }
-                }
-            }
-        }
-    }
-
-    let widths = [
-        Constraint::Length(5),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-    ];
-    let table = Table::new(rows, widths).block(block);
-    f.render_widget(table, register);
-}
-
-fn classify_val(val: u64, app: &App, filepath: &std::borrow::Cow<str>) -> (bool, bool, bool) {
-    let mut is_stack = false;
-    let mut is_heap = false;
-    let mut is_text = false;
-    if val != 0 {
-        // look through, add see if the value is part of the stack
-        let memory_map = app.memory_map.lock().unwrap();
-        // trace!("{:02x?}", memory_map);
-        if memory_map.is_some() {
-            for r in memory_map.as_ref().unwrap() {
-                if r.contains(val) {
-                    if r.is_stack() {
-                        is_stack = true;
-                        break;
-                    } else if r.is_heap() {
-                        is_heap = true;
-                        break;
-                    } else if r.is_path(filepath) {
-                        // TODO(23): This could be expanded to all segments loaded in
-                        // as executable
-                        is_text = true;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    (is_stack, is_heap, is_text)
-}
-
-/// Apply color to val
-fn apply_val_color(cell: &mut Cell, is_stack: bool, is_heap: bool, is_text: bool) {
-    // TOOD: remove clone
-    if is_stack {
-        *cell = cell.clone().style(Style::new().fg(STACK_COLOR))
-    } else if is_heap {
-        *cell = cell.clone().style(Style::new().fg(HEAP_COLOR))
-    } else if is_text {
-        *cell = cell.clone().style(Style::new().fg(TEXT_COLOR))
     }
 }

@@ -15,12 +15,12 @@ pub const MEMORY_MAP_START_STR_OLD: [&str; 7] =
 
 #[derive(Debug, Clone)]
 pub struct MemoryMapping {
-    start_address: u64,
-    end_address: u64,
-    size: u64,
-    offset: u64,
-    permissions: Option<String>,
-    path: String,
+    pub start_address: u64,
+    pub end_address: u64,
+    pub size: u64,
+    pub offset: u64,
+    pub permissions: Option<String>,
+    pub path: String,
 }
 
 impl MemoryMapping {

@@ -9,6 +9,7 @@ use crate::{App, Mode};
 
 pub mod asm;
 pub mod input;
+pub mod mapping;
 pub mod output;
 pub mod registers;
 pub mod stack;
@@ -80,6 +81,11 @@ pub fn ui(f: &mut Frame, app: &App) {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
             asm::draw_asm(app, f, all);
+        }
+        Mode::OnlyMapping => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            mapping::draw_mapping(app, f, all);
         }
         _ => (),
     }

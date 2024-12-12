@@ -100,6 +100,7 @@ enum Mode {
     OnlyStack,
     OnlyInstructions,
     OnlyOutput,
+    OnlyMapping,
 }
 
 // TODO: this could be split up, some of these fields
@@ -342,6 +343,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     }
                     (_, KeyCode::F(5), _) => {
                         app.mode = Mode::OnlyOutput;
+                    }
+                    (_, KeyCode::F(6), _) => {
+                        app.mode = Mode::OnlyMapping;
                     }
                     (InputMode::Editing, KeyCode::Esc, _) => {
                         app.input_mode = InputMode::Normal;

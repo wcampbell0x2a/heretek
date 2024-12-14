@@ -510,7 +510,8 @@ fn replace_mapping_start(app: &mut App, val: &mut String) {
                     "0x{:02x}",
                     memory_map
                         .iter()
-                        .find(|a| a.path == filename)
+                        // TODO(perf): to_owned
+                        .find(|a| a.path == Some(filename.to_owned()))
                         .map(|a| a.start_address)
                         .unwrap_or(0)
                 )
@@ -530,7 +531,8 @@ fn replace_mapping_end(app: &mut App, val: &mut String) {
                     "0x{:02x}",
                     memory_map
                         .iter()
-                        .find(|a| a.path == filename)
+                        // TODO(perf): to_owned
+                        .find(|a| a.path == Some(filename.to_owned()))
                         .map(|a| a.end_address)
                         .unwrap_or(0)
                 )

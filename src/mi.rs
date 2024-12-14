@@ -22,6 +22,11 @@ pub const MEMORY_MAP_START_STR_NEW: [&str; 8] =
 pub const MEMORY_MAP_START_STR_OLD: [&str; 7] =
     ["Start", "Addr", "End", "Addr", "Size", "Offset", "objfile"];
 
+pub enum Mapping {
+    New,
+    Old,
+}
+
 #[derive(Debug, Clone)]
 pub struct MemoryMapping {
     pub start_address: u64,
@@ -29,20 +34,20 @@ pub struct MemoryMapping {
     pub size: u64,
     pub offset: u64,
     pub permissions: Option<String>,
-    pub path: String,
+    pub path: Option<String>,
 }
 
 impl MemoryMapping {
     pub fn is_stack(&self) -> bool {
-        self.path == "[stack]"
+        self.path == Some("[stack]".to_owned())
     }
 
     pub fn is_heap(&self) -> bool {
-        self.path == "[heap]"
+        self.path == Some("[heap]".to_owned())
     }
 
     pub fn is_path(&self, filepath: &str) -> bool {
-        self.path == filepath
+        self.path == Some(filepath.to_owned())
     }
 
     pub fn contains(&self, addr: u64) -> bool {
@@ -50,10 +55,8 @@ impl MemoryMapping {
     }
 }
 
-impl FromStr for MemoryMapping {
-    type Err = String;
-
-    fn from_str(line: &str) -> Result<Self, Self::Err> {
+impl MemoryMapping {
+    fn from_str_new(line: &str) -> Result<Self, String> {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() == 5 {
             Ok(MemoryMapping {
@@ -63,8 +66,8 @@ impl FromStr for MemoryMapping {
                     .map_err(|_| "Invalid end address")?,
                 size: u64::from_str_radix(&parts[2][2..], 16).map_err(|_| "Invalid size")?,
                 offset: u64::from_str_radix(&parts[3][2..], 16).map_err(|_| "Invalid offset")?,
-                permissions: None,
-                path: parts[4..].join(" "), // Combine the rest as the path
+                permissions: Some(parts[4..].join(" ")), // Combine the rest as the path
+                path: None,
             })
         } else if parts.len() == 6 {
             Ok(MemoryMapping {
@@ -75,7 +78,25 @@ impl FromStr for MemoryMapping {
                 size: u64::from_str_radix(&parts[2][2..], 16).map_err(|_| "Invalid size")?,
                 offset: u64::from_str_radix(&parts[3][2..], 16).map_err(|_| "Invalid offset")?,
                 permissions: Some(parts[4].to_string()),
-                path: parts[5..].join(" "), // Combine the rest as the path
+                path: Some(parts[5..].join(" ")), // Combine the rest as the path
+            })
+        } else {
+            return Err(format!("Invalid line format: {}", line));
+        }
+    }
+
+    fn from_str_old(line: &str) -> Result<Self, String> {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() == 5 {
+            Ok(MemoryMapping {
+                start_address: u64::from_str_radix(&parts[0][2..], 16)
+                    .map_err(|_| "Invalid start address")?,
+                end_address: u64::from_str_radix(&parts[1][2..], 16)
+                    .map_err(|_| "Invalid end address")?,
+                size: u64::from_str_radix(&parts[2][2..], 16).map_err(|_| "Invalid size")?,
+                offset: u64::from_str_radix(&parts[3][2..], 16).map_err(|_| "Invalid offset")?,
+                permissions: None,
+                path: Some(parts[4..].join(" ")), // Combine the rest as the path
             })
         } else {
             return Err(format!("Invalid line format: {}", line));
@@ -83,8 +104,11 @@ impl FromStr for MemoryMapping {
     }
 }
 
-pub fn parse_memory_mappings(input: &str) -> Vec<MemoryMapping> {
-    input.lines().skip(1).filter_map(|line| line.parse::<MemoryMapping>().ok()).collect()
+pub fn parse_memory_mappings_new(input: &str) -> Vec<MemoryMapping> {
+    input.lines().skip(1).filter_map(|line| MemoryMapping::from_str_new(line).ok()).collect()
+}
+pub fn parse_memory_mappings_old(input: &str) -> Vec<MemoryMapping> {
+    input.lines().skip(1).filter_map(|line| MemoryMapping::from_str_old(line).ok()).collect()
 }
 
 // Define Register struct to hold register data

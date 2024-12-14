@@ -8,9 +8,10 @@ use log::{debug, info, trace};
 
 use crate::mi::{
     data_disassemble, data_read_memory_bytes, data_read_sp_bytes, join_registers,
-    parse_asm_insns_values, parse_key_value_pairs, parse_memory_mappings, parse_mi_response,
-    parse_register_names_values, parse_register_values, read_pc_value, Asm, MIResponse,
-    MemoryMapping, Register, MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_OLD,
+    parse_asm_insns_values, parse_key_value_pairs, parse_memory_mappings_new,
+    parse_memory_mappings_old, parse_mi_response, parse_register_names_values,
+    parse_register_values, read_pc_value, Asm, MIResponse, Mapping, MemoryMapping, Register,
+    MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_OLD,
 };
 use crate::Written;
 
@@ -30,7 +31,7 @@ pub fn gdb_interact(
     stream_output_prompt_arc: Arc<Mutex<String>>,
     memory_map_arc: Arc<Mutex<Option<Vec<MemoryMapping>>>>,
 ) {
-    let mut current_map = (false, String::new());
+    let mut current_map = (None, String::new());
     let mut next_write = vec![String::new()];
     let mut written = VecDeque::new();
 
@@ -82,18 +83,24 @@ pub fn gdb_interact(
                     if status == "done" {
                         // Check if we were looking for a mapping
                         // TODO: This should be an enum or something?
-                        if current_map.0 {
-                            let m = parse_memory_mappings(&current_map.1);
+                        if let Some(mapping_ver) = current_map.0 {
+                            let m = match mapping_ver {
+                                Mapping::Old => parse_memory_mappings_old(&current_map.1),
+                                Mapping::New => parse_memory_mappings_new(&current_map.1),
+                            };
                             let mut memory_map = memory_map_arc.lock().unwrap();
                             *memory_map = Some(m);
-                            current_map = (false, String::new());
+                            current_map = (None, String::new());
 
                             // If we haven't resolved a filepath yet, assume the 1st
                             // filepath in the mapping is the main text file
                             let mut filepath_lock = filepath_arc.lock().unwrap();
                             if filepath_lock.is_none() {
                                 *filepath_lock = Some(PathBuf::from(
-                                    memory_map.as_ref().unwrap()[0].path.clone(),
+                                    memory_map.as_ref().unwrap()[0]
+                                        .path
+                                        .clone()
+                                        .unwrap_or("".to_owned()),
                                 ));
                             }
                         }
@@ -174,10 +181,12 @@ pub fn gdb_interact(
                         continue;
                     }
                     let split: Vec<&str> = s.split_whitespace().collect();
-                    if split == MEMORY_MAP_START_STR_NEW || split == MEMORY_MAP_START_STR_OLD {
-                        current_map.0 = true;
+                    if split == MEMORY_MAP_START_STR_NEW {
+                        current_map.0 = Some(Mapping::New);
+                    } else if split == MEMORY_MAP_START_STR_OLD {
+                        current_map.0 = Some(Mapping::Old);
                     }
-                    if current_map.0 {
+                    if current_map.0.is_some() {
                         current_map.1.push_str(&s);
                         continue;
                     }

@@ -25,7 +25,7 @@ pub fn draw_mapping(app: &mut App, f: &mut Frame, mapping_rect: Rect) {
                 format!("0x{:08x}", m.size),
                 format!("0x{:08x}", m.offset),
                 m.permissions.clone().unwrap_or("".to_string()),
-                m.path.clone(),
+                m.path.clone().unwrap_or("".to_string()),
             ]);
             rows.push(row);
         }

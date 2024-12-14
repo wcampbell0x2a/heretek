@@ -11,7 +11,8 @@ use std::{error::Error, io};
 use clap::Parser;
 use deku::ctx::Endian;
 use env_logger::{Builder, Env};
-use log::debug;
+use gdb::write_mi;
+use log::{debug, error};
 use ratatui::crossterm::{
     event::{self, DisableMouseCapture, Event, KeyCode},
     execute,
@@ -23,7 +24,7 @@ use regex::Regex;
 use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
 
-use mi::{Asm, MemoryMapping, Register};
+use mi::{data_read_memory_bytes, Asm, MemoryMapping, Register};
 
 mod gdb;
 mod mi;
@@ -104,11 +105,14 @@ enum Mode {
     OnlyInstructions,
     OnlyOutput,
     OnlyMapping,
+    OnlyHexdump,
 }
 
 // TODO: this could be split up, some of these fields
 // are always set after the file is loaded in gdb
 struct App {
+    next_write: Arc<Mutex<Vec<String>>>,
+    written: Arc<Mutex<VecDeque<Written>>>,
     thirty_two_bit: Arc<Mutex<bool>>,
     filepath: Arc<Mutex<Option<PathBuf>>>,
     endian: Arc<Mutex<Option<Endian>>>,
@@ -130,6 +134,9 @@ struct App {
     registers: Arc<Mutex<Vec<(String, Option<Register>, Vec<u64>)>>>,
     stack: Arc<Mutex<HashMap<u64, Vec<u64>>>>,
     asm: Arc<Mutex<Vec<Asm>>>,
+    hexdump: Arc<Mutex<Option<(u64, Vec<u8>)>>>,
+    hexdump_scroll: usize,
+    hexdump_scroll_state: ScrollbarState,
 }
 
 impl App {
@@ -172,6 +179,8 @@ impl App {
             };
 
         let app = App {
+            next_write: Arc::new(Mutex::new(vec![])),
+            written: Arc::new(Mutex::new(VecDeque::new())),
             thirty_two_bit: Arc::new(Mutex::new(args.thirty_two_bit)),
             filepath: Arc::new(Mutex::new(None)),
             endian: Arc::new(Mutex::new(None)),
@@ -193,6 +202,9 @@ impl App {
             registers: Arc::new(Mutex::new(vec![])),
             stack: Arc::new(Mutex::new(HashMap::new())),
             asm: Arc::new(Mutex::new(Vec::new())),
+            hexdump: Arc::new(Mutex::new(None)),
+            hexdump_scroll: 0,
+            hexdump_scroll_state: ScrollbarState::new(0),
         };
 
         (reader, app)
@@ -248,6 +260,8 @@ enum Written {
     /// Some - This has alrady been read, and this is a deref, trust
     ///        the base_reg of .0
     Stack(Option<String>),
+    /// Requested Memory Read (for hexdump)
+    Memory,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -278,6 +292,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let filepath_arc = Arc::clone(&app.filepath);
     let thirty_two_bit_arc = Arc::clone(&app.thirty_two_bit);
+    let next_write_arc = Arc::clone(&app.next_write);
+    let written_arc = Arc::clone(&app.written);
     let endian_arc = Arc::clone(&app.endian);
     let gdb_stdin_arc = Arc::clone(&app.gdb_stdin);
     let current_pc_arc = Arc::clone(&app.current_pc);
@@ -289,11 +305,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let memory_map_arc = Arc::clone(&app.memory_map);
     let stack_arc = Arc::clone(&app.stack);
     let asm_arc = Arc::clone(&app.asm);
+    let hexdump_arc = Arc::clone(&app.hexdump);
 
     // Thread to read GDB output and parse it
     thread::spawn(move || {
         gdb::gdb_interact(
             gdb_stdout,
+            next_write_arc,
+            written_arc,
             thirty_two_bit_arc,
             endian_arc,
             filepath_arc,
@@ -307,6 +326,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             output_arc,
             stream_output_prompt_arc,
             memory_map_arc,
+            hexdump_arc,
         )
     });
 
@@ -328,6 +348,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<()> {
     loop {
         terminal.draw(|f| ui::ui(f, app))?;
+
+        // check and see if we need to write to GBD MI
+        {
+            let mut next_write = app.next_write.lock().unwrap();
+            if !next_write.is_empty() {
+                for w in &*next_write {
+                    write_mi(&app.gdb_stdin, &w);
+                }
+                next_write.clear();
+            }
+        }
 
         if crossterm::event::poll(Duration::from_millis(10))? {
             if let Event::Key(key) = event::read()? {
@@ -356,9 +387,13 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     (_, KeyCode::F(6), _) => {
                         app.mode = Mode::OnlyMapping;
                     }
+                    (_, KeyCode::F(7), _) => {
+                        app.mode = Mode::OnlyHexdump;
+                    }
                     (InputMode::Editing, KeyCode::Esc, _) => {
                         app.input_mode = InputMode::Normal;
                     }
+                    // memory output
                     (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyOutput) => {
                         let output_lock = app.output.lock().unwrap();
                         let len = output_lock.len();
@@ -375,6 +410,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyOutput) => {
                         scroll_up(50, &mut app.output_scroll, &mut app.output_scroll_state);
                     }
+                    // memory mapping
                     (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyMapping) => {
                         let memory_lock = app.memory_map.lock().unwrap();
                         if let Some(memory) = memory_lock.as_ref() {
@@ -404,6 +440,37 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     }
                     (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyMapping) => {
                         scroll_up(50, &mut app.memory_map_scroll, &mut app.memory_map_scroll_state);
+                    }
+                    // hexdump
+                    (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyHexdump) => {
+                        let hexdump = app.hexdump.lock().unwrap();
+                        if let Some(hexdump) = hexdump.as_ref() {
+                            let len = hexdump.1.len();
+                            scroll_down(
+                                1,
+                                &mut app.hexdump_scroll,
+                                &mut app.hexdump_scroll_state,
+                                len,
+                            );
+                        }
+                    }
+                    (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyHexdump) => {
+                        scroll_up(1, &mut app.hexdump_scroll, &mut app.hexdump_scroll_state);
+                    }
+                    (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyHexdump) => {
+                        let hexdump = app.hexdump.lock().unwrap();
+                        if let Some(hexdump) = hexdump.as_ref() {
+                            let len = hexdump.1.len();
+                            scroll_down(
+                                50,
+                                &mut app.hexdump_scroll,
+                                &mut app.hexdump_scroll_state,
+                                len,
+                            );
+                        }
+                    }
+                    (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyHexdump) => {
+                        scroll_up(50, &mut app.hexdump_scroll, &mut app.hexdump_scroll_state);
                     }
                     (_, KeyCode::Enter, _) => {
                         key_enter(app)?;
@@ -472,31 +539,47 @@ fn key_enter(app: &mut App) -> Result<(), io::Error> {
         let messages = app.messages.clone();
         let messages = messages.as_slice().iter();
         if let Some(val) = messages.last() {
-            let mut val = val.to_owned();
-            if val.starts_with("file") {
-                app.save_filepath(&val);
-            }
-            replace_mapping_start(app, &mut val);
-            replace_mapping_end(app, &mut val);
-            gdb::write_mi(&app.gdb_stdin, &val);
-            app.input.reset();
+            process_line(app, val);
         }
     } else {
         app.messages.offset = 0;
         app.messages.push(app.input.value().into());
+
         let val = app.input.clone();
         let val = val.value();
-        let mut val = val.to_owned();
-        if val.starts_with("file") {
-            app.save_filepath(&val);
-        }
-        replace_mapping_start(app, &mut val);
-        replace_mapping_end(app, &mut val);
-        gdb::write_mi(&app.gdb_stdin, &val);
-        app.input.reset();
+        process_line(app, val)
     }
 
     Ok(())
+}
+
+fn process_line(app: &mut App, val: &str) {
+    let mut val = val.to_owned();
+
+    // Replace internal variables
+    replace_mapping_start(app, &mut val);
+    replace_mapping_end(app, &mut val);
+
+    if val.starts_with("file") {
+        app.save_filepath(&val);
+    } else if val.starts_with("hexdump") {
+        let split: Vec<&str> = val.split_whitespace().collect();
+        if split.len() < 3 {
+            error!("Invalid arguments, expected 'hexdump addr len'");
+            return;
+        }
+        let mut next_write = app.next_write.lock().unwrap();
+        let mut written = app.written.lock().unwrap();
+        let addr = split[1];
+        let len = split[2];
+        let s = data_read_memory_bytes(addr, 0, u64::from_str_radix(len, 16).unwrap());
+        next_write.push(s);
+        written.push_back(Written::Memory);
+        app.input.reset();
+        return;
+    }
+    gdb::write_mi(&app.gdb_stdin, &val);
+    app.input.reset();
 }
 
 fn replace_mapping_start(app: &mut App, val: &mut String) {

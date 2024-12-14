@@ -8,6 +8,7 @@ use ratatui::Frame;
 use crate::{App, Mode};
 
 pub mod asm;
+pub mod hexdump;
 pub mod input;
 pub mod mapping;
 pub mod output;
@@ -86,6 +87,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
             mapping::draw_mapping(app, f, all);
+        }
+        Mode::OnlyHexdump => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            hexdump::draw_hexdump(app, f, all);
         }
         _ => (),
     }

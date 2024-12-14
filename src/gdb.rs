@@ -17,6 +17,8 @@ use crate::Written;
 
 pub fn gdb_interact(
     gdb_stdout: BufReader<Box<dyn Read + Send>>,
+    next_write: Arc<Mutex<Vec<String>>>,
+    written: Arc<Mutex<VecDeque<Written>>>,
     thirty_two_bit_arc: Arc<Mutex<bool>>,
     endian_arc: Arc<Mutex<Option<deku::ctx::Endian>>>,
     filepath_arc: Arc<Mutex<Option<PathBuf>>>,
@@ -30,10 +32,9 @@ pub fn gdb_interact(
     output_arc: Arc<Mutex<Vec<String>>>,
     stream_output_prompt_arc: Arc<Mutex<String>>,
     memory_map_arc: Arc<Mutex<Option<Vec<MemoryMapping>>>>,
+    hexdump_arc: Arc<Mutex<Option<(u64, Vec<u8>)>>>,
 ) {
     let mut current_map = (None, String::new());
-    let mut next_write = vec![String::new()];
-    let mut written = VecDeque::new();
 
     for line in gdb_stdout.lines() {
         if let Ok(line) = line {
@@ -44,6 +45,8 @@ pub fn gdb_interact(
             match &response {
                 MIResponse::AsyncRecord(reason, v) => {
                     if reason == "stopped" {
+                        let mut next_write = next_write.lock().unwrap();
+                        let mut written = written.lock().unwrap();
                         // debug!("{v:?}");
                         // TODO: we could cache this, per file opened
                         if let Some(arch) = v.get("arch") {
@@ -79,6 +82,10 @@ pub fn gdb_interact(
                         // reset the regs
                         let mut regs = registers_arc.lock().unwrap();
                         regs.clear();
+
+                        // reset the hexdump
+                        let mut data_read = hexdump_arc.lock().unwrap();
+                        *data_read = None;
                     }
                     if status == "done" {
                         // Check if we were looking for a mapping
@@ -108,6 +115,7 @@ pub fn gdb_interact(
                     if status == "error" {
                         // assume this is from us, pop off an unexpected
                         // if we can
+                        let mut written = written.lock().unwrap();
                         let removed = written.pop_front();
                         // trace!("ERROR: {:02x?}", removed);
                     }
@@ -119,6 +127,8 @@ pub fn gdb_interact(
                     } else if let Some(changed_registers) = kv.get("changed-registers") {
                         recv_exec_result_changed_values(changed_registers, &register_changed_arc);
                     } else if let Some(register_values) = kv.get("register-values") {
+                        let mut next_write = next_write.lock().unwrap();
+                        let mut written = written.lock().unwrap();
                         recv_exec_results_register_value(
                             register_values,
                             &thirty_two_bit_arc,
@@ -129,11 +139,14 @@ pub fn gdb_interact(
                             &mut written,
                         );
                     } else if let Some(memory) = kv.get("memory") {
+                        let mut next_write = next_write.lock().unwrap();
+                        let mut written = written.lock().unwrap();
                         recv_exec_result_memory(
                             &stack_arc,
                             &thirty_two_bit_arc,
                             &endian_arc,
                             &registers_arc,
+                            &hexdump_arc,
                             memory,
                             &mut written,
                             &mut next_write,
@@ -214,12 +227,6 @@ pub fn gdb_interact(
                 }
                 _ => (),
             }
-            if !next_write.is_empty() {
-                for w in &next_write {
-                    write_mi(&gdb_stdin_arc, w);
-                }
-                next_write.clear();
-            }
         }
     }
 }
@@ -235,6 +242,7 @@ fn recv_exec_result_memory(
     thirty_two_bit_arc: &Arc<Mutex<bool>>,
     endian_arc: &Arc<Mutex<Option<Endian>>>,
     registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Vec<u64>)>>>,
+    hexdump_arc: &Arc<Mutex<Option<(u64, Vec<u8>)>>>,
     memory: &String,
     written: &mut VecDeque<Written>,
     next_write: &mut Vec<String>,
@@ -327,6 +335,13 @@ fn recv_exec_result_memory(
                 next_write,
                 written,
             );
+        }
+        Written::Memory => {
+            let (data, begin) = read_memory(memory);
+            debug!("memory: ({:02x?}, {:02x?}", begin, data);
+            let hex = hex::decode(&data["contents"]).unwrap();
+            let mut hexdump_lock = hexdump_arc.lock().unwrap();
+            *hexdump_lock = Some((u64::from_str_radix(&begin, 16).unwrap(), hex));
         }
     }
 }

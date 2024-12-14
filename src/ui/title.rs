@@ -48,6 +48,8 @@ pub fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
                 Span::raw(" output | "),
                 Span::styled("F6", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(" mappings | "),
+                Span::styled("F7", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" hexdump | "),
                 Span::styled("Heap", Style::default().fg(HEAP_COLOR).add_modifier(Modifier::BOLD)),
                 Span::raw(" | "),
                 Span::styled(
@@ -78,6 +80,8 @@ pub fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
                 Span::raw(" output | "),
                 Span::styled("F6", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(" mapping | "),
+                Span::styled("F7", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(" hexdump | "),
                 Span::styled("Heap", Style::default().fg(HEAP_COLOR).add_modifier(Modifier::BOLD)),
                 Span::raw(" | "),
                 Span::styled(

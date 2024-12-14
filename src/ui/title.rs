@@ -75,7 +75,7 @@ pub fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
                 Span::styled("F4", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(" instructions | "),
                 Span::styled("F5", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" instructions | "),
+                Span::raw(" output | "),
                 Span::styled("F6", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(" mapping | "),
                 Span::styled("Heap", Style::default().fg(HEAP_COLOR).add_modifier(Modifier::BOLD)),

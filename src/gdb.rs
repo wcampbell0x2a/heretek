@@ -87,6 +87,15 @@ pub fn gdb_interact(
                             let mut memory_map = memory_map_arc.lock().unwrap();
                             *memory_map = Some(m);
                             current_map = (false, String::new());
+
+                            // If we haven't resolved a filepath yet, assume the 1st
+                            // filepath in the mapping is the main text file
+                            let mut filepath_lock = filepath_arc.lock().unwrap();
+                            if filepath_lock.is_none() {
+                                *filepath_lock = Some(PathBuf::from(
+                                    memory_map.as_ref().unwrap()[0].path.clone(),
+                                ));
+                            }
                         }
                     }
                     if status == "error" {

@@ -42,9 +42,13 @@ pub fn draw_output(app: &mut App, f: &mut Frame, output: Rect, full: bool) {
     let output_block = List::new(outputs)
         .block(Block::default().borders(Borders::ALL).title(format!("Output {help}").fg(BLUE)));
     f.render_widget(output_block, output);
-    f.render_stateful_widget(
-        Scrollbar::new(ScrollbarOrientation::VerticalRight),
-        output,
-        &mut app.output_scroll_state,
-    );
+
+    // only show scrollbar on full page
+    if full {
+        f.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight),
+            output,
+            &mut app.output_scroll_state,
+        );
+    }
 }

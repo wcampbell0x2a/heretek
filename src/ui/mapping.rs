@@ -1,14 +1,15 @@
 use ratatui::layout::Constraint;
 use ratatui::prelude::Stylize;
-use ratatui::widgets::{Block, Borders, Table};
+use ratatui::widgets::{Block, Borders, Scrollbar, ScrollbarOrientation, Table};
 use ratatui::{layout::Rect, style::Style, widgets::Row, Frame};
 
 use super::{BLUE, ORANGE};
 
 use crate::App;
 
-pub fn draw_mapping(app: &App, f: &mut Frame, mapping_rect: Rect) {
-    let block = Block::default().borders(Borders::TOP).title("Memory Mapping".fg(ORANGE));
+pub fn draw_mapping(app: &mut App, f: &mut Frame, mapping_rect: Rect) {
+    let title = "Memory Mapping (up(k), down(j), 50 up(K), 50 down(J))";
+    let block = Block::default().borders(Borders::TOP).title(title.fg(ORANGE));
 
     let mut rows = vec![];
     rows.push(
@@ -29,6 +30,12 @@ pub fn draw_mapping(app: &App, f: &mut Frame, mapping_rect: Rect) {
             rows.push(row);
         }
     }
+    let len = rows.len();
+    let max = mapping_rect.height;
+    let skip = if len <= max as usize { 0 } else { app.memory_map_scroll };
+
+    app.memory_map_scroll_state = app.memory_map_scroll_state.content_length(len);
+    let rows: Vec<Row> = rows.into_iter().skip(skip).take(max as usize).collect();
 
     let widths = [
         Constraint::Length(20),
@@ -40,4 +47,9 @@ pub fn draw_mapping(app: &App, f: &mut Frame, mapping_rect: Rect) {
     ];
     let table = Table::new(rows, widths).block(block);
     f.render_widget(table, mapping_rect);
+    f.render_stateful_widget(
+        Scrollbar::new(ScrollbarOrientation::VerticalRight),
+        mapping_rect,
+        &mut app.memory_map_scroll_state,
+    );
 }

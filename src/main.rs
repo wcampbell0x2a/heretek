@@ -117,10 +117,12 @@ struct App {
     input_mode: InputMode,
     messages: LimitedBuffer<String>,
     memory_map: Arc<Mutex<Option<Vec<MemoryMapping>>>>,
+    memory_map_scroll: usize,
+    memory_map_scroll_state: ScrollbarState,
     current_pc: Arc<Mutex<u64>>, // TODO: replace with AtomicU64?
+    output: Arc<Mutex<Vec<String>>>,
     output_scroll: usize,
     output_scroll_state: ScrollbarState,
-    output: Arc<Mutex<Vec<String>>>,
     stream_output_prompt: Arc<Mutex<String>>,
     gdb_stdin: Arc<Mutex<dyn Write + Send>>,
     register_changed: Arc<Mutex<Vec<u8>>>,
@@ -181,6 +183,8 @@ impl App {
             output_scroll: 0,
             output_scroll_state: ScrollbarState::new(0),
             memory_map: Arc::new(Mutex::new(None)),
+            memory_map_scroll: 0,
+            memory_map_scroll_state: ScrollbarState::new(0),
             output: Arc::new(Mutex::new(Vec::new())),
             stream_output_prompt: Arc::new(Mutex::new(String::new())),
             register_changed: Arc::new(Mutex::new(vec![])),
@@ -357,35 +361,49 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     }
                     (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyOutput) => {
                         let output_lock = app.output.lock().unwrap();
-                        if app.output_scroll < output_lock.len().saturating_sub(1) {
-                            app.output_scroll += 1;
-                            app.output_scroll_state =
-                                app.output_scroll_state.position(app.output_scroll);
-                        }
+                        let len = output_lock.len();
+                        scroll_down(1, &mut app.output_scroll, &mut app.output_scroll_state, len);
                     }
                     (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyOutput) => {
-                        if app.output_scroll > 0 {
-                            app.output_scroll -= 1;
-                            app.output_scroll_state =
-                                app.output_scroll_state.position(app.output_scroll);
-                        }
+                        scroll_up(1, &mut app.output_scroll, &mut app.output_scroll_state);
                     }
                     (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyOutput) => {
                         let output_lock = app.output.lock().unwrap();
-                        if app.output_scroll < output_lock.len().saturating_sub(1) {
-                            app.output_scroll += 50;
-                            app.output_scroll_state =
-                                app.output_scroll_state.position(app.output_scroll);
-                        }
+                        let len = output_lock.len();
+                        scroll_down(50, &mut app.output_scroll, &mut app.output_scroll_state, len);
                     }
                     (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyOutput) => {
-                        if app.output_scroll > 50 {
-                            app.output_scroll -= 50;
-                        } else {
-                            app.output_scroll = 0;
+                        scroll_up(50, &mut app.output_scroll, &mut app.output_scroll_state);
+                    }
+                    (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyMapping) => {
+                        let memory_lock = app.memory_map.lock().unwrap();
+                        if let Some(memory) = memory_lock.as_ref() {
+                            let len = memory.len();
+                            scroll_down(
+                                1,
+                                &mut app.memory_map_scroll,
+                                &mut app.memory_map_scroll_state,
+                                len,
+                            );
                         }
-                        app.output_scroll_state =
-                            app.output_scroll_state.position(app.output_scroll);
+                    }
+                    (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyMapping) => {
+                        scroll_up(1, &mut app.memory_map_scroll, &mut app.memory_map_scroll_state);
+                    }
+                    (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyMapping) => {
+                        let memory_lock = app.memory_map.lock().unwrap();
+                        if let Some(memory) = memory_lock.as_ref() {
+                            let len = memory.len();
+                            scroll_down(
+                                50,
+                                &mut app.memory_map_scroll,
+                                &mut app.memory_map_scroll_state,
+                                len,
+                            );
+                        }
+                    }
+                    (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyMapping) => {
+                        scroll_up(50, &mut app.memory_map_scroll, &mut app.memory_map_scroll_state);
                     }
                     (_, KeyCode::Enter, _) => {
                         key_enter(app)?;
@@ -404,6 +422,22 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
             }
         }
     }
+}
+
+fn scroll_down(n: usize, scroll: &mut usize, state: &mut ScrollbarState, len: usize) {
+    if scroll < &mut len.saturating_sub(1) {
+        *scroll += n;
+        *state = state.position(*scroll);
+    }
+}
+
+fn scroll_up(n: usize, scroll: &mut usize, state: &mut ScrollbarState) {
+    if *scroll > n {
+        *scroll -= n;
+    } else {
+        *scroll = 0;
+    }
+    *state = state.position(*scroll);
 }
 
 fn key_up(app: &mut App) {

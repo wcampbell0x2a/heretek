@@ -26,6 +26,7 @@ pub fn draw_output(app: &mut App, f: &mut Frame, output: Rect, full: bool) {
             len - max as usize + 2
         }
     };
+
     app.output_scroll_state = app.output_scroll_state.content_length(len);
 
     let outputs: Vec<ListItem> = output_lock

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use super::{ORANGE, PURPLE, RED};
 
 use ratatui::layout::Constraint;
@@ -23,7 +25,8 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
 
         let reg_changed_lock = app.register_changed.lock().unwrap();
         let filepath_lock = app.filepath.lock().unwrap();
-        let binding = filepath_lock.as_ref().unwrap();
+        let empty = PathBuf::from("");
+        let binding = filepath_lock.as_ref().unwrap_or(&empty);
         let filepath = binding.to_string_lossy();
         for (i, (name, register, vals)) in regs.iter().enumerate() {
             if let Some(reg) = register {

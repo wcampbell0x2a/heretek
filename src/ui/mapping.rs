@@ -9,7 +9,6 @@ use crate::App;
 
 pub fn draw_mapping(app: &mut App, f: &mut Frame, mapping_rect: Rect) {
     let title = "Memory Mapping (up(k), down(j), 50 up(K), 50 down(J))";
-    let block = Block::default().borders(Borders::TOP).title(title.fg(ORANGE));
 
     let mut rows = vec![];
     rows.push(
@@ -45,6 +44,7 @@ pub fn draw_mapping(app: &mut App, f: &mut Frame, mapping_rect: Rect) {
         Constraint::Length(20),
         Constraint::Fill(1),
     ];
+    let block = Block::default().borders(Borders::ALL).title(title.fg(ORANGE));
     let table = Table::new(rows, widths).block(block);
     f.render_widget(table, mapping_rect);
     f.render_stateful_widget(

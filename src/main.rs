@@ -108,6 +108,20 @@ enum Mode {
     OnlyHexdump,
 }
 
+impl Mode {
+    pub fn next(&self) -> Self {
+        match self {
+            Mode::All => Mode::OnlyRegister,
+            Mode::OnlyRegister => Mode::OnlyStack,
+            Mode::OnlyStack => Mode::OnlyInstructions,
+            Mode::OnlyInstructions => Mode::OnlyOutput,
+            Mode::OnlyOutput => Mode::OnlyMapping,
+            Mode::OnlyMapping => Mode::OnlyHexdump,
+            Mode::OnlyHexdump => Mode::All,
+        }
+    }
+}
+
 // TODO: this could be split up, some of these fields
 // are always set after the file is loaded in gdb
 struct App {
@@ -368,6 +382,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     }
                     (InputMode::Normal, KeyCode::Char('q'), _) => {
                         return Ok(());
+                    }
+                    (InputMode::Normal, KeyCode::Tab, _) => {
+                        app.mode = app.mode.next();
                     }
                     (_, KeyCode::F(1), _) => {
                         app.mode = Mode::All;

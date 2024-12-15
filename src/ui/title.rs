@@ -72,6 +72,6 @@ pub fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
         Span::styled("Code", Style::default().fg(TEXT_COLOR).add_modifier(Modifier::BOLD)),
     ]);
     let text = Text::from(Line::from(msg)).style(style);
-    let help_message = Paragraph::new(text);
+    let help_message = Paragraph::new(text).alignment(Alignment::Center);
     f.render_widget(help_message, second);
 }

@@ -4,6 +4,8 @@ Yet Another gdb TUI. Connect remotely with gdb when you don't have a working `gd
 * **No gdbserver requirements**: Many vendors ship invalid `gdbserver` binaries, this works on remote targets with just `gdb`, `nc`, and `mkfifo`.
 * **No python requirements**: Many vendors ship `gdb` without python support
 
+![screenshot](images/screenshot.png)
+
 ```
 Yet Another GDB TUI
 
@@ -15,7 +17,6 @@ Options:
       --32               Switch into 32-bit mode
   -h, --help             Print help (see more with '--help')
   -V, --version          Print version 
-
 ```
 
-![screenshot](images/screenshot.png)
+See [commands](./docs/commands.md) for internal `heretek` commands.

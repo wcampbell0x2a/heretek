@@ -294,8 +294,7 @@ fn recv_exec_result_memory(
                         if val != 0 {
                             // TODO: endian
                             debug!("1: trying to read: {:02x}", val);
-                            let num = format!("0x{:02x}", val);
-                            next_write.push(data_read_memory_bytes(&num, 0, len));
+                            next_write.push(data_read_memory_bytes(val, 0, len));
                             written.push_back(Written::RegisterValue((b.number.clone(), val)));
                         }
                         break;
@@ -394,8 +393,7 @@ fn update_stack(
     if val != 0 {
         // TODO: endian?
         debug!("2: trying to read: {}", data["contents"]);
-        let num = format!("0x{:02x}", val);
-        next_write.push(data_read_memory_bytes(&num, 0, len));
+        next_write.push(data_read_memory_bytes(val, 0, len));
         written.push_back(Written::Stack(Some(begin)));
     }
 }
@@ -434,11 +432,7 @@ fn recv_exec_results_register_value(
                             // avoid trying to read null :^)
                             if val_u32 != 0 {
                                 // TODO: we shouldn't do this for known CODE locations
-                                next_write.push(data_read_memory_bytes(
-                                    &format!("0x{:02x?}", val_u32),
-                                    0,
-                                    4,
-                                ));
+                                next_write.push(data_read_memory_bytes(val_u32 as u64, 0, 4));
                                 written.push_back(Written::RegisterValue((
                                     r.number.clone(),
                                     val_u32 as u64,
@@ -452,11 +446,7 @@ fn recv_exec_results_register_value(
                             // avoid trying to read null :^)
                             if val_u64 != 0 {
                                 // TODO: we shouldn't do this for known CODE locations
-                                next_write.push(data_read_memory_bytes(
-                                    &format!("0x{:02x?}", val_u64),
-                                    0,
-                                    8,
-                                ));
+                                next_write.push(data_read_memory_bytes(val_u64, 0, 8));
                                 written
                                     .push_back(Written::RegisterValue((r.number.clone(), val_u64)));
                             }

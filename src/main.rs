@@ -589,7 +589,20 @@ fn process_line(app: &mut App, val: &str) {
         let mut written = app.written.lock().unwrap();
         let addr = split[1];
         let len = split[2];
-        let s = data_read_memory_bytes(addr, 0, u64::from_str_radix(len, 16).unwrap());
+
+        let addr_val = if addr.starts_with("0x") {
+            u64::from_str_radix(&addr[2..], 16).unwrap()
+        } else {
+            addr.parse::<u64>().unwrap()
+        };
+
+        let len_val = if len.starts_with("0x") {
+            u64::from_str_radix(&len[2..], 16).unwrap()
+        } else {
+            len.parse::<u64>().unwrap()
+        };
+
+        let s = data_read_memory_bytes(addr_val, 0, len_val);
         next_write.push(s);
         written.push_back(Written::Memory);
         app.input.reset();

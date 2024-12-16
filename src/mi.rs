@@ -396,9 +396,8 @@ pub fn data_read_sp_bytes(hex_offset: u64, len: u64) -> String {
     format!("-data-read-memory-bytes $sp+0x{hex_offset:02x} {len}")
 }
 
-pub fn data_read_memory_bytes(addr: &str, hex_offset: u64, len: u64) -> String {
-    assert!(addr.starts_with("0x"));
-    format!("-data-read-memory-bytes {addr}+0x{hex_offset:02x} {len}")
+pub fn data_read_memory_bytes(addr: u64, hex_offset: u64, len: u64) -> String {
+    format!("-data-read-memory-bytes 0x{addr:02x}+0x{hex_offset:02x} {len}")
 }
 
 pub fn data_disassemble(before: usize, amt: usize) -> String {

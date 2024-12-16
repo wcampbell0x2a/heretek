@@ -34,6 +34,9 @@ fn to_hexdump_str(data: &[u8]) -> String {
 
 pub fn draw_hexdump(app: &mut App, f: &mut Frame, hexdump: Rect) {
     let last_read = app.hexdump.lock().unwrap();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Hexdump (up(k), down(j), 50 up(K), 50 down(J))".fg(ORANGE));
     if let Some(r) = last_read.as_ref() {
         let data = &r.1;
 
@@ -45,9 +48,6 @@ pub fn draw_hexdump(app: &mut App, f: &mut Frame, hexdump: Rect) {
         let skip = if len <= max as usize { 0 } else { app.hexdump_scroll };
         app.hexdump_scroll_state = app.hexdump_scroll_state.content_length(len);
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title("Hexdump (up(k), down(j), 50 up(K), 50 down(J))".fg(ORANGE));
         let lines: Vec<&str> = data.lines().skip(skip).collect();
         let paragraph =
             Paragraph::new(lines.join("\n")).block(block).style(Style::default().fg(Color::White));
@@ -57,5 +57,7 @@ pub fn draw_hexdump(app: &mut App, f: &mut Frame, hexdump: Rect) {
             hexdump,
             &mut app.hexdump_scroll_state,
         );
+    } else {
+        f.render_widget(Paragraph::new("").block(block), hexdump);
     }
 }

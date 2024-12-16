@@ -133,7 +133,7 @@ struct App {
     mode: Mode,
     input: Input,
     input_mode: InputMode,
-    messages: LimitedBuffer<String>,
+    sent_input: LimitedBuffer<String>,
     memory_map: Arc<Mutex<Option<Vec<MemoryMapping>>>>,
     memory_map_scroll: usize,
     memory_map_scroll_state: ScrollbarState,
@@ -201,7 +201,7 @@ impl App {
             mode: Mode::All,
             input: Input::default(),
             input_mode: InputMode::Normal,
-            messages: LimitedBuffer::new(100),
+            sent_input: LimitedBuffer::new(100),
             current_pc: Arc::new(Mutex::new(0)),
             output_scroll: 0,
             output_scroll_state: ScrollbarState::new(0),
@@ -525,42 +525,42 @@ fn scroll_up(n: usize, scroll: &mut usize, state: &mut ScrollbarState) {
 }
 
 fn key_up(app: &mut App) {
-    if !app.messages.buffer.is_empty() {
-        if app.messages.offset < app.messages.buffer.len() {
-            app.messages.offset += 1;
+    if !app.sent_input.buffer.is_empty() {
+        if app.sent_input.offset < app.sent_input.buffer.len() {
+            app.sent_input.offset += 1;
         }
         update_from_previous_input(app);
     } else {
-        app.messages.offset = 0;
+        app.sent_input.offset = 0;
     }
 }
 
 fn key_down(app: &mut App) {
-    if !app.messages.buffer.is_empty() {
-        if app.messages.offset != 0 {
-            app.messages.offset -= 1;
-            if app.messages.offset == 0 {
+    if !app.sent_input.buffer.is_empty() {
+        if app.sent_input.offset != 0 {
+            app.sent_input.offset -= 1;
+            if app.sent_input.offset == 0 {
                 app.input.reset();
             }
         }
         update_from_previous_input(app);
     } else {
-        app.messages.offset = 0;
+        app.sent_input.offset = 0;
     }
 }
 
 fn key_enter(app: &mut App) -> Result<(), io::Error> {
     if app.input.value().is_empty() {
-        app.messages.offset = 0;
+        app.sent_input.offset = 0;
 
-        let messages = app.messages.clone();
+        let messages = app.sent_input.clone();
         let messages = messages.as_slice().iter();
         if let Some(val) = messages.last() {
             process_line(app, val);
         }
     } else {
-        app.messages.offset = 0;
-        app.messages.push(app.input.value().into());
+        app.sent_input.offset = 0;
+        app.sent_input.push(app.input.value().into());
 
         let val = app.input.clone();
         let val = val.value();
@@ -655,8 +655,9 @@ fn replace_mapping_end(app: &mut App, val: &mut String) {
 }
 
 fn update_from_previous_input(app: &mut App) {
-    if app.messages.buffer.len() >= app.messages.offset {
-        if let Some(msg) = app.messages.buffer.get(app.messages.buffer.len() - app.messages.offset)
+    if app.sent_input.buffer.len() >= app.sent_input.offset {
+        if let Some(msg) =
+            app.sent_input.buffer.get(app.sent_input.buffer.len() - app.sent_input.offset)
         {
             app.input = Input::new(msg.clone())
         }

@@ -23,7 +23,7 @@ pub fn draw_stack(app: &App, f: &mut Frame, stack: Rect) {
             let addr = Cell::from(format!("  0x{:02x}", addr)).style(Style::new().fg(PURPLE));
             let mut cells = vec![addr];
             for v in values {
-                let mut cell = Cell::from(format!("0x{:02x}", v));
+                let mut cell = Cell::from(format!("➛ 0x{:02x}", v));
                 let (is_stack, is_heap, is_text) = app.classify_val(*v, &filepath);
                 apply_val_color(&mut cell, is_stack, is_heap, is_text);
                 cells.push(cell);

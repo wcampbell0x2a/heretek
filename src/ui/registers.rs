@@ -43,14 +43,14 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
                         let mut extra_vals = Vec::new();
                         if !is_text && val != 0 && !vals.is_empty() {
                             for v in vals {
-                                let mut cell = Cell::from(format!("0x{:02x}", v));
+                                let mut cell = Cell::from(format!("➛ 0x{:02x}", v));
                                 let (is_stack, is_heap, is_text) = app.classify_val(*v, &filepath);
                                 super::apply_val_color(&mut cell, is_stack, is_heap, is_text);
                                 extra_vals.push(cell);
                             }
                         }
 
-                        let mut cell = Cell::from(reg.value.clone().unwrap());
+                        let mut cell = Cell::from(format!("➛ {}", reg.value.clone().unwrap()));
                         super::apply_val_color(&mut cell, is_stack, is_heap, is_text);
 
                         // Apply color to reg name

@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::str::FromStr;
 
 use log::debug;
 use regex::{CaptureMatches, Regex};
@@ -38,24 +37,29 @@ pub struct MemoryMapping {
 }
 
 impl MemoryMapping {
+    /// Mapping is the stack
     pub fn is_stack(&self) -> bool {
         self.path == Some("[stack]".to_owned())
     }
 
+    /// Mapping is the heap
     pub fn is_heap(&self) -> bool {
         self.path == Some("[heap]".to_owned())
     }
 
+    /// Mapping filepath matches `filepath`
     pub fn is_path(&self, filepath: &str) -> bool {
         self.path == Some(filepath.to_owned())
     }
 
+    /// Mapping contains the `addr`
     pub fn contains(&self, addr: u64) -> bool {
         (addr > self.start_address) && (addr < self.end_address)
     }
 }
 
 impl MemoryMapping {
+    /// Parse from `MEMORY_MAP_START_STR_NEW`
     fn from_str_new(line: &str) -> Result<Self, String> {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() == 5 {
@@ -85,6 +89,7 @@ impl MemoryMapping {
         }
     }
 
+    /// Parse from `MEMORY_MAP_START_STR_OLD`
     fn from_str_old(line: &str) -> Result<Self, String> {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() == 5 {
@@ -104,9 +109,12 @@ impl MemoryMapping {
     }
 }
 
+/// Parse from `MEMORY_MAP_START_STR_NEW`
 pub fn parse_memory_mappings_new(input: &str) -> Vec<MemoryMapping> {
     input.lines().skip(1).filter_map(|line| MemoryMapping::from_str_new(line).ok()).collect()
 }
+
+/// Parse from `MEMORY_MAP_START_STR_OLD`
 pub fn parse_memory_mappings_old(input: &str) -> Vec<MemoryMapping> {
     input.lines().skip(1).filter_map(|line| MemoryMapping::from_str_old(line).ok()).collect()
 }
@@ -132,6 +140,7 @@ impl Register {
     }
 }
 
+/// Info from Exec Result "asm_insns"
 #[derive(Debug, Clone)]
 pub struct Asm {
     pub address: u64,
@@ -385,7 +394,7 @@ fn unescape_gdb_output(input: &str) -> Cow<str> {
 }
 
 pub fn read_pc_value() -> String {
-    format!("-data-evaluate-expression $pc")
+    "-data-evaluate-expression $pc".to_string()
 }
 
 pub fn data_read_pc_bytes(hex_offset: u64, len: u64) -> String {

@@ -19,9 +19,8 @@ pub fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
     if let Ok(asm) = app.asm.lock() {
         let mut entries: Vec<_> = asm.clone().into_iter().collect();
         entries.sort_by(|a, b| a.address.cmp(&b.address));
-        let mut index = 0;
         let app_cur_lock = app.current_pc.lock().unwrap();
-        for a in entries.iter() {
+        for (index, a) in entries.iter().enumerate() {
             if a.address == *app_cur_lock {
                 pc_index = Some(index);
                 if let Some(func_name) = &a.func_name {
@@ -55,7 +54,6 @@ pub fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
             row.push(inst_cell);
 
             rows.push(Row::new(row));
-            index += 1;
         }
     }
 

@@ -465,67 +465,30 @@ fn recv_exec_results_register_value(
     let val = read_pc_value();
     next_write.push(val);
 
+    // assuming we have a valid $sp, get the bytes
     if *thirty {
-        // assuming we have a valid $sp, get the bytes
-        next_write.push(data_read_sp_bytes(0, 4));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(4, 4));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(8, 4));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(12, 4));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(16, 4));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(20, 4));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(24, 4));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(28, 4));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(32, 4));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(36, 4));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(40, 4));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(44, 4));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(48, 4));
-        written.push_back(Written::Stack(None));
+        dump_sp_bytes(next_write, written, 4, 14);
     } else {
-        // assuming we have a valid $sp, get the bytes
-        next_write.push(data_read_sp_bytes(0, 8));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(8, 8));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(16, 8));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(24, 8));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(32, 8));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(40, 8));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(48, 8));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(56, 8));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(62, 8));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(70, 8));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(78, 8));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(86, 8));
-        written.push_back(Written::Stack(None));
-        next_write.push(data_read_sp_bytes(94, 8));
-        written.push_back(Written::Stack(None));
+        dump_sp_bytes(next_write, written, 8, 14);
     }
 
     // update current asm at pc
     let instruction_length = 8;
     next_write.push(data_disassemble(instruction_length * 5, instruction_length * 15));
+}
+
+fn dump_sp_bytes(
+    next_write: &mut Vec<String>,
+    written: &mut VecDeque<Written>,
+    size: u64,
+    amt: u64,
+) {
+    let mut curr_offset = 0;
+    for _ in 0..amt {
+        next_write.push(data_read_sp_bytes(curr_offset, size));
+        written.push_back(Written::Stack(None));
+        curr_offset += size;
+    }
 }
 
 fn recv_exec_result_changed_values(

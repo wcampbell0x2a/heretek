@@ -1,4 +1,8 @@
 # heretek
+[<img alt="github" src="https://img.shields.io/badge/github-wcampbell0x2a/heretek-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/wcampbell0x2a/heretek)
+[<img alt="crates.io" src="https://img.shields.io/crates/v/heretek.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/heretek)
+[<img alt="build status" src="https://img.shields.io/github/actions/workflow/status/wcampbell0x2a/heretek/main.yml?branch=master&style=for-the-badge" height="20">](https://github.com/wcampbell0x2a/heretek/actions?query=branch%3Amaster)
+
 Yet Another gdb TUI. Connect remotely with gdb when you don't have a working `gdbserver`, and show a tui inspired by `gef`.
 
 * **No gdbserver requirements**: Many vendors ship invalid `gdbserver` binaries, this works on remote targets with just `gdb`, `nc`, and `mkfifo`.
@@ -6,7 +10,16 @@ Yet Another gdb TUI. Connect remotely with gdb when you don't have a working `gd
 
 ![screenshot](images/screenshot.png)
 
+## Build
+Either build from published source in crates.io.
 ```
+$ cargo install heretek --locked
+```
+
+Or download from [github releases](https://github.com/wcampbell0x2a/heretek/releases).
+
+## Usage
+```console
 Yet Another GDB TUI
 
 Usage: heretek [OPTIONS]
@@ -19,4 +32,5 @@ Options:
   -V, --version          Print version 
 ```
 
+## Info
 See [commands](./docs/commands.md) for internal `heretek` commands.

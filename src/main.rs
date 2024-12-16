@@ -125,29 +125,47 @@ impl Mode {
 // TODO: this could be split up, some of these fields
 // are always set after the file is loaded in gdb
 struct App {
+    /// Gdb stdin
+    gdb_stdin: Arc<Mutex<dyn Write + Send>>,
+    /// Messages to write to gdb mi
     next_write: Arc<Mutex<Vec<String>>>,
+    /// Stack of what was written to gdb that is expected back in order to parse correctly
     written: Arc<Mutex<VecDeque<Written>>>,
+    /// -32 bit mode
     thirty_two_bit: Arc<Mutex<bool>>,
+    /// Current filepath of .text
     filepath: Arc<Mutex<Option<PathBuf>>>,
+    /// Current endian
     endian: Arc<Mutex<Option<Endian>>>,
+    /// Current mode
     mode: Mode,
+    /// TUI input
     input: Input,
+    /// Currnt input mode of tui
     input_mode: InputMode,
+    /// List of previously sent commands from our own input
     sent_input: LimitedBuffer<String>,
+    /// Memory map TUI
     memory_map: Arc<Mutex<Option<Vec<MemoryMapping>>>>,
     memory_map_scroll: usize,
     memory_map_scroll_state: ScrollbarState,
+    /// Current $pc
     current_pc: Arc<Mutex<u64>>, // TODO: replace with AtomicU64?
+    /// All output from gdb
     output: Arc<Mutex<Vec<String>>>,
     output_scroll: usize,
     output_scroll_state: ScrollbarState,
+    /// Saved output such as (gdb) or > from gdb
     stream_output_prompt: Arc<Mutex<String>>,
-    gdb_stdin: Arc<Mutex<dyn Write + Send>>,
+    /// Register TUI
     register_changed: Arc<Mutex<Vec<u8>>>,
     register_names: Arc<Mutex<Vec<String>>>,
     registers: Arc<Mutex<Vec<(String, Option<Register>, Vec<u64>)>>>,
+    /// Saved Stack
     stack: Arc<Mutex<HashMap<u64, Vec<u64>>>>,
+    /// Saved ASM
     asm: Arc<Mutex<Vec<Asm>>>,
+    /// Hexdump
     hexdump: Arc<Mutex<Option<(u64, Vec<u8>)>>>,
     hexdump_scroll: usize,
     hexdump_scroll_state: ScrollbarState,
@@ -193,6 +211,7 @@ impl App {
             };
 
         let app = App {
+            gdb_stdin,
             next_write: Arc::new(Mutex::new(vec![])),
             written: Arc::new(Mutex::new(VecDeque::new())),
             thirty_two_bit: Arc::new(Mutex::new(args.thirty_two_bit)),
@@ -202,17 +221,16 @@ impl App {
             input: Input::default(),
             input_mode: InputMode::Normal,
             sent_input: LimitedBuffer::new(100),
-            current_pc: Arc::new(Mutex::new(0)),
-            output_scroll: 0,
-            output_scroll_state: ScrollbarState::new(0),
             memory_map: Arc::new(Mutex::new(None)),
             memory_map_scroll: 0,
             memory_map_scroll_state: ScrollbarState::new(0),
+            current_pc: Arc::new(Mutex::new(0)),
             output: Arc::new(Mutex::new(Vec::new())),
+            output_scroll: 0,
+            output_scroll_state: ScrollbarState::new(0),
             stream_output_prompt: Arc::new(Mutex::new(String::new())),
             register_changed: Arc::new(Mutex::new(vec![])),
             register_names: Arc::new(Mutex::new(vec![])),
-            gdb_stdin,
             registers: Arc::new(Mutex::new(vec![])),
             stack: Arc::new(Mutex::new(HashMap::new())),
             asm: Arc::new(Mutex::new(Vec::new())),
@@ -304,6 +322,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Setup terminal
     let mut terminal = ratatui::init();
 
+    // Clone all the variables that need to be accessed into gdb thread
     let filepath_arc = Arc::clone(&app.filepath);
     let thirty_two_bit_arc = Arc::clone(&app.thirty_two_bit);
     let next_write_arc = Arc::clone(&app.next_write);
@@ -578,8 +597,10 @@ fn process_line(app: &mut App, val: &str) {
     replace_mapping_end(app, &mut val);
 
     if val.starts_with("file") {
+        // we parse file, but still send it on
         app.save_filepath(&val);
     } else if val.starts_with("hexdump") {
+        // don't send it on, parse the hexdump command
         let split: Vec<&str> = val.split_whitespace().collect();
         if split.len() < 3 {
             error!("Invalid arguments, expected 'hexdump addr len'");

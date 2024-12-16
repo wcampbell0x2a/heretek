@@ -250,7 +250,7 @@ impl App {
         self.filepath = Arc::new(Mutex::new(Some(filepath)));
     }
 
-    pub fn classify_val(&self, val: u64, filepath: &std::borrow::Cow<str>) -> (bool, bool, bool) {
+    pub fn classify_val(&self, val: u64, filepath: &str) -> (bool, bool, bool) {
         let mut is_stack = false;
         let mut is_heap = false;
         let mut is_text = false;

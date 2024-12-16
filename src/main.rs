@@ -387,7 +387,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
             let mut next_write = app.next_write.lock().unwrap();
             if !next_write.is_empty() {
                 for w in &*next_write {
-                    write_mi(&app.gdb_stdin, &w);
+                    write_mi(&app.gdb_stdin, w);
                 }
                 next_write.clear();
             }

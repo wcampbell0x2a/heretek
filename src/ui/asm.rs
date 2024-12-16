@@ -14,6 +14,8 @@ pub fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
     let mut rows = vec![];
     let mut pc_index = None;
     let mut function_name = None;
+    let mut tallest_function_len = 0;
+
     if let Ok(asm) = app.asm.lock() {
         let mut entries: Vec<_> = asm.clone().into_iter().collect();
         entries.sort_by(|a, b| a.address.cmp(&b.address));
@@ -24,6 +26,9 @@ pub fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
                 pc_index = Some(index);
                 if let Some(func_name) = &a.func_name {
                     function_name = Some(func_name.clone());
+                    if func_name.len() > tallest_function_len {
+                        tallest_function_len = func_name.len();
+                    }
                 }
             }
             let addr_cell =
@@ -60,7 +65,11 @@ pub fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
         Title::from("Instructions".fg(ORANGE))
     };
     if let Some(pc_index) = pc_index {
-        let widths = [Constraint::Length(16), Constraint::Percentage(10), Constraint::Fill(1)];
+        let widths = [
+            Constraint::Length(16),
+            Constraint::Length(tallest_function_len as u16 + 5),
+            Constraint::Fill(1),
+        ];
         let table = Table::new(rows, widths)
             .block(Block::default().borders(Borders::TOP).title(tital))
             .row_highlight_style(Style::new().fg(GREEN))

@@ -201,7 +201,7 @@ impl App {
             mode: Mode::All,
             input: Input::default(),
             input_mode: InputMode::Normal,
-            messages: LimitedBuffer::new(10),
+            messages: LimitedBuffer::new(100),
             current_pc: Arc::new(Mutex::new(0)),
             output_scroll: 0,
             output_scroll_state: ScrollbarState::new(0),

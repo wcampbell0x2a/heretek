@@ -66,6 +66,7 @@ pub fn gdb_interact(
                     }
                 }
                 MIResponse::ExecResult(status, kv) => {
+                    // Parse the status
                     if status == "running" {
                         // TODO: this causes a bunch of re-drawing, but
                         // I'm sure in the future we could make sure we are leaving our own
@@ -86,8 +87,7 @@ pub fn gdb_interact(
                         // reset the hexdump
                         let mut data_read = hexdump_arc.lock().unwrap();
                         *data_read = None;
-                    }
-                    if status == "done" {
+                    } else if status == "done" {
                         // Check if we were looking for a mapping
                         // TODO: This should be an enum or something?
                         if let Some(mapping_ver) = current_map.0 {
@@ -111,8 +111,7 @@ pub fn gdb_interact(
                                 ));
                             }
                         }
-                    }
-                    if status == "error" {
+                    } else if status == "error" {
                         // assume this is from us, pop off an unexpected
                         // if we can
                         let mut written = written.lock().unwrap();
@@ -120,6 +119,7 @@ pub fn gdb_interact(
                         // trace!("ERROR: {:02x?}", removed);
                     }
 
+                    // Parse the key-value pairs
                     if let Some(value) = kv.get("value") {
                         recv_exec_result_value(&current_pc_arc, value);
                     } else if let Some(register_names) = kv.get("register-names") {

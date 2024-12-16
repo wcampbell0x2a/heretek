@@ -4,12 +4,10 @@ use super::{ORANGE, PURPLE, RED};
 
 use ratatui::layout::Constraint;
 use ratatui::prelude::Stylize;
-use ratatui::widgets::{Block, Borders, Cell, Paragraph, Table};
+use ratatui::widgets::{Block, Borders, Cell, Table};
 use ratatui::{layout::Rect, style::Style, widgets::Row, Frame};
 
-use super::{apply_val_color, GREEN, YELLOW};
-
-use crate::{App, InputMode};
+use crate::App;
 
 /// Registers
 pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {

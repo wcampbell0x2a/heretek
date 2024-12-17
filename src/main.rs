@@ -638,13 +638,13 @@ fn process_line(app: &mut App, val: &str) {
     let mut val = val.to_owned();
 
     // Replace internal variables
-    replace_mapping_start(app, &mut val);
-    replace_mapping_end(app, &mut val);
+    replace_internal_variables(app, &mut val);
 
     if val.starts_with("file") {
         // we parse file, but still send it on
         app.save_filepath(&val);
     } else if val.starts_with("hexdump") {
+        debug!("hexdump: {val}");
         // don't send it on, parse the hexdump command
         let split: Vec<&str> = val.split_whitespace().collect();
         if split.len() < 3 {
@@ -678,11 +678,19 @@ fn process_line(app: &mut App, val: &str) {
     app.input.reset();
 }
 
+fn replace_internal_variables(app: &mut App, val: &mut String) {
+    replace_mapping_start(app, val);
+    replace_mapping_end(app, val);
+    replace_mapping_len(app, val);
+}
+
 fn replace_mapping_start(app: &mut App, val: &mut String) {
     let memory_map = app.memory_map.lock().unwrap();
     if let Some(ref memory_map) = *memory_map {
-        let pattern = Regex::new(r"\$HERETEK_MAPPING_START_([\w\[\]/.-]+)").unwrap();
-        *val = pattern
+        static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
+            Regex::new(r"\$HERETEK_MAPPING_START_([\w\[\]/.-]+)").unwrap()
+        });
+        *val = RE
             .replace_all(&*val, |caps: &regex::Captures| {
                 let filename = &caps[1];
                 format!(
@@ -702,8 +710,10 @@ fn replace_mapping_start(app: &mut App, val: &mut String) {
 fn replace_mapping_end(app: &mut App, val: &mut String) {
     let memory_map = app.memory_map.lock().unwrap();
     if let Some(ref memory_map) = *memory_map {
-        let pattern = Regex::new(r"\$HERETEK_MAPPING_END_([\w\[\]/.-]+)").unwrap();
-        *val = pattern
+        static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
+            Regex::new(r"\$HERETEK_MAPPING_END_([\w\[\]/.-]+)").unwrap()
+        });
+        *val = RE
             .replace_all(&*val, |caps: &regex::Captures| {
                 let filename = &caps[1];
                 format!(
@@ -713,6 +723,29 @@ fn replace_mapping_end(app: &mut App, val: &mut String) {
                         // TODO(perf): to_owned
                         .find(|a| a.path == Some(filename.to_owned()))
                         .map(|a| a.end_address)
+                        .unwrap_or(0)
+                )
+            })
+            .to_string();
+    }
+}
+
+fn replace_mapping_len(app: &mut App, val: &mut String) {
+    let memory_map = app.memory_map.lock().unwrap();
+    if let Some(ref memory_map) = *memory_map {
+        static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
+            Regex::new(r"\$HERETEK_MAPPING_LEN_([\w\[\]/.-]+)").unwrap()
+        });
+        *val = RE
+            .replace_all(&*val, |caps: &regex::Captures| {
+                let filename = &caps[1];
+                format!(
+                    "0x{:02x}",
+                    memory_map
+                        .iter()
+                        // TODO(perf): to_owned
+                        .find(|a| a.path == Some(filename.to_owned()))
+                        .map(|a| a.size)
                         .unwrap_or(0)
                 )
             })

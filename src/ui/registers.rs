@@ -14,6 +14,7 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
     let block = Block::default().borders(Borders::TOP).title("Registers".fg(ORANGE));
 
     let mut rows = vec![];
+    let mut longest_register_name = 0;
 
     if let Ok(regs) = app.registers.lock() {
         if regs.is_empty() {
@@ -34,6 +35,9 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
                 if let Some(reg_value) = &reg.value {
                     if let Ok(val) = u64::from_str_radix(&reg_value[2..], 16) {
                         let changed = reg_changed_lock.contains(&(i as u8));
+                        if longest_register_name < name.len() {
+                            longest_register_name = name.len();
+                        }
                         let mut reg_name =
                             Cell::from(format!("  {name}")).style(Style::new().fg(PURPLE));
                         let (is_stack, is_heap, is_text) = app.classify_val(val, &filepath);
@@ -65,7 +69,7 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
     }
 
     let widths = [
-        Constraint::Length(5),
+        Constraint::Length(longest_register_name as u16),
         Constraint::Length(20),
         Constraint::Length(20),
         Constraint::Length(20),

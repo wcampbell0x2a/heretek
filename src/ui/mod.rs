@@ -91,7 +91,12 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         Mode::OnlyHexdump => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            hexdump::draw_hexdump(app, f, all);
+            hexdump::draw_hexdump(app, f, all, false);
+        }
+        Mode::OnlyHexdumpPopup => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            hexdump::draw_hexdump(app, f, all, true);
         }
         _ => (),
     }

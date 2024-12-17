@@ -106,6 +106,7 @@ enum Mode {
     OnlyOutput,
     OnlyMapping,
     OnlyHexdump,
+    OnlyHexdumpPopup,
 }
 
 impl Mode {
@@ -118,6 +119,7 @@ impl Mode {
             Mode::OnlyOutput => Mode::OnlyMapping,
             Mode::OnlyMapping => Mode::OnlyHexdump,
             Mode::OnlyHexdump => Mode::All,
+            Mode::OnlyHexdumpPopup => Mode::OnlyHexdumpPopup,
         }
     }
 }
@@ -169,6 +171,7 @@ struct App {
     hexdump: Arc<Mutex<Option<(u64, Vec<u8>)>>>,
     hexdump_scroll: usize,
     hexdump_scroll_state: ScrollbarState,
+    hexdump_popup: Input,
 }
 
 impl App {
@@ -237,6 +240,7 @@ impl App {
             hexdump: Arc::new(Mutex::new(None)),
             hexdump_scroll: 0,
             hexdump_scroll_state: ScrollbarState::new(0),
+            hexdump_popup: Input::default(),
         };
 
         (reader, app)
@@ -328,7 +332,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let next_write_arc = Arc::clone(&app.next_write);
     let written_arc = Arc::clone(&app.written);
     let endian_arc = Arc::clone(&app.endian);
-    let gdb_stdin_arc = Arc::clone(&app.gdb_stdin);
     let current_pc_arc = Arc::clone(&app.current_pc);
     let output_arc = Arc::clone(&app.output);
     let stream_output_prompt_arc = Arc::clone(&app.stream_output_prompt);
@@ -355,7 +358,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             current_pc_arc,
             stack_arc,
             asm_arc,
-            gdb_stdin_arc,
             output_arc,
             stream_output_prompt_arc,
             memory_map_arc,
@@ -396,12 +398,36 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
         if crossterm::event::poll(Duration::from_millis(10))? {
             if let Event::Key(key) = event::read()? {
                 match (&app.input_mode, key.code, &app.mode) {
+                    // hexdump popup
+                    (_, KeyCode::Esc, Mode::OnlyHexdumpPopup) => {
+                        app.hexdump_popup = Input::default();
+                        app.mode = Mode::OnlyHexdump;
+                    }
+                    (_, KeyCode::Char('S'), Mode::OnlyHexdumpPopup) => {
+                        app.input.handle_event(&Event::Key(key));
+                    }
+                    (_, KeyCode::Enter, Mode::OnlyHexdumpPopup) => {
+                        let val = app.hexdump_popup.clone();
+                        let val = val.value();
+
+                        let hexdump_lock = app.hexdump.lock().unwrap();
+                        if let Some(hexdump) = hexdump_lock.as_ref() {
+                            std::fs::write(val, &hexdump.1).unwrap();
+                        }
+                        app.hexdump_popup = Input::default();
+                        app.mode = Mode::OnlyHexdump;
+                    }
+                    (_, _, Mode::OnlyHexdumpPopup) => {
+                        app.hexdump_popup.handle_event(&Event::Key(key));
+                    }
+                    // Input
                     (InputMode::Normal, KeyCode::Char('i'), _) => {
                         app.input_mode = InputMode::Editing;
                     }
                     (InputMode::Normal, KeyCode::Char('q'), _) => {
                         return Ok(());
                     }
+                    // Modes
                     (InputMode::Normal, KeyCode::Tab, _) => {
                         app.mode = app.mode.next();
                     }
@@ -478,6 +504,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                         scroll_up(50, &mut app.memory_map_scroll, &mut app.memory_map_scroll_state);
                     }
                     // hexdump
+                    (InputMode::Normal, KeyCode::Char('S'), Mode::OnlyHexdump) => {
+                        app.mode = Mode::OnlyHexdumpPopup;
+                    }
                     (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyHexdump) => {
                         let hexdump = app.hexdump.lock().unwrap();
                         if let Some(hexdump) = hexdump.as_ref() {

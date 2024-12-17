@@ -28,7 +28,6 @@ pub fn gdb_interact(
     current_pc_arc: Arc<Mutex<u64>>,
     stack_arc: Arc<Mutex<HashMap<u64, Vec<u64>>>>,
     asm_arc: Arc<Mutex<Vec<Asm>>>,
-    gdb_stdin_arc: Arc<Mutex<dyn Write + Send>>,
     output_arc: Arc<Mutex<Vec<String>>>,
     stream_output_prompt_arc: Arc<Mutex<String>>,
     memory_map_arc: Arc<Mutex<Option<Vec<MemoryMapping>>>>,
@@ -46,7 +45,6 @@ pub fn gdb_interact(
                 MIResponse::AsyncRecord(reason, v) => {
                     if reason == "stopped" {
                         let mut next_write = next_write.lock().unwrap();
-                        let mut written = written.lock().unwrap();
                         // debug!("{v:?}");
                         // TODO: we could cache this, per file opened
                         if let Some(arch) = v.get("arch") {

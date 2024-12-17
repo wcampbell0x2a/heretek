@@ -1,13 +1,14 @@
+use log::debug;
 use ratatui::{
-    layout::Rect,
+    layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
-    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation},
+    widgets::{Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation},
     Frame,
 };
 
 use crate::App;
 
-use super::ORANGE;
+use super::{ORANGE, YELLOW};
 
 fn to_hexdump_str(data: &[u8]) -> String {
     data.chunks(16)
@@ -32,12 +33,20 @@ fn to_hexdump_str(data: &[u8]) -> String {
         .join("\n")
 }
 
-pub fn draw_hexdump(app: &mut App, f: &mut Frame, hexdump: Rect) {
-    let last_read = app.hexdump.lock().unwrap();
+fn popup_area(area: Rect, percent_x: u16) -> Rect {
+    let vertical = Layout::vertical([Constraint::Length(3)]).flex(Flex::Center);
+    let horizontal = Layout::horizontal([Constraint::Percentage(percent_x)]).flex(Flex::Center);
+    let [area] = vertical.areas(area);
+    let [area] = horizontal.areas(area);
+    area
+}
+
+pub fn draw_hexdump(app: &mut App, f: &mut Frame, hexdump: Rect, show_popup: bool) {
+    let hexdump_lock = app.hexdump.lock().unwrap();
     let block = Block::default()
         .borders(Borders::ALL)
-        .title("Hexdump (up(k), down(j), 50 up(K), 50 down(J))".fg(ORANGE));
-    if let Some(r) = last_read.as_ref() {
+        .title("Hexdump (up(k), down(j), 50 up(K), 50 down(J), Save(S))".fg(ORANGE));
+    if let Some(r) = hexdump_lock.as_ref() {
         let data = &r.1;
 
         let data = to_hexdump_str(data);
@@ -57,6 +66,19 @@ pub fn draw_hexdump(app: &mut App, f: &mut Frame, hexdump: Rect) {
             hexdump,
             &mut app.hexdump_scroll_state,
         );
+        if show_popup {
+            let area = popup_area(hexdump, 60);
+            let txt_input = Paragraph::new(format!("{}", app.hexdump_popup.value()))
+                .style(Style::default())
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title("Save to".fg(YELLOW))
+                        .border_style(Style::default().fg(ORANGE)),
+                );
+            f.render_widget(Clear, area);
+            f.render_widget(txt_input, area);
+        }
     } else {
         f.render_widget(Paragraph::new("").block(block), hexdump);
     }

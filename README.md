@@ -34,3 +34,5 @@ Options:
 
 ## Info
 See [commands](./docs/commands.md) for internal `heretek` commands.
+
+> "To every problem, a solution lies in the application of tech-lore" - Ferrarch Asklepian, Warhammer 40,000: Mechanicus

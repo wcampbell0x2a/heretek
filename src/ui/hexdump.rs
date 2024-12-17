@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::App;
 
-use super::{ORANGE, YELLOW};
+use super::{ORANGE, SCROLL_CONTROL_TEXT, YELLOW};
 
 fn to_hexdump_str(data: &[u8]) -> String {
     data.chunks(16)
@@ -45,7 +45,7 @@ pub fn draw_hexdump(app: &mut App, f: &mut Frame, hexdump: Rect, show_popup: boo
     let hexdump_lock = app.hexdump.lock().unwrap();
     let block = Block::default()
         .borders(Borders::ALL)
-        .title("Hexdump (up(k), down(j), 50 up(K), 50 down(J), Save(S))".fg(ORANGE));
+        .title(format!("Hexdump {SCROLL_CONTROL_TEXT}, Save(S))").fg(ORANGE));
     if let Some(r) = hexdump_lock.as_ref() {
         let data = &r.1;
 

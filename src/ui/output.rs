@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Scrollbar, ScrollbarOrientation};
 use ratatui::Frame;
 
-use super::BLUE;
+use super::{BLUE, SCROLL_CONTROL_TEXT};
 
 use crate::App;
 
@@ -39,7 +39,7 @@ pub fn draw_output(app: &mut App, f: &mut Frame, output: Rect, full: bool) {
             ListItem::new(content)
         })
         .collect();
-    let help = if full { "(up(k), down(j), 50 up(K), 50 down(J))" } else { "" };
+    let help = if full { SCROLL_CONTROL_TEXT } else { "" };
     let output_block = List::new(outputs)
         .block(Block::default().borders(Borders::ALL).title(format!("Output {help}").fg(BLUE)));
     f.render_widget(output_block, output);

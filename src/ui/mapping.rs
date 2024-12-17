@@ -3,12 +3,12 @@ use ratatui::prelude::Stylize;
 use ratatui::widgets::{Block, Borders, Scrollbar, ScrollbarOrientation, Table};
 use ratatui::{layout::Rect, style::Style, widgets::Row, Frame};
 
-use super::{BLUE, ORANGE};
+use super::{BLUE, ORANGE, SCROLL_CONTROL_TEXT};
 
 use crate::App;
 
 pub fn draw_mapping(app: &mut App, f: &mut Frame, mapping_rect: Rect) {
-    let title = "Memory Mapping (up(k), down(j), 50 up(K), 50 down(J))";
+    let title = format!("Memory Mapping {SCROLL_CONTROL_TEXT}");
 
     let mut rows = vec![];
     rows.push(

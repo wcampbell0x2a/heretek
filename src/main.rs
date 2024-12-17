@@ -455,7 +455,11 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     (InputMode::Editing, KeyCode::Esc, _) => {
                         app.input_mode = InputMode::Normal;
                     }
-                    // memory output
+                    // output
+                    (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyOutput) => {
+                        app.output_scroll = 0;
+                        app.output_scroll_state = app.output_scroll_state.position(0);
+                    }
                     (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyOutput) => {
                         let output_lock = app.output.lock().unwrap();
                         let len = output_lock.len();
@@ -473,6 +477,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                         scroll_up(50, &mut app.output_scroll, &mut app.output_scroll_state);
                     }
                     // memory mapping
+                    (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyMapping) => {
+                        app.memory_map_scroll = 0;
+                        app.memory_map_scroll_state = app.memory_map_scroll_state.position(0);
+                    }
                     (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyMapping) => {
                         let memory_lock = app.memory_map.lock().unwrap();
                         if let Some(memory) = memory_lock.as_ref() {
@@ -504,6 +512,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                         scroll_up(50, &mut app.memory_map_scroll, &mut app.memory_map_scroll_state);
                     }
                     // hexdump
+                    (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyHexdump) => {
+                        app.hexdump_scroll = 0;
+                        app.hexdump_scroll_state = app.hexdump_scroll_state.position(0);
+                    }
                     (InputMode::Normal, KeyCode::Char('S'), Mode::OnlyHexdump) => {
                         app.mode = Mode::OnlyHexdumpPopup;
                     }

@@ -172,6 +172,7 @@ struct App {
     hexdump_scroll: usize,
     hexdump_scroll_state: ScrollbarState,
     hexdump_popup: Input,
+    async_result: Arc<Mutex<String>>,
 }
 
 impl App {
@@ -241,6 +242,7 @@ impl App {
             hexdump_scroll: 0,
             hexdump_scroll_state: ScrollbarState::new(0),
             hexdump_popup: Input::default(),
+            async_result: Arc::new(Mutex::new(String::new())),
         };
 
         (reader, app)
@@ -342,6 +344,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let stack_arc = Arc::clone(&app.stack);
     let asm_arc = Arc::clone(&app.asm);
     let hexdump_arc = Arc::clone(&app.hexdump);
+    let async_result_arc = Arc::clone(&app.async_result);
 
     // Thread to read GDB output and parse it
     thread::spawn(move || {
@@ -362,6 +365,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             stream_output_prompt_arc,
             memory_map_arc,
             hexdump_arc,
+            async_result_arc,
         )
     });
 

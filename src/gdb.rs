@@ -32,6 +32,7 @@ pub fn gdb_interact(
     stream_output_prompt_arc: Arc<Mutex<String>>,
     memory_map_arc: Arc<Mutex<Option<Vec<MemoryMapping>>>>,
     hexdump_arc: Arc<Mutex<Option<(u64, Vec<u8>)>>>,
+    async_result_arc: Arc<Mutex<String>>,
 ) {
     let mut current_map = (None, String::new());
 
@@ -44,6 +45,36 @@ pub fn gdb_interact(
             match &response {
                 MIResponse::AsyncRecord(reason, v) => {
                     if reason == "stopped" {
+                        // in the case of a breakpoint, save the output
+                        // Either it's a breakpoint event, step, signal
+                        let mut async_result = async_result_arc.lock().unwrap();
+                        async_result.push_str(&format!("Status("));
+                        if v.get("bkptno").is_some() {
+                            if let Some(val) = v.get("bkptno") {
+                                async_result.push_str(&format!("bkptno={val}, "));
+                            }
+                        } else if v.get("signal-name").is_some() {
+                            if let Some(val) = v.get("signal-name") {
+                                async_result.push_str(&format!("signal-name={val}"));
+                            }
+                            if let Some(val) = v.get("signal-meaning") {
+                                async_result.push_str(&format!(", signal-meaning={val}, "));
+                            }
+                        }
+                        if let Some(val) = v.get("reason") {
+                            async_result.push_str(&format!("reason={val}"));
+                        }
+                        if let Some(val) = v.get("stopped-threads") {
+                            async_result.push_str(&format!(", stopped-threads={val}"));
+                        }
+                        if let Some(val) = v.get("thread-id") {
+                            async_result.push_str(&format!(", thread-id={val}"));
+                        }
+                        if let Some(val) = v.get("core") {
+                            async_result.push_str(&format!(", core={val}"));
+                        }
+                        async_result.push_str(")");
+
                         let mut next_write = next_write.lock().unwrap();
                         // debug!("{v:?}");
                         // TODO: we could cache this, per file opened
@@ -85,6 +116,10 @@ pub fn gdb_interact(
                         // reset the hexdump
                         let mut data_read = hexdump_arc.lock().unwrap();
                         *data_read = None;
+
+                        // reset status
+                        let mut async_result = async_result_arc.lock().unwrap();
+                        *async_result = String::new();
                     } else if status == "done" {
                         // Check if we were looking for a mapping
                         // TODO: This should be an enum or something?

@@ -2,7 +2,7 @@ use ratatui::prelude::Stylize;
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::{layout::Rect, style::Style, Frame};
 
-use super::{GREEN, YELLOW};
+use super::{BLUE, GREEN};
 
 use crate::{App, InputMode};
 
@@ -15,13 +15,23 @@ pub fn draw_input(title_area: Rect, app: &App, f: &mut Frame, input: Rect) {
     let stream_lock = app.stream_output_prompt.lock().unwrap();
     let prompt_len = stream_lock.len();
 
+    let async_result = app.async_result.lock().unwrap();
+
+    let input_before = format!("Input");
+    let status = format!(" {async_result}");
+
     let txt_input = Paragraph::new(format!("{}{}", stream_lock, app.input.value()))
         .style(match app.input_mode {
             InputMode::Normal => Style::default(),
             InputMode::Editing => Style::default().fg(GREEN),
         })
         .scroll((0, scroll as u16))
-        .block(Block::default().borders(Borders::ALL).title("Input".fg(YELLOW)));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!("{input_before}{status}").fg(BLUE)),
+        );
+
     f.render_widget(txt_input, input);
     match app.input_mode {
         InputMode::Normal =>

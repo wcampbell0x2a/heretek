@@ -19,13 +19,7 @@ fn to_hexdump_str(data: &[u8]) -> String {
                 chunk.iter().map(|byte| format!("{:02x}", byte)).collect::<Vec<_>>().join(" ");
             let ascii_values = chunk
                 .iter()
-                .map(|&byte| {
-                    if byte.is_ascii_graphic() || byte.is_ascii_whitespace() {
-                        byte as char
-                    } else {
-                        '.'
-                    }
-                })
+                .map(|&byte| if byte.is_ascii_graphic() { byte as char } else { '.' })
                 .collect::<String>();
             format!("{:<10} {:48} |{}|", address, hex_values, ascii_values)
         })

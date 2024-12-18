@@ -3,6 +3,7 @@ use std::io::{BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{env, thread};
@@ -134,7 +135,7 @@ struct App {
     /// Stack of what was written to gdb that is expected back in order to parse correctly
     written: Arc<Mutex<VecDeque<Written>>>,
     /// -32 bit mode
-    thirty_two_bit: Arc<Mutex<bool>>,
+    thirty_two_bit: Arc<AtomicBool>,
     /// Current filepath of .text
     filepath: Arc<Mutex<Option<PathBuf>>>,
     /// Current endian
@@ -218,7 +219,7 @@ impl App {
             gdb_stdin,
             next_write: Arc::new(Mutex::new(vec![])),
             written: Arc::new(Mutex::new(VecDeque::new())),
-            thirty_two_bit: Arc::new(Mutex::new(args.thirty_two_bit)),
+            thirty_two_bit: Arc::new(AtomicBool::new(args.thirty_two_bit)),
             filepath: Arc::new(Mutex::new(None)),
             endian: Arc::new(Mutex::new(None)),
             mode: Mode::All,

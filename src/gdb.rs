@@ -1,6 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use deku::ctx::Endian;
@@ -19,7 +20,7 @@ pub fn gdb_interact(
     gdb_stdout: BufReader<Box<dyn Read + Send>>,
     next_write: Arc<Mutex<Vec<String>>>,
     written: Arc<Mutex<VecDeque<Written>>>,
-    thirty_two_bit_arc: Arc<Mutex<bool>>,
+    thirty_two_bit: Arc<AtomicBool>,
     endian_arc: Arc<Mutex<Option<deku::ctx::Endian>>>,
     filepath_arc: Arc<Mutex<Option<PathBuf>>>,
     register_changed_arc: Arc<Mutex<Vec<u8>>>,
@@ -164,7 +165,7 @@ pub fn gdb_interact(
                         let mut written = written.lock().unwrap();
                         recv_exec_results_register_value(
                             register_values,
-                            &thirty_two_bit_arc,
+                            &thirty_two_bit,
                             &endian_arc,
                             &registers_arc,
                             &register_names_arc,
@@ -176,7 +177,7 @@ pub fn gdb_interact(
                         let mut written = written.lock().unwrap();
                         recv_exec_result_memory(
                             &stack_arc,
-                            &thirty_two_bit_arc,
+                            &thirty_two_bit,
                             &endian_arc,
                             &registers_arc,
                             &hexdump_arc,
@@ -272,7 +273,7 @@ fn recv_exec_result_asm_insns(asm: &String, asm_arc: &Arc<Mutex<Vec<Asm>>>) {
 
 fn recv_exec_result_memory(
     stack_arc: &Arc<Mutex<HashMap<u64, Vec<u64>>>>,
-    thirty_two_bit_arc: &Arc<Mutex<bool>>,
+    thirty_two_bit: &Arc<AtomicBool>,
     endian_arc: &Arc<Mutex<Option<Endian>>>,
     registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Vec<u64>)>>>,
     hexdump_arc: &Arc<Mutex<Option<(u64, Vec<u8>)>>>,
@@ -287,14 +288,14 @@ fn recv_exec_result_memory(
 
     match last_written {
         Written::RegisterValue((base_reg, n)) => {
-            let thirty = thirty_two_bit_arc.lock().unwrap();
+            let thirty = thirty_two_bit.load(Ordering::Relaxed);
             let mut regs = registers_arc.lock().unwrap();
 
             let (data, _) = read_memory(memory);
             for (_, b, extra) in regs.iter_mut() {
                 if let Some(b) = b {
                     if b.number == base_reg {
-                        let (val, len) = if *thirty {
+                        let (val, len) = if thirty {
                             let mut val = u32::from_str_radix(&data["contents"], 16).unwrap();
                             debug!("val: {:02x?}", val);
                             let endian = endian_arc.lock().unwrap();
@@ -343,30 +344,14 @@ fn recv_exec_result_memory(
             let (data, _) = read_memory(memory);
             debug!("stack: {:02x?}", data);
 
-            update_stack(
-                data,
-                thirty_two_bit_arc,
-                endian_arc,
-                begin,
-                &mut stack,
-                next_write,
-                written,
-            );
+            update_stack(data, thirty_two_bit, endian_arc, begin, &mut stack, next_write, written);
         }
         Written::Stack(None) => {
             let mut stack = stack_arc.lock().unwrap();
             let (data, begin) = read_memory(memory);
             debug!("stack: {:02x?}", data);
 
-            update_stack(
-                data,
-                thirty_two_bit_arc,
-                endian_arc,
-                begin,
-                &mut stack,
-                next_write,
-                written,
-            );
+            update_stack(data, thirty_two_bit, endian_arc, begin, &mut stack, next_write, written);
         }
         Written::Memory => {
             let (data, begin) = read_memory(memory);
@@ -380,7 +365,7 @@ fn recv_exec_result_memory(
 
 fn update_stack(
     data: HashMap<String, String>,
-    thirty_two_bit_arc: &Arc<Mutex<bool>>,
+    thirty_two_bit: &Arc<AtomicBool>,
     endian_arc: &Arc<Mutex<Option<Endian>>>,
     begin: String,
     stack: &mut std::sync::MutexGuard<HashMap<u64, Vec<u64>>>,
@@ -388,8 +373,8 @@ fn update_stack(
     written: &mut VecDeque<Written>,
 ) {
     // TODO: this is insane and should be cached
-    let thirty = thirty_two_bit_arc.lock().unwrap();
-    let (val, len) = if *thirty {
+    let thirty = thirty_two_bit.load(Ordering::Relaxed);
+    let (val, len) = if thirty {
         let mut val = u32::from_str_radix(&data["contents"], 16).unwrap();
         let endian = endian_arc.lock().unwrap();
         if endian.unwrap() == Endian::Big {
@@ -442,14 +427,15 @@ fn read_memory(memory: &String) -> (HashMap<String, String>, String) {
 
 fn recv_exec_results_register_value(
     register_values: &String,
-    thirty_two_bit_arc: &Arc<Mutex<bool>>,
+    thirty_two_bit: &Arc<AtomicBool>,
     endian_arc: &Arc<Mutex<Option<Endian>>>,
     registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Vec<u64>)>>>,
     register_names_arc: &Arc<Mutex<Vec<String>>>,
     next_write: &mut Vec<String>,
     written: &mut VecDeque<Written>,
 ) {
-    let thirty = thirty_two_bit_arc.lock().unwrap();
+    let thirty = thirty_two_bit.load(Ordering::Relaxed);
+
     // parse the response and save it
     let registers = parse_register_values(register_values);
     let mut regs = registers_arc.lock().unwrap();
@@ -458,7 +444,7 @@ fn recv_exec_results_register_value(
         if let Some(r) = r {
             if r.is_set() {
                 if let Some(val) = &r.value {
-                    if *thirty {
+                    if thirty {
                         // TODO: this should be able to expect
                         if let Ok(mut val_u32) = u32::from_str_radix(&val[2..], 16) {
                             // NOTE: This is already in the right endian
@@ -499,7 +485,7 @@ fn recv_exec_results_register_value(
     next_write.push(val);
 
     // assuming we have a valid $sp, get the bytes
-    if *thirty {
+    if thirty {
         dump_sp_bytes(next_write, written, 4, 14);
     } else {
         dump_sp_bytes(next_write, written, 8, 14);

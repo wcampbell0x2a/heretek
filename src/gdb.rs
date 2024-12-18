@@ -438,35 +438,32 @@ fn recv_exec_results_register_value(
     let registers = parse_register_values(register_values);
     let mut regs = registers_arc.lock().unwrap();
     let regs_names = register_names_arc.lock().unwrap();
-    for r in &registers {
-        if let Some(r) = r {
-            if r.is_set() {
-                if let Some(val) = &r.value {
-                    if thirty {
-                        // TODO: this should be able to expect
-                        if let Ok(val_u32) = u32::from_str_radix(&val[2..], 16) {
-                            // NOTE: This is already in the right endian
-                            // avoid trying to read null :^)
-                            if val_u32 != 0 {
-                                // TODO: we shouldn't do this for known CODE locations
-                                next_write.push(data_read_memory_bytes(val_u32 as u64, 0, 4));
-                                written.push_back(Written::RegisterValue((
-                                    r.number.clone(),
-                                    val_u32 as u64,
-                                )));
-                            }
+    for r in registers.iter().flatten() {
+        if r.is_set() {
+            if let Some(val) = &r.value {
+                if thirty {
+                    // TODO: this should be able to expect
+                    if let Ok(val_u32) = u32::from_str_radix(&val[2..], 16) {
+                        // NOTE: This is already in the right endian
+                        // avoid trying to read null :^)
+                        if val_u32 != 0 {
+                            // TODO: we shouldn't do this for known CODE locations
+                            next_write.push(data_read_memory_bytes(val_u32 as u64, 0, 4));
+                            written.push_back(Written::RegisterValue((
+                                r.number.clone(),
+                                val_u32 as u64,
+                            )));
                         }
-                    } else {
-                        // TODO: this should be able to expect
-                        if let Ok(val_u64) = u64::from_str_radix(&val[2..], 16) {
-                            // NOTE: This is already in the right endian
-                            // avoid trying to read null :^)
-                            if val_u64 != 0 {
-                                // TODO: we shouldn't do this for known CODE locations
-                                next_write.push(data_read_memory_bytes(val_u64, 0, 8));
-                                written
-                                    .push_back(Written::RegisterValue((r.number.clone(), val_u64)));
-                            }
+                    }
+                } else {
+                    // TODO: this should be able to expect
+                    if let Ok(val_u64) = u64::from_str_radix(&val[2..], 16) {
+                        // NOTE: This is already in the right endian
+                        // avoid trying to read null :^)
+                        if val_u64 != 0 {
+                            // TODO: we shouldn't do this for known CODE locations
+                            next_write.push(data_read_memory_bytes(val_u64, 0, 8));
+                            written.push_back(Written::RegisterValue((r.number.clone(), val_u64)));
                         }
                     }
                 }

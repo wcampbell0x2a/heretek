@@ -79,9 +79,9 @@ pub fn gdb_interact(
                         let mut next_write = next_write.lock().unwrap();
                         // debug!("{v:?}");
                         // TODO: we could cache this, per file opened
-                        if let Some(arch) = v.get("arch") {
-                            // debug!("{arch}");
-                        }
+                        // if let Some(arch) = v.get("arch") {
+                        //     // debug!("{arch}");
+                        // }
                         // Get endian
                         next_write.push(r#"-interpreter-exec console "show endian""#.to_string());
                         // TODO: we could cache this, per file opened
@@ -149,7 +149,7 @@ pub fn gdb_interact(
                         // assume this is from us, pop off an unexpected
                         // if we can
                         let mut written = written.lock().unwrap();
-                        let removed = written.pop_front();
+                        let _removed = written.pop_front();
                         // trace!("ERROR: {:02x?}", removed);
                     }
 
@@ -166,7 +166,6 @@ pub fn gdb_interact(
                         recv_exec_results_register_value(
                             register_values,
                             &thirty_two_bit,
-                            &endian_arc,
                             &registers_arc,
                             &register_names_arc,
                             &mut next_write,
@@ -287,7 +286,7 @@ fn recv_exec_result_memory(
     let last_written = written.pop_front().unwrap();
 
     match last_written {
-        Written::RegisterValue((base_reg, n)) => {
+        Written::RegisterValue((base_reg, _n)) => {
             let thirty = thirty_two_bit.load(Ordering::Relaxed);
             let mut regs = registers_arc.lock().unwrap();
 
@@ -428,7 +427,6 @@ fn read_memory(memory: &String) -> (HashMap<String, String>, String) {
 fn recv_exec_results_register_value(
     register_values: &String,
     thirty_two_bit: &Arc<AtomicBool>,
-    endian_arc: &Arc<Mutex<Option<Endian>>>,
     registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Vec<u64>)>>>,
     register_names_arc: &Arc<Mutex<Vec<String>>>,
     next_write: &mut Vec<String>,
@@ -446,7 +444,7 @@ fn recv_exec_results_register_value(
                 if let Some(val) = &r.value {
                     if thirty {
                         // TODO: this should be able to expect
-                        if let Ok(mut val_u32) = u32::from_str_radix(&val[2..], 16) {
+                        if let Ok(val_u32) = u32::from_str_radix(&val[2..], 16) {
                             // NOTE: This is already in the right endian
                             // avoid trying to read null :^)
                             if val_u32 != 0 {
@@ -460,7 +458,7 @@ fn recv_exec_results_register_value(
                         }
                     } else {
                         // TODO: this should be able to expect
-                        if let Ok(mut val_u64) = u64::from_str_radix(&val[2..], 16) {
+                        if let Ok(val_u64) = u64::from_str_radix(&val[2..], 16) {
                             // NOTE: This is already in the right endian
                             // avoid trying to read null :^)
                             if val_u64 != 0 {

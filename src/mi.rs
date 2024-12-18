@@ -226,7 +226,7 @@ pub fn join_registers(
     registers: &[Option<Register>],
 ) -> Vec<(String, Option<Register>)> {
     let mut registers_arch = vec![];
-    for (i, (register, name)) in registers.iter().zip(register_names.iter()).enumerate() {
+    for (_i, (register, name)) in registers.iter().zip(register_names.iter()).enumerate() {
         if let Some(register) = register {
             if !register.number.is_empty() {
                 registers_arch.push((name.to_string(), Some(register.clone())));
@@ -395,10 +395,6 @@ fn unescape_gdb_output(input: &str) -> Cow<str> {
 
 pub fn read_pc_value() -> String {
     "-data-evaluate-expression $pc".to_string()
-}
-
-pub fn data_read_pc_bytes(hex_offset: u64, len: u64) -> String {
-    format!("-data-read-memory-bytes $pc+0x{hex_offset:02x} {len}")
 }
 
 pub fn data_read_sp_bytes(hex_offset: u64, len: u64) -> String {

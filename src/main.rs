@@ -1,3 +1,4 @@
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
@@ -36,8 +37,6 @@ enum InputMode {
     Editing,
 }
 
-use std::collections::{HashMap, VecDeque};
-
 fn resolve_home(path: &str) -> Option<PathBuf> {
     if path.starts_with("~/") {
         if let Ok(home) = env::var("HOME") {
@@ -59,14 +58,6 @@ struct LimitedBuffer<T> {
 impl<T> LimitedBuffer<T> {
     fn as_slice(&self) -> &[T] {
         self.buffer.as_slices().0
-    }
-
-    fn is_empty(&self) -> bool {
-        self.buffer.is_empty()
-    }
-
-    fn len(&self) -> usize {
-        self.buffer.len()
     }
 
     fn new(capacity: usize) -> Self {

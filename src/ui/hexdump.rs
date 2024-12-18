@@ -1,4 +1,3 @@
-use log::debug;
 use ratatui::{
     layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},

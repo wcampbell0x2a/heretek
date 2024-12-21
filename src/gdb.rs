@@ -16,6 +16,8 @@ use crate::mi::{
 };
 use crate::Written;
 
+const MAX_DEREF_LEN: usize = 10;
+
 pub fn gdb_interact(
     gdb_stdout: BufReader<Box<dyn Read + Send>>,
     next_write: Arc<Mutex<Vec<String>>>,
@@ -322,9 +324,9 @@ fn recv_exec_result_memory(
                             return;
                         }
                         extra.push(val as u64);
-                        debug!("extra val: {:02x?}", val);
+                        debug!("{} extra val: {:02x?}", extra.len(), val);
 
-                        if val != 0 {
+                        if !(val == 0 || extra.len() > MAX_DEREF_LEN) {
                             // TODO: endian
                             debug!("1: trying to read: {:02x}", val);
                             next_write.push(data_read_memory_bytes(val, 0, len));
@@ -407,7 +409,7 @@ fn update_stack(
 
     debug!("stack: {:02x?}", stack);
 
-    if val != 0 {
+    if !(val == 0 || stack.len() > MAX_DEREF_LEN) {
         // TODO: endian?
         debug!("2: trying to read: {}", data["contents"]);
         next_write.push(data_read_memory_bytes(val, 0, len));

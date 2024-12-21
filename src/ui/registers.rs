@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 
 use super::{ORANGE, PURPLE, RED};
 
@@ -15,6 +16,7 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
 
     let mut rows = vec![];
     let mut longest_register_name = 0;
+    let mut longest_extra_val = 0;
 
     if let Ok(regs) = app.registers.lock() {
         if regs.is_empty() {
@@ -51,6 +53,9 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
                                 extra_vals.push(cell);
                             }
                         }
+                        if extra_vals.len() > longest_extra_val {
+                            longest_extra_val = extra_vals.len();
+                        }
 
                         let mut cell = Cell::from(format!("➛ {}", reg.value.clone().unwrap()));
                         super::apply_val_color(&mut cell, is_stack, is_heap, is_text);
@@ -68,19 +73,12 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
         }
     }
 
-    let widths = [
-        Constraint::Length(longest_register_name as u16),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-    ];
+    let mut widths = vec![Constraint::Length(longest_register_name as u16)];
+    if app.thirty_two_bit.load(Ordering::Relaxed) {
+        widths.append(&mut vec![Constraint::Length(9); longest_extra_val + 1]);
+    } else {
+        widths.append(&mut vec![Constraint::Length(18); longest_extra_val + 1]);
+    }
     let table = Table::new(rows, widths).block(block);
     f.render_widget(table, register);
 }

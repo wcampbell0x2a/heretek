@@ -1,3 +1,5 @@
+use std::sync::atomic::Ordering;
+
 use ratatui::layout::Constraint;
 use ratatui::prelude::Constraint::Fill;
 use ratatui::prelude::Stylize;
@@ -9,8 +11,8 @@ use super::{apply_val_color, ORANGE, PURPLE};
 use crate::App;
 
 pub fn draw_stack(app: &App, f: &mut Frame, stack: Rect) {
-    // Stack
     let mut rows = vec![];
+    let mut longest_cells = 0;
     if let Ok(stack) = app.stack.lock() {
         let mut entries: Vec<_> = stack.clone().into_iter().collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
@@ -28,22 +30,20 @@ pub fn draw_stack(app: &App, f: &mut Frame, stack: Rect) {
                 apply_val_color(&mut cell, is_stack, is_heap, is_text);
                 cells.push(cell);
             }
+            if cells.len() > longest_cells {
+                longest_cells = cells.len();
+            }
             let row = Row::new(cells);
             rows.push(row);
         }
     }
 
-    let widths = [
-        Constraint::Length(16),
-        Fill(1),
-        Fill(1),
-        Fill(1),
-        Fill(1),
-        Fill(1),
-        Fill(1),
-        Fill(1),
-        Fill(1),
-    ];
+    let mut widths = vec![Constraint::Length(16)];
+    if app.thirty_two_bit.load(Ordering::Relaxed) {
+        widths.append(&mut vec![Constraint::Length(18); longest_cells + 1]);
+    } else {
+        widths.append(&mut vec![Constraint::Length(18); longest_cells + 1]);
+    }
     let table = Table::new(rows, widths)
         .block(Block::default().borders(Borders::TOP).title("Stack".fg(ORANGE)));
 

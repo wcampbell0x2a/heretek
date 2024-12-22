@@ -678,6 +678,9 @@ fn process_line(app: &mut App, val: &str) {
     // Replace internal variables
     replace_internal_variables(app, &mut val);
 
+    // Resolve parens with expresions
+    resolve_paren_expressions(&mut val);
+
     if val.starts_with("file") {
         // we parse file, but still send it on
         app.save_filepath(&val);
@@ -714,6 +717,21 @@ fn process_line(app: &mut App, val: &str) {
     }
     gdb::write_mi(&app.gdb_stdin, &val);
     app.input.reset();
+}
+
+fn resolve_paren_expressions(val: &mut String) {
+    static RE_PAREN: once_cell::sync::Lazy<Regex> =
+        once_cell::sync::Lazy::new(|| Regex::new(r"\(([^()]+)\)").unwrap());
+
+    *val = RE_PAREN
+        .replace_all(&*val, |caps: &regex::Captures| {
+            let expression = &caps[1];
+            match evalexpr::eval(expression) {
+                Ok(result) => result.to_string(),
+                Err(_) => expression.to_string(),
+            }
+        })
+        .to_string();
 }
 
 fn replace_internal_variables(app: &mut App, val: &mut String) {

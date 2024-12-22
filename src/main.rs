@@ -248,6 +248,24 @@ impl App {
         self.filepath = Arc::new(Mutex::new(Some(filepath)));
     }
 
+    pub fn find_first_heap(&self) -> Option<MemoryMapping> {
+        let memory_map = self.memory_map.lock().unwrap();
+        if let Some(memory_map) = memory_map.clone() {
+            memory_map.iter().find(|a| a.is_heap()).cloned()
+        } else {
+            None
+        }
+    }
+
+    pub fn find_first_stack(&self) -> Option<MemoryMapping> {
+        let memory_map = self.memory_map.lock().unwrap();
+        if let Some(memory_map) = memory_map.clone() {
+            memory_map.iter().find(|a| a.is_stack()).cloned()
+        } else {
+            None
+        }
+    }
+
     pub fn classify_val(&self, val: u64, filepath: &str) -> (bool, bool, bool) {
         let mut is_stack = false;
         let mut is_heap = false;
@@ -514,6 +532,34 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     }
                     (InputMode::Normal, KeyCode::Char('S'), Mode::OnlyHexdump) => {
                         app.mode = Mode::OnlyHexdumpPopup;
+                    }
+                    (InputMode::Normal, KeyCode::Char('H'), Mode::OnlyHexdump) => {
+                        if let Some(find_heap) = app.find_first_heap() {
+                            let s =
+                                data_read_memory_bytes(find_heap.start_address, 0, find_heap.size);
+                            let mut next_write = app.next_write.lock().unwrap();
+                            let mut written = app.written.lock().unwrap();
+                            next_write.push(s);
+                            written.push_back(Written::Memory);
+
+                            // reset position
+                            app.hexdump_scroll = 0;
+                            app.hexdump_scroll_state = app.hexdump_scroll_state.position(0);
+                        }
+                    }
+                    (InputMode::Normal, KeyCode::Char('T'), Mode::OnlyHexdump) => {
+                        if let Some(find_heap) = app.find_first_stack() {
+                            let s =
+                                data_read_memory_bytes(find_heap.start_address, 0, find_heap.size);
+                            let mut next_write = app.next_write.lock().unwrap();
+                            let mut written = app.written.lock().unwrap();
+                            next_write.push(s);
+                            written.push_back(Written::Memory);
+
+                            // reset position
+                            app.hexdump_scroll = 0;
+                            app.hexdump_scroll_state = app.hexdump_scroll_state.position(0);
+                        }
                     }
                     (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyHexdump) => {
                         let hexdump = app.hexdump.lock().unwrap();

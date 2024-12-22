@@ -37,7 +37,7 @@ pub fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
                 Span::styled("i", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(" to enter input | "),
             ],
-            Style::default().add_modifier(Modifier::RAPID_BLINK),
+            Style::default(),
         ),
         InputMode::Editing => (
             vec![

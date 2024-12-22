@@ -34,12 +34,19 @@ fn popup_area(area: Rect, percent_x: u16) -> Rect {
     area
 }
 
+fn block(pos: &str) -> Block {
+    let block = Block::default().borders(Borders::ALL).title(
+        format!("Hexdump{pos} {SCROLL_CONTROL_TEXT}, Save(S), HEAP(H), STACK(T))").fg(ORANGE),
+    );
+    block
+}
+
 pub fn draw_hexdump(app: &mut App, f: &mut Frame, hexdump: Rect, show_popup: bool) {
     let hexdump_lock = app.hexdump.lock().unwrap();
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(format!("Hexdump {SCROLL_CONTROL_TEXT}, Save(S))").fg(ORANGE));
+    let mut pos = "".to_string();
+
     if let Some(r) = hexdump_lock.as_ref() {
+        pos = format!("(0x{:02x?})", r.0);
         let data = &r.1;
 
         let data = to_hexdump_str(data);
@@ -51,8 +58,9 @@ pub fn draw_hexdump(app: &mut App, f: &mut Frame, hexdump: Rect, show_popup: boo
         app.hexdump_scroll_state = app.hexdump_scroll_state.content_length(len);
 
         let lines: Vec<&str> = data.lines().skip(skip).collect();
-        let paragraph =
-            Paragraph::new(lines.join("\n")).block(block).style(Style::default().fg(Color::White));
+        let paragraph = Paragraph::new(lines.join("\n"))
+            .block(block(&pos))
+            .style(Style::default().fg(Color::White));
         f.render_widget(paragraph, hexdump);
         f.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight),
@@ -73,6 +81,6 @@ pub fn draw_hexdump(app: &mut App, f: &mut Frame, hexdump: Rect, show_popup: boo
             f.render_widget(txt_input, area);
         }
     } else {
-        f.render_widget(Paragraph::new("").block(block), hexdump);
+        f.render_widget(Paragraph::new("").block(block(&pos)), hexdump);
     }
 }

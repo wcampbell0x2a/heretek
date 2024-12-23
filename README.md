@@ -5,7 +5,7 @@
 
 Yet Another gdb TUI. Connect remotely with gdb when you don't have a working `gdbserver`, and show a tui inspired by `gef`.
 
-* **No gdbserver requirements**: Many vendors ship invalid `gdbserver` binaries, this works on remote targets with just `gdb`, `nc`, and `mkfifo`.
+* **No gdbserver requirements**: Many vendors ship invalid `gdbserver` binaries, this works on remote targets with just `gdb`, `nc`, `cat`, and `mkfifo`.
 * **No python requirements**: Many vendors ship `gdb` without python support.
 * **Architecture agnostic**: `heretek` only uses information given by `gdb`, no extra code required!
 
@@ -26,11 +26,22 @@ Yet Another GDB TUI
 Usage: heretek [OPTIONS]
 
 Options:
-  -l, --local            Run gdb as child process from PATH
-  -r, --remote <REMOTE>  Connect to nc session
-      --32               Switch into 32-bit mode
-  -h, --help             Print help (see more with '--help')
-  -V, --version          Print version 
+  -l, --local
+          Run gdb as child process from PATH
+
+  -r, --remote <REMOTE>
+          Connect to nc session
+
+          `mkfifo gdb_pipe; cat gdb_pipe | gdb --interpreter=mi | nc -l -p 12345 > gdb_pipe`
+
+      --32
+          Switch into 32-bit mode
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
 ```
 
 ## Info

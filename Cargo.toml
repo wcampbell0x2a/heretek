@@ -1,6 +1,6 @@
 [package]
 name = "heretek"
-version = "0.1.0-rc11"
+version = "0.1.0-rc12"
 edition = "2021"
 description = "Yet Another GDB TUI"
 license = "MIT/Apache-2.0"

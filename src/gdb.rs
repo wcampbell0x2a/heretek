@@ -73,9 +73,6 @@ pub fn gdb_interact(
                         if let Some(val) = v.get("thread-id") {
                             async_result.push_str(&format!(", thread-id={val}"));
                         }
-                        if let Some(val) = v.get("core") {
-                            async_result.push_str(&format!(", core={val}"));
-                        }
                         async_result.push_str(")");
 
                         let mut next_write = next_write.lock().unwrap();

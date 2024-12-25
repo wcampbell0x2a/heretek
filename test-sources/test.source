@@ -1,0 +1,3 @@
+file test-assets/test_render_app/a.out
+break main
+run

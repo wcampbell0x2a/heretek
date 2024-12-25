@@ -72,12 +72,16 @@ impl<T> LimitedBuffer<T> {
     }
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone, Default)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Run gdb as child process from PATH
+    /// Run gdb as child process
     #[arg(short, long)]
     local: bool,
+
+    /// Run gdb as child process, using setarch to disable ALSR
+    #[arg(short, long)]
+    local_no_alsr: bool,
 
     /// Connect to nc session
     ///
@@ -88,6 +92,10 @@ struct Args {
     /// Switch into 32-bit mode
     #[arg(long = "32")]
     thirty_two_bit: bool,
+
+    /// Single command to run
+    #[arg(short, long)]
+    cmd: Option<String>,
 }
 
 enum Mode {
@@ -177,8 +185,8 @@ impl App {
     /// `(gdb_stdin, App)`
     pub fn new_stream(args: Args) -> (BufReader<Box<dyn Read + Send>>, App) {
         let (reader, gdb_stdin): (BufReader<Box<dyn Read + Send>>, Arc<Mutex<dyn Write + Send>>) =
-            match (&args.local, &args.remote) {
-                (true, None) => {
+            match (&args.local, &args.local_no_alsr, &args.remote) {
+                (true, false, None) => {
                     let mut gdb_process = Command::new("gdb")
                         .args(["--interpreter=mi2", "--quiet", "-nx"])
                         .stdin(Stdio::piped())
@@ -194,7 +202,30 @@ impl App {
 
                     (reader, gdb_stdin)
                 }
-                (false, Some(remote)) => {
+                (false, true, None) => {
+                    let mut gdb_process = Command::new("setarch")
+                        .args([
+                            std::env::consts::ARCH,
+                            "-R",
+                            "gdb",
+                            "--interpreter=mi2",
+                            "--quiet",
+                            "-nx",
+                        ])
+                        .stdin(Stdio::piped())
+                        .stdout(Stdio::piped())
+                        .spawn()
+                        .expect("Failed to start GDB");
+
+                    let reader = BufReader::new(
+                        Box::new(gdb_process.stdout.unwrap()) as Box<dyn Read + Send>
+                    );
+                    let gdb_stdin = gdb_process.stdin.take().unwrap();
+                    let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
+
+                    (reader, gdb_stdin)
+                }
+                (false, false, Some(remote)) => {
                     let tcp_stream = TcpStream::connect(remote).unwrap(); // Example address
                     let reader = BufReader::new(
                         Box::new(tcp_stream.try_clone().unwrap()) as Box<dyn Read + Send>
@@ -315,7 +346,36 @@ enum Written {
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
-    // Configure logging to a file
+    init_logging()?;
+
+    // Start rx thread
+    let (gdb_stdout, mut app) = App::new_stream(args.clone());
+
+    // Setup terminal
+    let mut terminal = ratatui::init();
+
+    into_gdb(&app, gdb_stdout);
+
+    if let Some(cmd) = args.cmd {
+        process_line(&mut app, &cmd);
+    }
+
+    // Run tui application
+    let res = run_app(&mut terminal, &mut app);
+
+    // restore terminal
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
+    terminal.show_cursor()?;
+
+    if let Err(err) = res {
+        println!("{:?}", err)
+    }
+
+    Ok(())
+}
+
+fn init_logging() -> Result<(), Box<dyn Error>> {
     let log_file = Arc::new(Mutex::new(File::create("app.log")?));
     Builder::from_env(Env::default().default_filter_or("debug"))
         .format(move |buf, record| {
@@ -331,13 +391,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         })
         .target(env_logger::Target::Pipe(Box::new(std::io::sink()))) // Disable stdout/stderr
         .init();
+    Ok(())
+}
 
-    // Start rx thread
-    let (gdb_stdout, mut app) = App::new_stream(args);
-
-    // Setup terminal
-    let mut terminal = ratatui::init();
-
+fn into_gdb(app: &App, gdb_stdout: BufReader<Box<dyn Read + Send>>) {
     // Clone all the variables that need to be accessed into gdb thread
     let filepath_arc = Arc::clone(&app.filepath);
     let thirty_two_bit_arc = Arc::clone(&app.thirty_two_bit);
@@ -378,20 +435,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             async_result_arc,
         )
     });
-
-    // Run tui application
-    let res = run_app(&mut terminal, &mut app);
-
-    // restore terminal
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
-    terminal.show_cursor()?;
-
-    if let Err(err) = res {
-        println!("{:?}", err)
-    }
-
-    Ok(())
 }
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<()> {
@@ -816,5 +859,195 @@ fn update_from_previous_input(app: &mut App) {
         {
             app.input = Input::new(msg.clone())
         }
+    }
+}
+
+// Now in tests module:
+#[cfg(test)]
+mod tests {
+    use std::ffi::CString;
+
+    use super::*;
+    use insta::assert_snapshot;
+    use libc::{chmod, S_IRGRP, S_IROTH, S_IRUSR, S_IWUSR, S_IXGRP, S_IXOTH, S_IXUSR};
+    use ratatui::{backend::TestBackend, Terminal};
+    use test_assets_ureq::{dl_test_files_backoff, TestAssetDef};
+
+    #[test]
+    fn test_render_app() {
+        // gcc test.c -g -fno-stack-protector -static
+        // test.c
+        // ```c
+        // #include <stdio.h>
+        // #include <unistd.h>
+        // #include <stdint.h>
+        //
+        // void this(void) {
+        //     sleep(10);
+        //     printf("what\n");
+        // }
+        //
+        // int main(void) {
+        //     volatile uint64_t val1 = 0x11111111;
+        //     volatile uint64_t val2 = 0x22222222;
+        //     volatile uint64_t val3 = 0x33333333;
+        //     volatile uint64_t val4 = 0x44444444;
+        //     volatile uint64_t val5 = 0x55555555;
+        //     volatile uint64_t val6 = 0x66666666;
+        //     volatile uint64_t val7 = 0x77777777;
+        //     volatile uint64_t val8 = 0x88888887;
+        //     while (1) {
+        //         this();
+        //     }
+        // }
+        // ```
+        const FILE_NAME: &str = "a.out";
+        const TEST_PATH: &str = "test-assets/test_render_app/";
+        let file_path = format!("{TEST_PATH}/{FILE_NAME}");
+        let asset_defs = [TestAssetDef {
+            filename: FILE_NAME.to_string(),
+            hash: "ecda3a4b9eac62c1cae84184710238b2b4ae5c41e6fa94e1df4b1125b7bf0084".to_string(),
+            url: format!("https://wcampbell.dev/heretek/test_render_app/a.out"),
+        }];
+
+        dl_test_files_backoff(&asset_defs, TEST_PATH, true, Duration::from_secs(1)).unwrap();
+        let c_path = CString::new(file_path.to_string()).expect("CString::new failed");
+        let mode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
+        unsafe { chmod(c_path.as_ptr(), mode) };
+
+        let mut args = Args::default();
+        args.local_no_alsr = true;
+        args.cmd = Some("source test-sources/test.source".to_string());
+
+        let (gdb_stdout, mut app) = App::new_stream(args.clone());
+        into_gdb(&app, gdb_stdout);
+
+        if let Some(cmd) = args.cmd {
+            process_line(&mut app, &cmd);
+        }
+        let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
+
+        // The rest of this could be improved, but it's enough for
+        // a simple test that runs things and waits some time to just
+        // get a baseline test
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        {
+            let mut next_write = app.next_write.lock().unwrap();
+            if !next_write.is_empty() {
+                for w in &*next_write {
+                    write_mi(&app.gdb_stdin, w);
+                }
+                next_write.clear();
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        {
+            let mut next_write = app.next_write.lock().unwrap();
+            if !next_write.is_empty() {
+                for w in &*next_write {
+                    write_mi(&app.gdb_stdin, w);
+                }
+                next_write.clear();
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        terminal.draw(|f| ui::ui(f, &mut app)).unwrap();
+        let output = terminal.backend();
+        let output = output.to_string();
+        if let Ok(stack) = app.stack.lock() {
+            let mut entries: Vec<_> = stack.clone().into_iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            println!("0 {:02x?}", entries[0].0);
+            println!("1 {:02x?}", entries[1].0);
+            println!("2 {:02x?}", entries[2].0);
+            println!("3 {:02x?}", entries[3].0);
+            println!("4 {:02x?}", entries[4].0);
+            println!("5 {:02x?}", entries[5].0);
+            println!("6 {:02x?}", entries[6].0);
+            println!("7 {:02x?}", entries[7].0);
+            let from = format!("0x{:02x}", entries[0].0);
+            let output = output.replace(&from, "<stack_0>");
+
+            let from = format!("0x{:02x}", entries[1].0);
+            let output = output.replace(&from, "<stack_1>");
+
+            let from = format!("0x{:02x}", entries[2].0);
+            let output = output.replace(&from, "<stack_2>");
+
+            let from = format!("0x{:02x}", entries[3].0);
+            let output = output.replace(&from, "<stack_3>");
+
+            let from = format!("0x{:02x}", entries[4].0);
+            let output = output.replace(&from, "<stack_4>");
+
+            let from = format!("0x{:02x}", entries[5].0);
+            let output = output.replace(&from, "<stack_5>");
+
+            let from = format!("0x{:02x}", entries[6].0);
+            let output = output.replace(&from, "<stack_6>");
+
+            let from = format!("0x{:02x}", entries[6].1[0]);
+            let output = output.replace(&from, "<stack_6_0>   ");
+
+            let from = format!("0x{:02x}", entries[7].0);
+            let output = output.replace(&from, "<stack_7>");
+
+            if let Ok(registers) = app.registers.lock() {
+                let from = format!(
+                    "0x{:02x}",
+                    u64::from_str_radix(
+                        &registers[2].1.as_ref().unwrap().value.as_ref().unwrap()[2..],
+                        16
+                    )
+                    .unwrap()
+                );
+                let output = output.replace(&from, "<rcx_0>");
+
+                let from = format!(
+                    "0x{:02x}",
+                    u64::from_str_radix(
+                        &registers[3].1.as_ref().unwrap().value.as_ref().unwrap()[2..],
+                        16
+                    )
+                    .unwrap()
+                );
+                let output = output.replace(&from, "<rdx_0>");
+
+                let from = format!(
+                    "0x{:02x}",
+                    u64::from_str_radix(
+                        &registers[4].1.as_ref().unwrap().value.as_ref().unwrap()[2..],
+                        16
+                    )
+                    .unwrap()
+                );
+                let output = output.replace(&from, "<rsi_0>");
+
+                let from = format!(
+                    "0x{:02x}",
+                    u64::from_str_radix(
+                        &registers[6].1.as_ref().unwrap().value.as_ref().unwrap()[2..],
+                        16
+                    )
+                    .unwrap()
+                );
+                let output = output.replace(&from, "<rbp_0>");
+
+                let from = format!("0x{:02x}", registers[3].2[0]);
+                let output = output.replace(&from, "<rdx_1>              ");
+
+                let from = format!("0x{:02x}", registers[4].2[0]);
+                let output = output.replace(&from, "<rsi_1>              ");
+
+                dbg!(&registers[5]);
+                let from = format!("0x{:02x}", registers[6].2[0]);
+                let output = output.replace(&from, "<rbp_1>              ");
+                assert_snapshot!(output);
+            } else {
+                unreachable!();
+            }
+        } else {
+            unreachable!();
+        };
     }
 }

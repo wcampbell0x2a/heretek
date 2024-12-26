@@ -1,0 +1,129 @@
+use std::collections::VecDeque;
+
+use log::debug;
+
+pub const MAX_DEREF_LEN: usize = 10;
+
+#[derive(Debug, Clone)]
+pub struct Deref {
+    pub map: VecDeque<u64>,
+    pub repeated_pattern: bool,
+}
+
+impl Deref {
+    pub fn new() -> Self {
+        Self { map: VecDeque::new(), repeated_pattern: false }
+    }
+
+    /// Attempts to insert a `u64` value. Returns `true` if inserted, `false` otherwise.
+    pub fn try_push(&mut self, value: u64) -> bool {
+        self.map.push_back(value);
+
+        if self.has_repeating_pattern() {
+            self.repeated_pattern = true;
+            self.map.pop_back();
+            return false;
+        }
+
+        true
+    }
+
+    fn has_repeating_pattern(&self) -> bool {
+        if self.map.len() == 1 {
+            return false;
+        }
+        if self.map.len() == 2 {
+            return self.map[0] == self.map[1];
+        }
+
+        debug!("map: {:02x?}", self.map);
+        for pattern_length in 2..=self.map.len() / 2 {
+            for start in 0..(self.map.len() - pattern_length) {
+                let first_section: &Vec<u64> =
+                    &self.map.range(start..start + pattern_length).cloned().collect();
+                debug!("1: {:02x?}", first_section);
+
+                for second_start in start + 1..(self.map.len() - pattern_length + 1) {
+                    let second_section: &Vec<u64> = &self
+                        .map
+                        .range(second_start..second_start + pattern_length)
+                        .cloned()
+                        .collect();
+                    debug!("2: {:02x?}", second_section);
+                    if first_section == second_section {
+                        debug!("found matching");
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_single_insert() {
+        let mut checker = Deref::new();
+        assert_eq!(checker.try_push(1), true);
+    }
+
+    #[test]
+    fn test_single_repeating_value_blocked() {
+        let mut checker = Deref::new();
+
+        assert_eq!(checker.try_push(1), true);
+        assert_eq!(checker.try_push(1), false);
+    }
+
+    #[test]
+    fn test_no_repeating_single_value() {
+        let mut checker = Deref::new();
+        checker.try_push(1);
+        assert_eq!(checker.try_push(1), false);
+    }
+
+    #[test]
+    fn test_multiple_insertions() {
+        let mut checker = Deref::new();
+        assert_eq!(checker.try_push(1), true);
+        assert_eq!(checker.try_push(2), true);
+        assert_eq!(checker.try_push(3), true);
+    }
+
+    #[test]
+    fn test_repeating_longer_pattern_blocked() {
+        let mut checker = Deref::new();
+        assert_eq!(checker.try_push(1), true);
+        assert_eq!(checker.try_push(2), true);
+        assert_eq!(checker.try_push(3), true);
+        assert_eq!(checker.try_push(2), true);
+        assert_eq!(checker.try_push(3), false);
+    }
+
+    // 7fffffffb088: [7fffffffb078, 7fffffffb070, 7fffffffb088, 7fffffffb080, 7fffffffb078, 7fffffffb070]
+    #[test]
+    fn test_repeated_longer_pattern_blocked_real() {
+        let mut checker = Deref::new();
+        assert_eq!(checker.try_push(0x7fffffffb078), true);
+        assert_eq!(checker.try_push(0x7fffffffb070), true);
+        assert_eq!(checker.try_push(0x7fffffffb088), true);
+        assert_eq!(checker.try_push(0x7fffffffb080), true);
+        assert_eq!(checker.try_push(0x7fffffffb078), true);
+        assert_eq!(checker.try_push(0x7fffffffb070), false);
+        // assert_eq!(checker.try_push(0x7fffffffb088), false);
+    }
+
+    #[test]
+    fn test_non_repeating_pattern_allowed() {
+        let mut checker = Deref::new();
+        checker.try_push(1);
+        checker.try_push(2);
+        checker.try_push(3);
+        assert_eq!(checker.try_push(4), true);
+    }
+}

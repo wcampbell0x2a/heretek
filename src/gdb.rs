@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use deku::ctx::Endian;
 use log::{debug, info, trace};
 
+use crate::deref::{Deref, MAX_DEREF_LEN};
 use crate::mi::{
     data_disassemble, data_read_memory_bytes, data_read_sp_bytes, join_registers,
     parse_asm_insns_values, parse_key_value_pairs, parse_memory_mappings_new,
@@ -15,8 +16,6 @@ use crate::mi::{
     MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_OLD,
 };
 use crate::Written;
-
-const MAX_DEREF_LEN: usize = 10;
 
 pub fn gdb_interact(
     gdb_stdout: BufReader<Box<dyn Read + Send>>,
@@ -27,7 +26,7 @@ pub fn gdb_interact(
     filepath_arc: Arc<Mutex<Option<PathBuf>>>,
     register_changed_arc: Arc<Mutex<Vec<u8>>>,
     register_names_arc: Arc<Mutex<Vec<String>>>,
-    registers_arc: Arc<Mutex<Vec<(String, Option<Register>, Vec<u64>)>>>,
+    registers_arc: Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
     current_pc_arc: Arc<Mutex<u64>>,
     stack_arc: Arc<Mutex<HashMap<u64, Vec<u64>>>>,
     asm_arc: Arc<Mutex<Vec<Asm>>>,
@@ -273,7 +272,7 @@ fn recv_exec_result_memory(
     stack_arc: &Arc<Mutex<HashMap<u64, Vec<u64>>>>,
     thirty_two_bit: &Arc<AtomicBool>,
     endian_arc: &Arc<Mutex<Option<Endian>>>,
-    registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Vec<u64>)>>>,
+    registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
     hexdump_arc: &Arc<Mutex<Option<(u64, Vec<u8>)>>>,
     memory: &String,
     written: &mut VecDeque<Written>,
@@ -316,18 +315,15 @@ fn recv_exec_result_memory(
 
                             (val, 8)
                         };
-                        if extra.iter().last() == Some(&(val)) {
-                            trace!("loop detected!");
-                            return;
-                        }
-                        extra.push(val as u64);
-                        debug!("{} extra val: {:02x?}", extra.len(), val);
+                        if extra.try_push(val as u64) {
+                            debug!("{} extra val: {:02x?}", extra.map.len(), val);
 
-                        if !(val == 0 || extra.len() > MAX_DEREF_LEN) {
-                            // TODO: endian
-                            debug!("1: trying to read: {:02x}", val);
-                            next_write.push(data_read_memory_bytes(val, 0, len));
-                            written.push_back(Written::RegisterValue((b.number.clone(), val)));
+                            if !(val == 0) {
+                                // TODO: endian
+                                debug!("1: trying to read: {:02x}", val);
+                                next_write.push(data_read_memory_bytes(val, 0, len));
+                                written.push_back(Written::RegisterValue((b.number.clone(), val)));
+                            }
                         }
                         break;
                     }
@@ -426,7 +422,7 @@ fn read_memory(memory: &String) -> (HashMap<String, String>, String) {
 fn recv_exec_results_register_value(
     register_values: &String,
     thirty_two_bit: &Arc<AtomicBool>,
-    registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Vec<u64>)>>>,
+    registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
     register_names_arc: &Arc<Mutex<Vec<String>>>,
     next_write: &mut Vec<String>,
     written: &mut VecDeque<Written>,
@@ -470,8 +466,8 @@ fn recv_exec_results_register_value(
         }
     }
     let registers = join_registers(&regs_names, &registers);
-    let registers: Vec<(String, Option<Register>, Vec<u64>)> =
-        registers.iter().map(|(a, b)| (a.clone(), b.clone(), vec![])).collect();
+    let registers: Vec<(String, Option<Register>, Deref)> =
+        registers.iter().map(|(a, b)| (a.clone(), b.clone(), Deref::new())).collect();
     *regs = registers.clone();
 
     // assuming we have a valid $pc, get the bytes

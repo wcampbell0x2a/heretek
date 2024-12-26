@@ -4,6 +4,7 @@ version = "0.1.0-rc12"
 edition = "2021"
 description = "Yet Another GDB TUI"
 license = "MIT/Apache-2.0"
+repository = "https://github.com/wcampbell0x2a/heretek"
 
 [dependencies]
 chrono = "0.4.38"

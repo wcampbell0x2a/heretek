@@ -889,7 +889,7 @@ mod tests {
         unsafe { chmod(c_path.as_ptr(), mode) };
 
         let mut args = Args::default();
-        args.local_no_alsr = true;
+        args.local = true;
         args.cmd = Some("source test-sources/test.source".to_string());
 
         let (gdb_stdout, mut app) = App::new_stream(args.clone());

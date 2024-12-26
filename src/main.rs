@@ -953,18 +953,15 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_secs(5));
         terminal.draw(|f| ui::ui(f, &mut app)).unwrap();
         let output = terminal.backend();
+
+        // Now, we need to rewrite all the addresses that change for the registers and stack
+        // this makes this work for any (hopefully) computer that runs these commands.
+        // I'm not in love with this testing plan! If this becomes a problem, these
+        // could be removed.
         let output = output.to_string();
         if let Ok(stack) = app.stack.lock() {
             let mut entries: Vec<_> = stack.clone().into_iter().collect();
             entries.sort_by(|a, b| a.0.cmp(&b.0));
-            println!("0 {:02x?}", entries[0].0);
-            println!("1 {:02x?}", entries[1].0);
-            println!("2 {:02x?}", entries[2].0);
-            println!("3 {:02x?}", entries[3].0);
-            println!("4 {:02x?}", entries[4].0);
-            println!("5 {:02x?}", entries[5].0);
-            println!("6 {:02x?}", entries[6].0);
-            println!("7 {:02x?}", entries[7].0);
             let from = format!("0x{:02x}", entries[0].0);
             let output = output.replace(&from, "<stack_0>");
 

@@ -27,7 +27,7 @@ Usage: heretek [OPTIONS]
 
 Options:
   -l, --local
-          Run gdb as child process from PATH
+          Run gdb as child process
 
   -r, --remote <REMOTE>
           Connect to nc session
@@ -36,6 +36,9 @@ Options:
 
       --32
           Switch into 32-bit mode
+
+  -c, --cmd <CMD>
+          Execute GDB commands
 
   -h, --help
           Print help (see a summary with '-h')

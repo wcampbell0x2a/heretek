@@ -79,10 +79,6 @@ struct Args {
     #[arg(short, long)]
     local: bool,
 
-    /// Run gdb as child process, using setarch to disable ALSR
-    #[arg(short, long)]
-    local_no_alsr: bool,
-
     /// Connect to nc session
     ///
     /// `mkfifo gdb_pipe; cat gdb_pipe | gdb --interpreter=mi | nc -l -p 12345 > gdb_pipe`
@@ -93,7 +89,7 @@ struct Args {
     #[arg(long = "32")]
     thirty_two_bit: bool,
 
-    /// Single command to run
+    /// Execute GDB commands
     #[arg(short, long)]
     cmd: Option<String>,
 }
@@ -185,8 +181,8 @@ impl App {
     /// `(gdb_stdin, App)`
     pub fn new_stream(args: Args) -> (BufReader<Box<dyn Read + Send>>, App) {
         let (reader, gdb_stdin): (BufReader<Box<dyn Read + Send>>, Arc<Mutex<dyn Write + Send>>) =
-            match (&args.local, &args.local_no_alsr, &args.remote) {
-                (true, false, None) => {
+            match (&args.local, &args.remote) {
+                (true, None) => {
                     let mut gdb_process = Command::new("gdb")
                         .args(["--interpreter=mi2", "--quiet", "-nx"])
                         .stdin(Stdio::piped())
@@ -202,30 +198,7 @@ impl App {
 
                     (reader, gdb_stdin)
                 }
-                (false, true, None) => {
-                    let mut gdb_process = Command::new("setarch")
-                        .args([
-                            std::env::consts::ARCH,
-                            "-R",
-                            "gdb",
-                            "--interpreter=mi2",
-                            "--quiet",
-                            "-nx",
-                        ])
-                        .stdin(Stdio::piped())
-                        .stdout(Stdio::piped())
-                        .spawn()
-                        .expect("Failed to start GDB");
-
-                    let reader = BufReader::new(
-                        Box::new(gdb_process.stdout.unwrap()) as Box<dyn Read + Send>
-                    );
-                    let gdb_stdin = gdb_process.stdin.take().unwrap();
-                    let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
-
-                    (reader, gdb_stdin)
-                }
-                (false, false, Some(remote)) => {
+                (false, Some(remote)) => {
                     let tcp_stream = TcpStream::connect(remote).unwrap(); // Example address
                     let reader = BufReader::new(
                         Box::new(tcp_stream.try_clone().unwrap()) as Box<dyn Read + Send>

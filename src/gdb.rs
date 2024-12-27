@@ -28,7 +28,7 @@ pub fn gdb_interact(
     register_names_arc: Arc<Mutex<Vec<String>>>,
     registers_arc: Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
     current_pc_arc: Arc<Mutex<u64>>,
-    stack_arc: Arc<Mutex<HashMap<u64, Vec<u64>>>>,
+    stack_arc: Arc<Mutex<HashMap<u64, Deref>>>,
     asm_arc: Arc<Mutex<Vec<Asm>>>,
     output_arc: Arc<Mutex<Vec<String>>>,
     stream_output_prompt_arc: Arc<Mutex<String>>,
@@ -269,7 +269,7 @@ fn recv_exec_result_asm_insns(asm: &String, asm_arc: &Arc<Mutex<Vec<Asm>>>) {
 }
 
 fn recv_exec_result_memory(
-    stack_arc: &Arc<Mutex<HashMap<u64, Vec<u64>>>>,
+    stack_arc: &Arc<Mutex<HashMap<u64, Deref>>>,
     thirty_two_bit: &Arc<AtomicBool>,
     endian_arc: &Arc<Mutex<Option<Endian>>>,
     registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
@@ -285,6 +285,7 @@ fn recv_exec_result_memory(
 
     match last_written {
         Written::RegisterValue((base_reg, _n)) => {
+            debug!("new register val for {base_reg}");
             let thirty = thirty_two_bit.load(Ordering::Relaxed);
             let mut regs = registers_arc.lock().unwrap();
 
@@ -320,7 +321,7 @@ fn recv_exec_result_memory(
 
                             if !(val == 0) {
                                 // TODO: endian
-                                debug!("1: trying to read: {:02x}", val);
+                                debug!("register deref: trying to read: {:02x}", val);
                                 next_write.push(data_read_memory_bytes(val, 0, len));
                                 written.push_back(Written::RegisterValue((b.number.clone(), val)));
                             }
@@ -362,7 +363,7 @@ fn update_stack(
     thirty_two_bit: &Arc<AtomicBool>,
     endian_arc: &Arc<Mutex<Option<Endian>>>,
     begin: String,
-    stack: &mut std::sync::MutexGuard<HashMap<u64, Vec<u64>>>,
+    stack: &mut std::sync::MutexGuard<HashMap<u64, Deref>>,
     next_write: &mut Vec<String>,
     written: &mut VecDeque<Written>,
 ) {
@@ -392,19 +393,12 @@ fn update_stack(
 
     // Begin is always correct endian
     let key = u64::from_str_radix(&begin, 16).unwrap();
-    if let Some(row) = stack.get(&key) {
-        if row.iter().last() == Some(&val) {
-            trace!("loop detected!");
-            return;
-        }
-    }
-    stack.entry(key).and_modify(|v| v.push(val)).or_insert(vec![val]);
+    let deref = stack.entry(key).or_insert(Deref::new());
+    let inserted = deref.try_push(val);
 
-    debug!("stack: {:02x?}", stack);
-
-    if !(val == 0 || stack.len() > MAX_DEREF_LEN) {
+    if inserted && val != 0 {
         // TODO: endian?
-        debug!("2: trying to read: {}", data["contents"]);
+        debug!("stack deref: trying to read: {}", data["contents"]);
         next_write.push(data_read_memory_bytes(val, 0, len));
         written.push_back(Written::Stack(Some(begin)));
     }

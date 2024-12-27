@@ -162,7 +162,7 @@ struct App {
     register_names: Arc<Mutex<Vec<String>>>,
     registers: Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
     /// Saved Stack
-    stack: Arc<Mutex<HashMap<u64, Vec<u64>>>>,
+    stack: Arc<Mutex<HashMap<u64, Deref>>>,
     /// Saved ASM
     asm: Arc<Mutex<Vec<Asm>>>,
     /// Hexdump
@@ -923,9 +923,18 @@ mod tests {
         let (app, terminal) = run_a_bit(args);
         let _output = terminal.backend();
         let registers = app.registers.lock().unwrap();
+        let stack = app.stack.lock().unwrap();
 
-        // rsi
+        // rsi repeating
         assert!(registers[4].2.repeated_pattern);
+
+        // stack repeating
+        let mut stack: Vec<_> = stack.clone().into_iter().collect();
+        stack.sort_by(|a, b| a.0.cmp(&b.0));
+        assert!(stack[2].1.repeated_pattern);
+        assert!(stack[3].1.repeated_pattern);
+        assert!(stack[4].1.repeated_pattern);
+        assert!(stack[5].1.repeated_pattern);
     }
 
     #[test]
@@ -1005,9 +1014,9 @@ mod tests {
 
             let from = format!("0x{:02x}", entries[6].0);
             let output = output.replace(&from, "<stack_6>");
-            let from = format!("0x{:02x}", entries[6].1[0]);
+            let from = format!("0x{:02x}", entries[6].1.map[0]);
             let output = output.replace(&from, "<stack_6_0>   ");
-            let from = format!("0x{:02x}", entries[6].1[1]);
+            let from = format!("0x{:02x}", entries[6].1.map[1]);
             let output = output.replace(&from, "<stack_6_1>   ");
 
             let from = format!("0x{:02x}", entries[7].0);

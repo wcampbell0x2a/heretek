@@ -19,6 +19,11 @@ $ cargo install heretek --locked
 
 Or download from [github releases](https://github.com/wcampbell0x2a/heretek/releases).
 
+### Build Targets
+`clap-derivie` requires the `linux-musl` target.
+
+Install it with `rustup target add x86_64-unknown-linux-musl`
+
 ## Usage
 ```console
 Yet Another GDB TUI

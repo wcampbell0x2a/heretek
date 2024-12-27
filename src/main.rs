@@ -12,6 +12,7 @@ use std::{error::Error, io};
 
 use clap::Parser;
 use deku::ctx::Endian;
+use deref::Deref;
 use env_logger::{Builder, Env};
 use gdb::write_mi;
 use log::{debug, error};
@@ -28,6 +29,7 @@ use tui_input::Input;
 
 use mi::{data_read_memory_bytes, Asm, MemoryMapping, Register};
 
+mod deref;
 mod gdb;
 mod mi;
 mod ui;
@@ -158,9 +160,9 @@ struct App {
     /// Register TUI
     register_changed: Arc<Mutex<Vec<u8>>>,
     register_names: Arc<Mutex<Vec<String>>>,
-    registers: Arc<Mutex<Vec<(String, Option<Register>, Vec<u64>)>>>,
+    registers: Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
     /// Saved Stack
-    stack: Arc<Mutex<HashMap<u64, Vec<u64>>>>,
+    stack: Arc<Mutex<HashMap<u64, Deref>>>,
     /// Saved ASM
     asm: Arc<Mutex<Vec<Asm>>>,
     /// Hexdump
@@ -838,13 +840,102 @@ fn update_from_previous_input(app: &mut App) {
 // Now in tests module:
 #[cfg(test)]
 mod tests {
-    use std::ffi::CString;
+    use std::{ffi::CString, time::Instant};
 
     use super::*;
     use insta::assert_snapshot;
     use libc::{chmod, S_IRGRP, S_IROTH, S_IRUSR, S_IWUSR, S_IXGRP, S_IXOTH, S_IXUSR};
+    use log::trace;
     use ratatui::{backend::TestBackend, Terminal};
     use test_assets_ureq::{dl_test_files_backoff, TestAssetDef};
+
+    fn run_a_bit(args: Args) -> (App, Terminal<TestBackend>) {
+        let (gdb_stdout, mut app) = App::new_stream(args.clone());
+        into_gdb(&app, gdb_stdout);
+
+        if let Some(cmd) = args.cmd {
+            process_line(&mut app, &cmd);
+        }
+        let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
+        let start_time = Instant::now();
+        let duration = Duration::from_secs(10);
+
+        while Instant::now() - start_time < duration {
+            terminal.draw(|f| ui::ui(f, &mut app)).unwrap();
+
+            // check and see if we need to write to GBD MI
+            {
+                let mut next_write = app.next_write.lock().unwrap();
+                if !next_write.is_empty() {
+                    for w in &*next_write {
+                        write_mi(&app.gdb_stdin, w);
+                    }
+                    next_write.clear();
+                }
+            }
+        }
+
+        (app, terminal)
+    }
+
+    #[test]
+    fn test_repeated_ptr() {
+        // gcc repeated.c -g -fno-stack-protector -static
+        // repeated.c
+        // ```c
+        // #include <stdio.h>
+        // int this() {
+        //   return 0;
+        // }
+        //
+        // int main() {
+        //     int *ptr, *ptr2, *ptr3, *ptr4;
+        //
+        //     ptr = (int*)&ptr2;    // ptr points to ptr2
+        //     ptr2 = (int*)&ptr3;   // ptr2 points to ptr3
+        //     ptr3 = (int*)&ptr4;   // ptr2 points to ptr3
+        //     ptr4 = (int*)&ptr;    // ptr3 points back to ptr
+        //
+        //     printf("Address of ptr: %p\n", (void*)ptr);
+        //
+        //     this();
+        //     return 0;
+        // }
+        // ```
+        const FILE_NAME: &str = "a.out";
+        const TEST_PATH: &str = "test-assets/test_repeated_ptr/";
+        let file_path = format!("{TEST_PATH}/{FILE_NAME}");
+        let asset_defs = [TestAssetDef {
+            filename: FILE_NAME.to_string(),
+            hash: "ccbde92a79b40bdd07c620b47c4f21af7ca447f93839807b243d225e05e9025d".to_string(),
+            url: format!("https://wcampbell.dev/heretek/test_repeated_ptr/a.out"),
+        }];
+
+        dl_test_files_backoff(&asset_defs, TEST_PATH, true, Duration::from_secs(1)).unwrap();
+        let c_path = CString::new(file_path.to_string()).expect("CString::new failed");
+        let mode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
+        unsafe { chmod(c_path.as_ptr(), mode) };
+
+        let mut args = Args::default();
+        args.local = true;
+        args.cmd = Some("source test-sources/repeated_ptr.source".to_string());
+
+        let (app, terminal) = run_a_bit(args);
+        let _output = terminal.backend();
+        let registers = app.registers.lock().unwrap();
+        let stack = app.stack.lock().unwrap();
+
+        // rsi repeating
+        assert!(registers[4].2.repeated_pattern);
+
+        // stack repeating
+        let mut stack: Vec<_> = stack.clone().into_iter().collect();
+        stack.sort_by(|a, b| a.0.cmp(&b.0));
+        assert!(stack[2].1.repeated_pattern);
+        assert!(stack[3].1.repeated_pattern);
+        assert!(stack[4].1.repeated_pattern);
+        assert!(stack[5].1.repeated_pattern);
+    }
 
     #[test]
     fn test_render_app() {
@@ -892,39 +983,7 @@ mod tests {
         args.local = true;
         args.cmd = Some("source test-sources/test.source".to_string());
 
-        let (gdb_stdout, mut app) = App::new_stream(args.clone());
-        into_gdb(&app, gdb_stdout);
-
-        if let Some(cmd) = args.cmd {
-            process_line(&mut app, &cmd);
-        }
-        let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
-
-        // The rest of this could be improved, but it's enough for
-        // a simple test that runs things and waits some time to just
-        // get a baseline test
-        std::thread::sleep(std::time::Duration::from_secs(5));
-        {
-            let mut next_write = app.next_write.lock().unwrap();
-            if !next_write.is_empty() {
-                for w in &*next_write {
-                    write_mi(&app.gdb_stdin, w);
-                }
-                next_write.clear();
-            }
-        }
-        std::thread::sleep(std::time::Duration::from_secs(5));
-        {
-            let mut next_write = app.next_write.lock().unwrap();
-            if !next_write.is_empty() {
-                for w in &*next_write {
-                    write_mi(&app.gdb_stdin, w);
-                }
-                next_write.clear();
-            }
-        }
-        std::thread::sleep(std::time::Duration::from_secs(5));
-        terminal.draw(|f| ui::ui(f, &mut app)).unwrap();
+        let (app, terminal) = run_a_bit(args);
         let output = terminal.backend();
 
         // Now, we need to rewrite all the addresses that change for the registers and stack
@@ -955,9 +1014,10 @@ mod tests {
 
             let from = format!("0x{:02x}", entries[6].0);
             let output = output.replace(&from, "<stack_6>");
-
-            let from = format!("0x{:02x}", entries[6].1[0]);
+            let from = format!("0x{:02x}", entries[6].1.map[0]);
             let output = output.replace(&from, "<stack_6_0>   ");
+            let from = format!("0x{:02x}", entries[6].1.map[1]);
+            let output = output.replace(&from, "<stack_6_1>   ");
 
             let from = format!("0x{:02x}", entries[7].0);
             let output = output.replace(&from, "<stack_7>");
@@ -1003,15 +1063,21 @@ mod tests {
                 );
                 let output = output.replace(&from, "<rbp_0>");
 
-                let from = format!("0x{:02x}", registers[3].2[0]);
-                let output = output.replace(&from, "<rdx_1>              ");
+                let from = format!("0x{:02x}", registers[3].2.map[0]);
+                let output = output.replace(&from, "<rdx_1>");
+                let from = format!("0x{:02x}", registers[3].2.map[1]);
+                let output = output.replace(&from, "<rdx_2>");
 
-                let from = format!("0x{:02x}", registers[4].2[0]);
-                let output = output.replace(&from, "<rsi_1>              ");
+                let from = format!("0x{:02x}", registers[4].2.map[0]);
+                let output = output.replace(&from, "<rsi_1>");
+                let from = format!("0x{:02x}", registers[4].2.map[1]);
+                let output = output.replace(&from, "<rsi_2>");
 
-                dbg!(&registers[5]);
-                let from = format!("0x{:02x}", registers[6].2[0]);
-                let output = output.replace(&from, "<rbp_1>              ");
+                let from = format!("0x{:02x}", registers[6].2.map[0]);
+                let output = output.replace(&from, "<rbp_1>");
+                let from = format!("0x{:02x}", registers[6].2.map[1]);
+                let output = output.replace(&from, "<rbp_2>");
+
                 assert_snapshot!(output);
             } else {
                 unreachable!();

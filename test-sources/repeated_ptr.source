@@ -1,0 +1,3 @@
+file test-assets/test_repeated_ptr/a.out
+break printf
+run

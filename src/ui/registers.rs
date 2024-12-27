@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 
-use super::{ORANGE, PURPLE, RED};
+use super::{DARK_GRAY, GRAY, ORANGE, PURPLE, RED};
 
+use log::debug;
 use ratatui::layout::Constraint;
 use ratatui::prelude::Stylize;
 use ratatui::widgets::{Block, Borders, Cell, Table};
@@ -45,13 +46,17 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
                         let (is_stack, is_heap, is_text) = app.classify_val(val, &filepath);
 
                         let mut extra_vals = Vec::new();
-                        if !is_text && val != 0 && !vals.is_empty() {
-                            for v in vals {
+                        if !is_text && val != 0 && !vals.map.is_empty() {
+                            for v in &vals.map {
                                 let mut cell = Cell::from(format!("➛ 0x{:02x}", v));
                                 let (is_stack, is_heap, is_text) = app.classify_val(*v, &filepath);
                                 super::apply_val_color(&mut cell, is_stack, is_heap, is_text);
                                 extra_vals.push(cell);
                             }
+                        }
+                        if vals.repeated_pattern {
+                            extra_vals
+                                .push(Cell::from("➛ [loop detected]").style(Style::new().fg(GRAY)));
                         }
                         if extra_vals.len() > longest_extra_val {
                             longest_extra_val = extra_vals.len();
@@ -75,9 +80,9 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
 
     let mut widths = vec![Constraint::Length(longest_register_name as u16)];
     if app.thirty_two_bit.load(Ordering::Relaxed) {
-        widths.append(&mut vec![Constraint::Length(9); longest_extra_val + 1]);
+        widths.append(&mut vec![Constraint::Length(11); longest_extra_val + 1]);
     } else {
-        widths.append(&mut vec![Constraint::Length(18); longest_extra_val + 1]);
+        widths.append(&mut vec![Constraint::Length(20); longest_extra_val + 1]);
     }
     let table = Table::new(rows, widths).block(block);
     f.render_widget(table, register);

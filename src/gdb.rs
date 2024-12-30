@@ -74,11 +74,14 @@ pub fn gdb_interact(
                     } else if let Some(register_names) = kv.get("register-names") {
                         recv_exec_result_register_names(register_names, &register_names_arc);
                     } else if let Some(changed_registers) = kv.get("changed-registers") {
-                        recv_exec_result_changed_values(changed_registers, &register_changed_arc);
+                        recv_exec_result_changed_registers(
+                            changed_registers,
+                            &register_changed_arc,
+                        );
                     } else if let Some(register_values) = kv.get("register-values") {
                         let mut next_write = next_write.lock().unwrap();
                         let mut written = written.lock().unwrap();
-                        recv_exec_results_register_value(
+                        recv_exec_results_register_values(
                             register_values,
                             &thirty_two_bit,
                             &registers_arc,
@@ -308,12 +311,14 @@ fn stream_output(
     }
 }
 
+/// MIResponse::ExecResult, key: "asm_insns"
 fn recv_exec_result_asm_insns(asm: &String, asm_arc: &Arc<Mutex<Vec<Asm>>>) {
     let new_asms = parse_asm_insns_values(asm);
     let mut asm = asm_arc.lock().unwrap();
     *asm = new_asms.clone();
 }
 
+/// MIResponse::ExecResult, key: "memory"
 fn recv_exec_result_memory(
     stack_arc: &Arc<Mutex<HashMap<u64, Deref>>>,
     thirty_two_bit: &Arc<AtomicBool>,
@@ -459,7 +464,8 @@ fn read_memory(memory: &String) -> (HashMap<String, String>, String) {
     (data, begin)
 }
 
-fn recv_exec_results_register_value(
+/// MIResponse::ExecResult, key: "register-values"
+fn recv_exec_results_register_values(
     register_values: &String,
     thirty_two_bit: &Arc<AtomicBool>,
     registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
@@ -540,7 +546,8 @@ fn dump_sp_bytes(
     }
 }
 
-fn recv_exec_result_changed_values(
+/// MIResponse::ExecResult, key: "changed-registers"
+fn recv_exec_result_changed_registers(
     changed_registers: &String,
     register_changed_arc: &Arc<Mutex<Vec<u8>>>,
 ) {
@@ -552,6 +559,7 @@ fn recv_exec_result_changed_values(
     *reg_changed = result;
 }
 
+/// MIResponse::ExecResult, key: "register-names"
 fn recv_exec_result_register_names(
     register_names: &String,
     register_names_arc: &Arc<Mutex<Vec<String>>>,
@@ -561,6 +569,7 @@ fn recv_exec_result_register_names(
     *regs_names = register_names;
 }
 
+/// MIResponse::ExecResult, key: "value"
 fn recv_exec_result_value(current_pc_arc: &Arc<Mutex<u64>>, value: &String) {
     // This works b/c we only use this for PC, but will most likely
     // be wrong sometime
@@ -570,6 +579,7 @@ fn recv_exec_result_value(current_pc_arc: &Arc<Mutex<u64>>, value: &String) {
     *cur_pc_lock = u64::from_str_radix(pc, 16).unwrap();
 }
 
+/// Unlock GDB stdin and write
 pub fn write_mi(gdb_stdin_arc: &Arc<Mutex<dyn Write + Send>>, w: &str) {
     let mut stdin = gdb_stdin_arc.lock().unwrap();
     debug!("writing {}", w);

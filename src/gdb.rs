@@ -41,9 +41,7 @@ pub fn gdb_interact(
     for line in gdb_stdout.lines() {
         if let Ok(line) = line {
             let response = parse_mi_response(&line);
-            // TODO: I really hate the flow of this function, the reading and writing should be split into some
-            // sort of state machine instead of just writing stuff and hoping the next state makes us read the right thing...
-            debug!("response {:?}", response);
+            trace!("response {:?}", response);
             match &response {
                 MIResponse::AsyncRecord(reason, v) => {
                     if reason == "stopped" {

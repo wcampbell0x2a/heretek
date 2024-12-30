@@ -2,8 +2,6 @@ use std::collections::VecDeque;
 
 use log::debug;
 
-pub const MAX_DEREF_LEN: usize = 10;
-
 #[derive(Debug, Clone)]
 pub struct Deref {
     pub map: VecDeque<u64>,

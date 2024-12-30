@@ -5,6 +5,7 @@ use ratatui::style::Style;
 use ratatui::widgets::Cell;
 use ratatui::Frame;
 
+use crate::deref::Deref;
 use crate::{App, Mode};
 
 pub mod asm;
@@ -115,5 +116,43 @@ pub fn apply_val_color(cell: &mut Cell, is_stack: bool, is_heap: bool, is_text: 
         *cell = cell.clone().style(Style::new().fg(HEAP_COLOR))
     } else if is_text {
         *cell = cell.clone().style(Style::new().fg(TEXT_COLOR))
+    }
+}
+
+/// Add deref value to cells
+pub fn add_deref_to_cell(
+    values: &Deref,
+    cells: &mut Vec<Cell>,
+    app: &App,
+    filepath: &str,
+    longest_cells: &mut usize,
+) {
+    for (i, v) in values.map.iter().enumerate() {
+        // check if ascii if last deref
+        if i + 1 == values.map.len() && *v > 0xff {
+            let bytes = (*v).to_le_bytes();
+            if bytes
+                .iter()
+                .all(|a| a.is_ascii_alphabetic() || a.is_ascii_graphic() || a.is_ascii_whitespace())
+            {
+                if let Ok(s) = std::str::from_utf8(&bytes) {
+                    let cell = Cell::from(format!("➛ \"{}\"", s)).style(Style::new().fg(YELLOW));
+                    cells.push(cell);
+                    continue;
+                }
+            }
+        }
+
+        // if not, it's a value
+        let mut cell = Cell::from(format!("➛ 0x{:02x}", v));
+        let (is_stack, is_heap, is_text) = app.classify_val(*v, &filepath);
+        apply_val_color(&mut cell, is_stack, is_heap, is_text);
+        cells.push(cell);
+    }
+    if values.repeated_pattern {
+        cells.push(Cell::from("➛ [loop detected]").style(Style::new().fg(GRAY)));
+    }
+    if cells.len() > *longest_cells {
+        *longest_cells = cells.len();
     }
 }

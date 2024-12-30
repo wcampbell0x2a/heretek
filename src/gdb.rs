@@ -47,102 +47,21 @@ pub fn gdb_interact(
             match &response {
                 MIResponse::AsyncRecord(reason, v) => {
                     if reason == "stopped" {
-                        // in the case of a breakpoint, save the output
-                        // Either it's a breakpoint event, step, signal
-                        let mut async_result = async_result_arc.lock().unwrap();
-                        async_result.push_str(&format!("Status("));
-                        if v.get("bkptno").is_some() {
-                            if let Some(val) = v.get("bkptno") {
-                                async_result.push_str(&format!("bkptno={val}, "));
-                            }
-                        } else if v.get("signal-name").is_some() {
-                            if let Some(val) = v.get("signal-name") {
-                                async_result.push_str(&format!("signal-name={val}"));
-                            }
-                            if let Some(val) = v.get("signal-meaning") {
-                                async_result.push_str(&format!(", signal-meaning={val}, "));
-                            }
-                        }
-                        if let Some(val) = v.get("reason") {
-                            async_result.push_str(&format!("reason={val}"));
-                        }
-                        if let Some(val) = v.get("stopped-threads") {
-                            async_result.push_str(&format!(", stopped-threads={val}"));
-                        }
-                        if let Some(val) = v.get("thread-id") {
-                            async_result.push_str(&format!(", thread-id={val}"));
-                        }
-                        async_result.push_str(")");
-
-                        let mut next_write = next_write.lock().unwrap();
-                        // debug!("{v:?}");
-                        // TODO: we could cache this, per file opened
-                        // if let Some(arch) = v.get("arch") {
-                        //     // debug!("{arch}");
-                        // }
-                        // Get endian
-                        next_write.push(r#"-interpreter-exec console "show endian""#.to_string());
-                        // TODO: we could cache this, per file opened
-                        next_write.push("-data-list-register-names".to_string());
-                        // When a breakpoint is hit, query for register values
-                        next_write.push("-data-list-register-values x".to_string());
-                        // get a list of changed registers
-                        next_write.push("-data-list-changed-registers".to_string());
-                        // get the memory mapping
-                        next_write
-                            .push(r#"-interpreter-exec console "info proc mappings""#.to_string());
+                        async_record_stopped(&async_result_arc, v, &next_write);
                     }
                 }
                 MIResponse::ExecResult(status, kv) => {
                     // Parse the status
                     if status == "running" {
-                        // TODO: this causes a bunch of re-drawing, but
-                        // I'm sure in the future we could make sure we are leaving our own
-                        // state or something?
-
-                        // reset the stack
-                        let mut stack = stack_arc.lock().unwrap();
-                        stack.clear();
-
-                        // reset the asm
-                        let mut asm = asm_arc.lock().unwrap();
-                        asm.clear();
-
-                        // reset the regs
-                        let mut regs = registers_arc.lock().unwrap();
-                        regs.clear();
-
-                        // reset the hexdump
-                        let mut data_read = hexdump_arc.lock().unwrap();
-                        *data_read = None;
-
-                        // reset status
-                        let mut async_result = async_result_arc.lock().unwrap();
-                        *async_result = String::new();
+                        exec_result_running(
+                            &stack_arc,
+                            &asm_arc,
+                            &registers_arc,
+                            &hexdump_arc,
+                            &async_result_arc,
+                        );
                     } else if status == "done" {
-                        // Check if we were looking for a mapping
-                        // TODO: This should be an enum or something?
-                        if let Some(mapping_ver) = current_map.0 {
-                            let m = match mapping_ver {
-                                Mapping::Old => parse_memory_mappings_old(&current_map.1),
-                                Mapping::New => parse_memory_mappings_new(&current_map.1),
-                            };
-                            let mut memory_map = memory_map_arc.lock().unwrap();
-                            *memory_map = Some(m);
-                            current_map = (None, String::new());
-
-                            // If we haven't resolved a filepath yet, assume the 1st
-                            // filepath in the mapping is the main text file
-                            let mut filepath_lock = filepath_arc.lock().unwrap();
-                            if filepath_lock.is_none() {
-                                *filepath_lock = Some(PathBuf::from(
-                                    memory_map.as_ref().unwrap()[0]
-                                        .path
-                                        .clone()
-                                        .unwrap_or("".to_owned()),
-                                ));
-                            }
-                        }
+                        exec_result_done(&mut current_map, &memory_map_arc, &filepath_arc);
                     } else if status == "error" {
                         // assume this is from us, pop off an unexpected
                         // if we can
@@ -187,70 +106,15 @@ pub fn gdb_interact(
                     }
                 }
                 MIResponse::StreamOutput(t, s) => {
-                    if s.starts_with("The target endianness") {
-                        let mut endian = endian_arc.lock().unwrap();
-                        *endian = if s.contains("little") {
-                            Some(deku::ctx::Endian::Little)
-                        } else {
-                            Some(deku::ctx::Endian::Big)
-                        };
-                        debug!("endian: {endian:?}");
-
-                        // don't include this is output
-                        continue;
-                    }
-
-                    // When using attach, assume the first symbols found are the text field
-                    // StreamOutput("~", "Reading symbols from /home/wcampbell/a.out...\n")
-                    let mut filepath_lock = filepath_arc.lock().unwrap();
-                    if filepath_lock.is_none() {
-                        let symbols = "Reading symbols from ";
-                        if s.starts_with(symbols) {
-                            let filepath = &s[symbols.len()..];
-                            let filepath = filepath.trim_end();
-                            if let Some(filepath) = filepath.strip_suffix("...") {
-                                info!("new filepath: {filepath}");
-                                *filepath_lock = Some(PathBuf::from(filepath));
-                            }
-                        }
-                    }
-
-                    // when we find the start of a memory map, we sent this
-                    // and it's quite noisy to the regular output so don't
-                    // include
-                    // TODO: We should only be checking for these when we expect them
-                    if s.starts_with("process") || s.starts_with("Mapped address spaces:") {
-                        // HACK: completely skip the following, as they are a side
-                        // effect of not having a GDB MI way of getting a memory map
-                        continue;
-                    }
-                    let split: Vec<&str> = s.split_whitespace().collect();
-                    if split == MEMORY_MAP_START_STR_NEW {
-                        current_map.0 = Some(Mapping::New);
-                    } else if split == MEMORY_MAP_START_STR_OLD {
-                        current_map.0 = Some(Mapping::Old);
-                    }
-                    if current_map.0.is_some() {
-                        current_map.1.push_str(&s);
-                        continue;
-                    }
-
-                    let split: Vec<String> =
-                        s.split('\n').map(String::from).map(|a| a.trim_end().to_string()).collect();
-                    for s in split {
-                        if !s.is_empty() {
-                            // debug!("{s}");
-                            output_arc.lock().unwrap().push(s);
-                        }
-                    }
-
-                    // console-stream-output
-                    if t == "~" {
-                        if !s.contains('\n') {
-                            let mut stream_lock = stream_output_prompt_arc.lock().unwrap();
-                            *stream_lock = s.to_string();
-                        }
-                    }
+                    stream_output(
+                        t,
+                        s,
+                        &endian_arc,
+                        &filepath_arc,
+                        &mut current_map,
+                        &output_arc,
+                        &stream_output_prompt_arc,
+                    );
                 }
                 MIResponse::Unknown(s) => {
                     let mut stream_lock = stream_output_prompt_arc.lock().unwrap();
@@ -258,6 +122,190 @@ pub fn gdb_interact(
                 }
                 _ => (),
             }
+        }
+    }
+}
+
+fn exec_result_done(
+    current_map: &mut (Option<Mapping>, String),
+    memory_map_arc: &Arc<Mutex<Option<Vec<MemoryMapping>>>>,
+    filepath_arc: &Arc<Mutex<Option<PathBuf>>>,
+) {
+    // Check if we were looking for a mapping
+    // TODO: This should be an enum or something?
+    if let Some(mapping_ver) = &current_map.0 {
+        let m = match mapping_ver {
+            Mapping::Old => parse_memory_mappings_old(&current_map.1),
+            Mapping::New => parse_memory_mappings_new(&current_map.1),
+        };
+        let mut memory_map = memory_map_arc.lock().unwrap();
+        *memory_map = Some(m);
+        *current_map = (None, String::new());
+
+        // If we haven't resolved a filepath yet, assume the 1st
+        // filepath in the mapping is the main text file
+        let mut filepath_lock = filepath_arc.lock().unwrap();
+        if filepath_lock.is_none() {
+            *filepath_lock = Some(PathBuf::from(
+                memory_map.as_ref().unwrap()[0].path.clone().unwrap_or("".to_owned()),
+            ));
+        }
+    }
+}
+
+fn exec_result_running(
+    stack_arc: &Arc<Mutex<HashMap<u64, Deref>>>,
+    asm_arc: &Arc<Mutex<Vec<Asm>>>,
+    registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
+    hexdump_arc: &Arc<Mutex<Option<(u64, Vec<u8>)>>>,
+    async_result_arc: &Arc<Mutex<String>>,
+) {
+    // TODO: this causes a bunch of re-drawing, but
+    // I'm sure in the future we could make sure we are leaving our own
+    // state or something?
+
+    // reset the stack
+    let mut stack = stack_arc.lock().unwrap();
+    stack.clear();
+
+    // reset the asm
+    let mut asm = asm_arc.lock().unwrap();
+    asm.clear();
+
+    // reset the regs
+    let mut regs = registers_arc.lock().unwrap();
+    regs.clear();
+
+    // reset the hexdump
+    let mut data_read = hexdump_arc.lock().unwrap();
+    *data_read = None;
+
+    // reset status
+    let mut async_result = async_result_arc.lock().unwrap();
+    *async_result = String::new();
+}
+
+fn async_record_stopped(
+    async_result_arc: &Arc<Mutex<String>>,
+    v: &HashMap<String, String>,
+    next_write: &Arc<Mutex<Vec<String>>>,
+) {
+    // in the case of a breakpoint, save the output
+    // Either it's a breakpoint event, step, signal
+    let mut async_result = async_result_arc.lock().unwrap();
+    async_result.push_str(&format!("Status("));
+    if v.get("bkptno").is_some() {
+        if let Some(val) = v.get("bkptno") {
+            async_result.push_str(&format!("bkptno={val}, "));
+        }
+    } else if v.get("signal-name").is_some() {
+        if let Some(val) = v.get("signal-name") {
+            async_result.push_str(&format!("signal-name={val}"));
+        }
+        if let Some(val) = v.get("signal-meaning") {
+            async_result.push_str(&format!(", signal-meaning={val}, "));
+        }
+    }
+    if let Some(val) = v.get("reason") {
+        async_result.push_str(&format!("reason={val}"));
+    }
+    if let Some(val) = v.get("stopped-threads") {
+        async_result.push_str(&format!(", stopped-threads={val}"));
+    }
+    if let Some(val) = v.get("thread-id") {
+        async_result.push_str(&format!(", thread-id={val}"));
+    }
+    async_result.push_str(")");
+
+    let mut next_write = next_write.lock().unwrap();
+    // debug!("{v:?}");
+    // TODO: we could cache this, per file opened
+    // if let Some(arch) = v.get("arch") {
+    //     // debug!("{arch}");
+    // }
+    // Get endian
+    next_write.push(r#"-interpreter-exec console "show endian""#.to_string());
+    // TODO: we could cache this, per file opened
+    next_write.push("-data-list-register-names".to_string());
+    // When a breakpoint is hit, query for register values
+    next_write.push("-data-list-register-values x".to_string());
+    // get a list of changed registers
+    next_write.push("-data-list-changed-registers".to_string());
+    // get the memory mapping
+    next_write.push(r#"-interpreter-exec console "info proc mappings""#.to_string());
+}
+
+fn stream_output(
+    t: &str,
+    s: &str,
+    endian_arc: &Arc<Mutex<Option<Endian>>>,
+    filepath_arc: &Arc<Mutex<Option<PathBuf>>>,
+    current_map: &mut (Option<Mapping>, String),
+    output_arc: &Arc<Mutex<Vec<String>>>,
+    stream_output_prompt_arc: &Arc<Mutex<String>>,
+) {
+    if s.starts_with("The target endianness") {
+        let mut endian = endian_arc.lock().unwrap();
+        *endian = if s.contains("little") {
+            Some(deku::ctx::Endian::Little)
+        } else {
+            Some(deku::ctx::Endian::Big)
+        };
+        debug!("endian: {endian:?}");
+
+        // don't include this is output
+        return;
+    }
+
+    // When using attach, assume the first symbols found are the text field
+    // StreamOutput("~", "Reading symbols from /home/wcampbell/a.out...\n")
+    let mut filepath_lock = filepath_arc.lock().unwrap();
+    if filepath_lock.is_none() {
+        let symbols = "Reading symbols from ";
+        if s.starts_with(symbols) {
+            let filepath = &s[symbols.len()..];
+            let filepath = filepath.trim_end();
+            if let Some(filepath) = filepath.strip_suffix("...") {
+                info!("new filepath: {filepath}");
+                *filepath_lock = Some(PathBuf::from(filepath));
+            }
+        }
+    }
+
+    // when we find the start of a memory map, we sent this
+    // and it's quite noisy to the regular output so don't
+    // include
+    // TODO: We should only be checking for these when we expect them
+    if s.starts_with("process") || s.starts_with("Mapped address spaces:") {
+        // HACK: completely skip the following, as they are a side
+        // effect of not having a GDB MI way of getting a memory map
+        return;
+    }
+    let split: Vec<&str> = s.split_whitespace().collect();
+    if split == MEMORY_MAP_START_STR_NEW {
+        current_map.0 = Some(Mapping::New);
+    } else if split == MEMORY_MAP_START_STR_OLD {
+        current_map.0 = Some(Mapping::Old);
+    }
+    if current_map.0.is_some() {
+        current_map.1.push_str(&s);
+        return;
+    }
+
+    let split: Vec<String> =
+        s.split('\n').map(String::from).map(|a| a.trim_end().to_string()).collect();
+    for s in split {
+        if !s.is_empty() {
+            // debug!("{s}");
+            output_arc.lock().unwrap().push(s);
+        }
+    }
+
+    // console-stream-output
+    if t == "~" {
+        if !s.contains('\n') {
+            let mut stream_lock = stream_output_prompt_arc.lock().unwrap();
+            *stream_lock = s.to_string();
         }
     }
 }

@@ -1065,12 +1065,18 @@ mod tests {
 
                 let from = format!("0x{:02x}", registers[3].2.map[0]);
                 let output = output.replace(&from, "<rdx_1>");
-                let from = format!("0x{:02x}", registers[3].2.map[1]);
+                let from = format!(
+                    "{}",
+                    std::str::from_utf8(&registers[3].2.map[1].to_le_bytes()).unwrap()
+                );
                 let output = output.replace(&from, "<rdx_2>");
 
                 let from = format!("0x{:02x}", registers[4].2.map[0]);
                 let output = output.replace(&from, "<rsi_1>");
-                let from = format!("0x{:02x}", registers[4].2.map[1]);
+                let from = format!(
+                    "{}",
+                    std::str::from_utf8(&registers[4].2.map[1].to_le_bytes()).unwrap()
+                );
                 let output = output.replace(&from, "<rsi_2>");
 
                 let from = format!("0x{:02x}", registers[6].2.map[0]);

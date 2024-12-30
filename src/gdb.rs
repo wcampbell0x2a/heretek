@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use deku::ctx::Endian;
 use log::{debug, info, trace};
 
-use crate::deref::{Deref, MAX_DEREF_LEN};
+use crate::deref::Deref;
 use crate::mi::{
     data_disassemble, data_read_memory_bytes, data_read_sp_bytes, join_registers,
     parse_asm_insns_values, parse_key_value_pairs, parse_memory_mappings_new,

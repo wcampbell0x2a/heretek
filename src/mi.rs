@@ -55,6 +55,14 @@ impl MemoryMapping {
         self.path == Some(filepath.to_owned())
     }
 
+    pub fn is_exec(&self) -> bool {
+        if let Some(permissions) = &self.permissions {
+            permissions.contains('x')
+        } else {
+            false
+        }
+    }
+
     /// Mapping contains the `addr`
     pub fn contains(&self, addr: u64) -> bool {
         (addr > self.start_address) && (addr < self.end_address)

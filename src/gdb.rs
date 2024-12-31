@@ -425,9 +425,9 @@ fn recv_exec_result_memory(
                             let filepath_lock = filepath_arc.lock().unwrap();
                             let memory_map = memory_map_arc.lock().unwrap();
                             for r in memory_map.as_ref().unwrap() {
-                                if r.contains(val)
-                                    && r.is_path(filepath_lock.as_ref().unwrap().to_str().unwrap())
-                                {
+                                let is_path =
+                                    r.is_path(filepath_lock.as_ref().unwrap().to_str().unwrap());
+                                if r.contains(val) && (is_path || r.is_exec()) {
                                     // send a search for a symbol!
                                     // TODO: 32-bit?
                                     next_write
@@ -548,7 +548,8 @@ fn update_stack(
         let filepath_lock = filepath_arc.lock().unwrap();
         let memory_map = memory_map_arc.lock().unwrap();
         for r in memory_map.as_ref().unwrap() {
-            if r.contains(val) && r.is_path(filepath_lock.as_ref().unwrap().to_str().unwrap()) {
+            let is_path = r.is_path(filepath_lock.as_ref().unwrap().to_str().unwrap());
+            if r.contains(val) && (is_path || r.is_exec()) {
                 // send a search for a symbol!
                 next_write.push(data_disassemble(val as usize, INSTRUCTION_LEN));
                 written.push_back(Written::SymbolAtAddrStack(begin.clone()));
@@ -605,11 +606,9 @@ fn recv_exec_results_register_values(
                             let mut asked_for_code = false;
                             if let Some(memory_map) = memory_map.as_ref() {
                                 for b in memory_map {
-                                    if b.contains(u64::from(val_u32))
-                                        && b.is_path(
-                                            filepath_lock.as_ref().unwrap().to_str().unwrap(),
-                                        )
-                                    {
+                                    let is_path = b
+                                        .is_path(filepath_lock.as_ref().unwrap().to_str().unwrap());
+                                    if b.contains(u64::from(val_u32)) && (is_path || b.is_exec()) {
                                         next_write.push(data_disassemble(
                                             val_u32 as usize,
                                             INSTRUCTION_LEN,
@@ -645,11 +644,9 @@ fn recv_exec_results_register_values(
                             let mut asked_for_code = false;
                             if let Some(memory_map) = memory_map.as_ref() {
                                 for b in memory_map {
-                                    if b.contains(val_u64)
-                                        && b.is_path(
-                                            filepath_lock.as_ref().unwrap().to_str().unwrap(),
-                                        )
-                                    {
+                                    let is_path = b
+                                        .is_path(filepath_lock.as_ref().unwrap().to_str().unwrap());
+                                    if b.contains(val_u64) && (is_path || b.is_exec()) {
                                         next_write.push(data_disassemble(
                                             val_u64 as usize,
                                             INSTRUCTION_LEN,

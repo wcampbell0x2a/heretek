@@ -4,6 +4,9 @@ use std::collections::HashMap;
 use log::debug;
 use regex::{CaptureMatches, Regex};
 
+/// Amount of bytes requested during deref to get symbol/asm
+pub const INSTRUCTION_LEN: usize = 8;
+
 fn match_inner_items(haystack: &str) -> CaptureMatches {
     // compile once and re-use
     // NOTE: this only parses nested 3 {} deep, more and this will fail!
@@ -50,6 +53,14 @@ impl MemoryMapping {
     /// Mapping filepath matches `filepath`
     pub fn is_path(&self, filepath: &str) -> bool {
         self.path == Some(filepath.to_owned())
+    }
+
+    pub fn is_exec(&self) -> bool {
+        if let Some(permissions) = &self.permissions {
+            permissions.contains('x')
+        } else {
+            false
+        }
     }
 
     /// Mapping contains the `addr`
@@ -405,8 +416,12 @@ pub fn data_read_memory_bytes(addr: u64, hex_offset: u64, len: u64) -> String {
     format!("-data-read-memory-bytes 0x{addr:02x}+0x{hex_offset:02x} {len}")
 }
 
-pub fn data_disassemble(before: usize, amt: usize) -> String {
+pub fn data_disassemble_pc(before: usize, amt: usize) -> String {
     format!("-data-disassemble -s $pc-{before} -e $pc+{amt} -- 0")
+}
+
+pub fn data_disassemble(start: usize, amt: usize) -> String {
+    format!("-data-disassemble -s {start} -e {start}+{amt} -- 0")
 }
 
 #[cfg(test)]

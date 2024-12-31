@@ -289,7 +289,7 @@ impl App {
                         } else if r.is_heap() {
                             is_heap = true;
                             break;
-                        } else if r.is_path(filepath) {
+                        } else if r.is_path(filepath) || r.is_exec() {
                             // TODO(23): This could be expanded to all segments loaded in
                             // as executable
                             is_text = true;
@@ -316,6 +316,12 @@ enum Written {
     Stack(Option<String>),
     /// Requested Memory Read (for hexdump)
     Memory,
+    /// Requested Asm At $pc
+    AsmAtPc,
+    /// Requested symbol at addr for register (from deref)
+    SymbolAtAddrRegister((String, u64)),
+    /// Requested symbol at addr for stack (from deref)
+    SymbolAtAddrStack(String),
 }
 
 fn main() -> Result<(), Box<dyn Error>> {

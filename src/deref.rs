@@ -6,14 +6,17 @@ use log::debug;
 pub struct Deref {
     pub map: VecDeque<u64>,
     pub repeated_pattern: bool,
+    pub final_assembly: String,
 }
 
 impl Deref {
     pub fn new() -> Self {
-        Self { map: VecDeque::new(), repeated_pattern: false }
+        Self { map: VecDeque::new(), repeated_pattern: false, final_assembly: String::new() }
     }
 
-    /// Attempts to insert a `u64` value. Returns `true` if inserted, `false` otherwise.
+    /// Attempts to insert a `u64` value and prevents repeated patterns
+    ///
+    /// Returns `true` if inserted, `false` otherwise.
     pub fn try_push(&mut self, value: u64) -> bool {
         self.map.push_back(value);
 

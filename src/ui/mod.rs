@@ -121,15 +121,15 @@ pub fn apply_val_color(cell: &mut Cell, is_stack: bool, is_heap: bool, is_text: 
 
 /// Add deref value to cells
 pub fn add_deref_to_cell(
-    values: &Deref,
+    deref: &Deref,
     cells: &mut Vec<Cell>,
     app: &App,
     filepath: &str,
     longest_cells: &mut usize,
 ) {
-    for (i, v) in values.map.iter().enumerate() {
+    for (i, v) in deref.map.iter().enumerate() {
         // check if ascii if last deref
-        if i + 1 == values.map.len() && *v > 0xff {
+        if i + 1 == deref.map.len() && *v > 0xff {
             let bytes = (*v).to_le_bytes();
             if bytes
                 .iter()
@@ -149,8 +149,11 @@ pub fn add_deref_to_cell(
         apply_val_color(&mut cell, is_stack, is_heap, is_text);
         cells.push(cell);
     }
-    if values.repeated_pattern {
+    if deref.repeated_pattern {
         cells.push(Cell::from("➛ [loop detected]").style(Style::new().fg(GRAY)));
+    }
+    if !deref.final_assembly.is_empty() {
+        cells.push(Cell::from(format!("➛ {}", deref.final_assembly)).style(Style::new().fg(GRAY)));
     }
     if cells.len() > *longest_cells {
         *longest_cells = cells.len();

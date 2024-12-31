@@ -29,7 +29,7 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
         let empty = PathBuf::from("");
         let binding = filepath_lock.as_ref().unwrap_or(&empty);
         let filepath = binding.to_string_lossy();
-        for (i, (name, register, vals)) in regs.iter().enumerate() {
+        for (i, (name, register, derefs)) in regs.iter().enumerate() {
             if let Some(reg) = register {
                 if !reg.is_set() {
                     continue;
@@ -44,10 +44,10 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
                             Cell::from(format!("  {name}")).style(Style::new().fg(PURPLE));
                         let (is_stack, is_heap, is_text) = app.classify_val(val, &filepath);
 
-                        let mut extra_vals = Vec::new();
+                        let mut extra_derefs = Vec::new();
                         add_deref_to_cell(
-                            vals,
-                            &mut extra_vals,
+                            derefs,
+                            &mut extra_derefs,
                             app,
                             &filepath,
                             &mut longest_extra_val,
@@ -61,7 +61,7 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
                             reg_name = reg_name.style(Style::new().fg(RED));
                         }
                         let mut row = vec![reg_name, cell];
-                        row.append(&mut extra_vals);
+                        row.append(&mut extra_derefs);
                         rows.push(Row::new(row));
                     }
                 }

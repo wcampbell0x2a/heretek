@@ -316,6 +316,12 @@ enum Written {
     Stack(Option<String>),
     /// Requested Memory Read (for hexdump)
     Memory,
+    /// Requested Asm At $pc
+    AsmAtPc,
+    /// Requested symbol at addr for register (from deref)
+    SymbolAtAddrRegister((String, u64)),
+    /// Requested symbol at addr for stack (from deref)
+    SymbolAtAddrStack(String),
 }
 
 fn main() -> Result<(), Box<dyn Error>> {

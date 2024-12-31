@@ -5,15 +5,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use deku::ctx::Endian;
-use log::{debug, info, trace};
+use log::{debug, error, info, trace};
 
 use crate::deref::Deref;
 use crate::mi::{
-    data_disassemble, data_read_memory_bytes, data_read_sp_bytes, join_registers,
-    parse_asm_insns_values, parse_key_value_pairs, parse_memory_mappings_new,
+    data_disassemble, data_disassemble_pc, data_read_memory_bytes, data_read_sp_bytes,
+    join_registers, parse_asm_insns_values, parse_key_value_pairs, parse_memory_mappings_new,
     parse_memory_mappings_old, parse_mi_response, parse_register_names_values,
     parse_register_values, read_pc_value, Asm, MIResponse, Mapping, MemoryMapping, Register,
-    MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_OLD,
+    INSTRUCTION_LEN, MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_OLD,
 };
 use crate::Written;
 
@@ -86,6 +86,8 @@ pub fn gdb_interact(
                             &thirty_two_bit,
                             &registers_arc,
                             &register_names_arc,
+                            &memory_map_arc,
+                            &filepath_arc,
                             &mut next_write,
                             &mut written,
                         );
@@ -101,9 +103,18 @@ pub fn gdb_interact(
                             memory,
                             &mut written,
                             &mut next_write,
+                            &memory_map_arc,
+                            &filepath_arc,
                         );
                     } else if let Some(asm) = kv.get("asm_insns") {
-                        recv_exec_result_asm_insns(asm, &asm_arc);
+                        let mut written = written.lock().unwrap();
+                        recv_exec_result_asm_insns(
+                            asm,
+                            &asm_arc,
+                            &registers_arc,
+                            &stack_arc,
+                            &mut written,
+                        );
                     }
                 }
                 MIResponse::StreamOutput(t, s) => {
@@ -219,11 +230,9 @@ fn async_record_stopped(
     async_result.push_str(")");
 
     let mut next_write = next_write.lock().unwrap();
-    // debug!("{v:?}");
-    // TODO: we could cache this, per file opened
-    // if let Some(arch) = v.get("arch") {
-    //     // debug!("{arch}");
-    // }
+    // get the memory mapping. We do this first b/c most of the deref logic needs
+    // these locations
+    next_write.push(r#"-interpreter-exec console "info proc mappings""#.to_string());
     // Get endian
     next_write.push(r#"-interpreter-exec console "show endian""#.to_string());
     // TODO: we could cache this, per file opened
@@ -232,8 +241,6 @@ fn async_record_stopped(
     next_write.push("-data-list-register-values x".to_string());
     // get a list of changed registers
     next_write.push("-data-list-changed-registers".to_string());
-    // get the memory mapping
-    next_write.push(r#"-interpreter-exec console "info proc mappings""#.to_string());
 }
 
 fn stream_output(
@@ -312,10 +319,55 @@ fn stream_output(
 }
 
 /// MIResponse::ExecResult, key: "asm_insns"
-fn recv_exec_result_asm_insns(asm: &String, asm_arc: &Arc<Mutex<Vec<Asm>>>) {
-    let new_asms = parse_asm_insns_values(asm);
-    let mut asm = asm_arc.lock().unwrap();
-    *asm = new_asms.clone();
+fn recv_exec_result_asm_insns(
+    asm: &String,
+    asm_arc: &Arc<Mutex<Vec<Asm>>>,
+    registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
+    stack_arc: &Arc<Mutex<HashMap<u64, Deref>>>,
+    written: &mut VecDeque<Written>,
+) {
+    if written.is_empty() {
+        return;
+    }
+    let last_written = written.pop_front().unwrap();
+    // TODO: change to match
+    if let Written::AsmAtPc = last_written {
+        let new_asms = parse_asm_insns_values(asm);
+        let mut asm = asm_arc.lock().unwrap();
+        *asm = new_asms.clone();
+    }
+    if let Written::SymbolAtAddrRegister((base_reg, _n)) = &last_written {
+        let mut regs = registers_arc.lock().unwrap();
+        for (_, b, deref) in regs.iter_mut() {
+            if let Some(b) = b {
+                if b.number == *base_reg {
+                    let new_asms = parse_asm_insns_values(asm);
+                    if new_asms.len() > 0 {
+                        if let Some(func_name) = &new_asms[0].func_name {
+                            deref.final_assembly = func_name.to_owned();
+                        } else {
+                            deref.final_assembly = new_asms[0].inst.to_owned();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if let Written::SymbolAtAddrStack(deref) = last_written {
+        let mut stack = stack_arc.lock().unwrap();
+        let key = u64::from_str_radix(&deref, 16).unwrap();
+        if let Some(deref) = stack.get_mut(&key) {
+            let new_asms = parse_asm_insns_values(asm);
+            if new_asms.len() > 0 {
+                // Try and show func_name, otherwise asm
+                if let Some(func_name) = &new_asms[0].func_name {
+                    deref.final_assembly = func_name.to_owned();
+                } else {
+                    deref.final_assembly = new_asms[0].inst.to_owned();
+                }
+            }
+        }
+    }
 }
 
 /// MIResponse::ExecResult, key: "memory"
@@ -328,6 +380,8 @@ fn recv_exec_result_memory(
     memory: &String,
     written: &mut VecDeque<Written>,
     next_write: &mut Vec<String>,
+    memory_map_arc: &Arc<Mutex<Option<Vec<MemoryMapping>>>>,
+    filepath_arc: &Arc<Mutex<Option<PathBuf>>>,
 ) {
     if written.is_empty() {
         return;
@@ -341,12 +395,11 @@ fn recv_exec_result_memory(
             let mut regs = registers_arc.lock().unwrap();
 
             let (data, _) = read_memory(memory);
-            for (_, b, extra) in regs.iter_mut() {
+            for (_, b, deref) in regs.iter_mut() {
                 if let Some(b) = b {
                     if b.number == base_reg {
                         let (val, len) = if thirty {
                             let mut val = u32::from_str_radix(&data["contents"], 16).unwrap();
-                            debug!("val: {:02x?}", val);
                             let endian = endian_arc.lock().unwrap();
                             if endian.unwrap() == Endian::Big {
                                 val = val.to_le();
@@ -357,7 +410,6 @@ fn recv_exec_result_memory(
                             (val as u64, 4)
                         } else {
                             let mut val = u64::from_str_radix(&data["contents"], 16).unwrap();
-                            debug!("val: {:02x?}", val);
                             let endian = endian_arc.lock().unwrap();
                             if endian.unwrap() == Endian::Big {
                                 val = val.to_le();
@@ -367,8 +419,26 @@ fn recv_exec_result_memory(
 
                             (val, 8)
                         };
-                        if extra.try_push(val as u64) {
-                            debug!("{} extra val: {:02x?}", extra.map.len(), val);
+                        if deref.try_push(val as u64) {
+                            // If this is a code location, go ahead and try
+                            // to request the asm at that spot
+                            let filepath_lock = filepath_arc.lock().unwrap();
+                            let memory_map = memory_map_arc.lock().unwrap();
+                            for r in memory_map.as_ref().unwrap() {
+                                if r.contains(val)
+                                    && r.is_path(filepath_lock.as_ref().unwrap().to_str().unwrap())
+                                {
+                                    // send a search for a symbol!
+                                    // TODO: 32-bit?
+                                    next_write
+                                        .push(data_disassemble(val as usize, INSTRUCTION_LEN));
+                                    written.push_back(Written::SymbolAtAddrRegister((
+                                        b.number.clone(),
+                                        val,
+                                    )));
+                                    break;
+                                }
+                            }
 
                             if !(val == 0) {
                                 // TODO: endian
@@ -390,14 +460,34 @@ fn recv_exec_result_memory(
             let (data, _) = read_memory(memory);
             debug!("stack: {:02x?}", data);
 
-            update_stack(data, thirty_two_bit, endian_arc, begin, &mut stack, next_write, written);
+            update_stack(
+                data,
+                thirty_two_bit,
+                endian_arc,
+                begin,
+                &mut stack,
+                next_write,
+                written,
+                memory_map_arc,
+                filepath_arc,
+            );
         }
         Written::Stack(None) => {
             let mut stack = stack_arc.lock().unwrap();
             let (data, begin) = read_memory(memory);
             debug!("stack: {:02x?}", data);
 
-            update_stack(data, thirty_two_bit, endian_arc, begin, &mut stack, next_write, written);
+            update_stack(
+                data,
+                thirty_two_bit,
+                endian_arc,
+                begin,
+                &mut stack,
+                next_write,
+                written,
+                memory_map_arc,
+                filepath_arc,
+            );
         }
         Written::Memory => {
             let (data, begin) = read_memory(memory);
@@ -405,6 +495,9 @@ fn recv_exec_result_memory(
             let hex = hex::decode(&data["contents"]).unwrap();
             let mut hexdump_lock = hexdump_arc.lock().unwrap();
             *hexdump_lock = Some((u64::from_str_radix(&begin, 16).unwrap(), hex));
+        }
+        _ => {
+            error!("unexpected Written: {last_written:?}");
         }
     }
 }
@@ -417,6 +510,8 @@ fn update_stack(
     stack: &mut std::sync::MutexGuard<HashMap<u64, Deref>>,
     next_write: &mut Vec<String>,
     written: &mut VecDeque<Written>,
+    memory_map_arc: &Arc<Mutex<Option<Vec<MemoryMapping>>>>,
+    filepath_arc: &Arc<Mutex<Option<PathBuf>>>,
 ) {
     // TODO: this is insane and should be cached
     let thirty = thirty_two_bit.load(Ordering::Relaxed);
@@ -448,6 +543,18 @@ fn update_stack(
     let inserted = deref.try_push(val);
 
     if inserted && val != 0 {
+        // If this is a code location, go ahead and try
+        // to request the asm at that spot
+        let filepath_lock = filepath_arc.lock().unwrap();
+        let memory_map = memory_map_arc.lock().unwrap();
+        for r in memory_map.as_ref().unwrap() {
+            if r.contains(val) && r.is_path(filepath_lock.as_ref().unwrap().to_str().unwrap()) {
+                // send a search for a symbol!
+                next_write.push(data_disassemble(val as usize, INSTRUCTION_LEN));
+                written.push_back(Written::SymbolAtAddrStack(begin.clone()));
+                return;
+            }
+        }
         // TODO: endian?
         debug!("stack deref: trying to read: {}", data["contents"]);
         next_write.push(data_read_memory_bytes(val, 0, len));
@@ -470,6 +577,8 @@ fn recv_exec_results_register_values(
     thirty_two_bit: &Arc<AtomicBool>,
     registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
     register_names_arc: &Arc<Mutex<Vec<String>>>,
+    memory_map_arc: &Arc<Mutex<Option<Vec<MemoryMapping>>>>,
+    filepath_arc: &Arc<Mutex<Option<PathBuf>>>,
     next_write: &mut Vec<String>,
     written: &mut VecDeque<Written>,
 ) {
@@ -488,12 +597,38 @@ fn recv_exec_results_register_values(
                         // NOTE: This is already in the right endian
                         // avoid trying to read null :^)
                         if val_u32 != 0 {
-                            // TODO: we shouldn't do this for known CODE locations
-                            next_write.push(data_read_memory_bytes(val_u32 as u64, 0, 4));
-                            written.push_back(Written::RegisterValue((
-                                r.number.clone(),
-                                val_u32 as u64,
-                            )));
+                            let filepath_lock = filepath_arc.lock().unwrap();
+                            let memory_map = memory_map_arc.lock().unwrap();
+
+                            // If this is a code location, go ahead and try
+                            // to request the asm at that spot
+                            let mut asked_for_code = false;
+                            if let Some(memory_map) = memory_map.as_ref() {
+                                for b in memory_map {
+                                    if b.contains(u64::from(val_u32))
+                                        && b.is_path(
+                                            filepath_lock.as_ref().unwrap().to_str().unwrap(),
+                                        )
+                                    {
+                                        next_write.push(data_disassemble(
+                                            val_u32 as usize,
+                                            INSTRUCTION_LEN,
+                                        ));
+                                        written.push_back(Written::SymbolAtAddrRegister((
+                                            r.number.clone(),
+                                            u64::from(val_u32),
+                                        )));
+                                        asked_for_code = true;
+                                    }
+                                }
+                            }
+                            if !asked_for_code {
+                                next_write.push(data_read_memory_bytes(val_u32 as u64, 0, 4));
+                                written.push_back(Written::RegisterValue((
+                                    r.number.clone(),
+                                    val_u32 as u64,
+                                )));
+                            }
                         }
                     }
                 } else {
@@ -502,9 +637,36 @@ fn recv_exec_results_register_values(
                         // NOTE: This is already in the right endian
                         // avoid trying to read null :^)
                         if val_u64 != 0 {
-                            // TODO: we shouldn't do this for known CODE locations
-                            next_write.push(data_read_memory_bytes(val_u64, 0, 8));
-                            written.push_back(Written::RegisterValue((r.number.clone(), val_u64)));
+                            let filepath_lock = filepath_arc.lock().unwrap();
+                            let memory_map = memory_map_arc.lock().unwrap();
+
+                            // If this is a code location, go ahead and try
+                            // to request the asm at that spot
+                            let mut asked_for_code = false;
+                            if let Some(memory_map) = memory_map.as_ref() {
+                                for b in memory_map {
+                                    if b.contains(val_u64)
+                                        && b.is_path(
+                                            filepath_lock.as_ref().unwrap().to_str().unwrap(),
+                                        )
+                                    {
+                                        next_write.push(data_disassemble(
+                                            val_u64 as usize,
+                                            INSTRUCTION_LEN,
+                                        ));
+                                        written.push_back(Written::SymbolAtAddrRegister((
+                                            r.number.clone(),
+                                            val_u64,
+                                        )));
+                                        asked_for_code = true;
+                                    }
+                                }
+                            }
+                            if !asked_for_code {
+                                next_write.push(data_read_memory_bytes(val_u64, 0, 8));
+                                written
+                                    .push_back(Written::RegisterValue((r.number.clone(), val_u64)));
+                            }
                         }
                     }
                 }
@@ -529,7 +691,8 @@ fn recv_exec_results_register_values(
 
     // update current asm at pc
     let instruction_length = 8;
-    next_write.push(data_disassemble(instruction_length * 5, instruction_length * 15));
+    next_write.push(data_disassemble_pc(instruction_length * 5, instruction_length * 15));
+    written.push_back(Written::AsmAtPc);
 }
 
 fn dump_sp_bytes(
@@ -574,6 +737,7 @@ fn recv_exec_result_value(current_pc_arc: &Arc<Mutex<u64>>, value: &String) {
     // This works b/c we only use this for PC, but will most likely
     // be wrong sometime
     let mut cur_pc_lock = current_pc_arc.lock().unwrap();
+    debug!("value: {value}");
     let pc: Vec<&str> = value.split_whitespace().collect();
     let pc = pc[0].strip_prefix("0x").unwrap();
     *cur_pc_lock = u64::from_str_radix(pc, 16).unwrap();

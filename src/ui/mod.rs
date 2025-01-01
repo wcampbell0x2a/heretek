@@ -2,7 +2,7 @@ use ratatui::layout::Constraint::{Fill, Length, Min};
 use ratatui::layout::Layout;
 use ratatui::style::Color;
 use ratatui::style::Style;
-use ratatui::widgets::Cell;
+use ratatui::text::Span;
 use ratatui::Frame;
 
 use crate::deref::Deref;
@@ -108,24 +108,25 @@ pub fn ui(f: &mut Frame, app: &mut App) {
 }
 
 /// Apply color to val
-pub fn apply_val_color(cell: &mut Cell, is_stack: bool, is_heap: bool, is_text: bool) {
+pub fn apply_val_color(span: &mut Span, is_stack: bool, is_heap: bool, is_text: bool) {
     // TOOD: remove clone
     if is_stack {
-        *cell = cell.clone().style(Style::new().fg(STACK_COLOR))
+        *span = span.clone().style(Style::new().fg(STACK_COLOR))
     } else if is_heap {
-        *cell = cell.clone().style(Style::new().fg(HEAP_COLOR))
+        *span = span.clone().style(Style::new().fg(HEAP_COLOR))
     } else if is_text {
-        *cell = cell.clone().style(Style::new().fg(TEXT_COLOR))
+        *span = span.clone().style(Style::new().fg(TEXT_COLOR))
     }
 }
 
-/// Add deref value to cells
-pub fn add_deref_to_cell(
+/// Add deref value to span
+pub fn add_deref_to_span(
     deref: &Deref,
-    cells: &mut Vec<Cell>,
+    spans: &mut Vec<Span>,
     app: &App,
     filepath: &str,
     longest_cells: &mut usize,
+    width: usize,
 ) {
     for (i, v) in deref.map.iter().enumerate() {
         // check if ascii if last deref
@@ -136,27 +137,33 @@ pub fn add_deref_to_cell(
                 .all(|a| a.is_ascii_alphabetic() || a.is_ascii_graphic() || a.is_ascii_whitespace())
             {
                 if let Ok(s) = std::str::from_utf8(&bytes) {
-                    let cell = Cell::from(format!("➛ \"{}\"", s)).style(Style::new().fg(YELLOW));
-                    cells.push(cell);
+                    let cell = Span::from(format!("➛ \"{}\"", s)).style(Style::new().fg(YELLOW));
+                    spans.push(cell);
                     continue;
                 }
             }
         }
 
         // if not, it's a value
-        let mut cell = Cell::from(format!("➛ 0x{:02x}", v));
+        let hex_string = format!("0x{:02x}", v);
+        let hex_width = hex_string.len();
+        let padding_width = width.saturating_sub(hex_width);
+        let mut span =
+            Span::from(format!("➛ {}{:padding$}", hex_string, "", padding = padding_width));
         let (is_stack, is_heap, is_text) = app.classify_val(*v, filepath);
-        apply_val_color(&mut cell, is_stack, is_heap, is_text);
-        cells.push(cell);
+        apply_val_color(&mut span, is_stack, is_heap, is_text);
+        spans.push(span);
     }
     if deref.repeated_pattern {
-        cells.push(Cell::from("➛ [loop detected]").style(Style::new().fg(GRAY)));
+        spans.push(Span::from("➛ [loop detected]").style(Style::new().fg(GRAY)));
     }
     if !deref.final_assembly.is_empty() {
-        cells
-            .push(Cell::from(format!("➛ {}", deref.final_assembly)).style(Style::new().fg(ORANGE)));
+        spans.push(
+            Span::from(format!("➛ {:width$}", deref.final_assembly, width = width))
+                .style(Style::new().fg(ORANGE)),
+        );
     }
-    if cells.len() > *longest_cells {
-        *longest_cells = cells.len();
+    if spans.len() > *longest_cells {
+        *longest_cells = spans.len();
     }
 }

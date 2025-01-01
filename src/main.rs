@@ -173,6 +173,7 @@ struct App {
     hexdump_scroll_state: ScrollbarState,
     hexdump_popup: Input,
     async_result: Arc<Mutex<String>>,
+    status: Arc<Mutex<String>>,
 }
 
 impl App {
@@ -243,6 +244,7 @@ impl App {
             hexdump_scroll_state: ScrollbarState::new(0),
             hexdump_popup: Input::default(),
             async_result: Arc::new(Mutex::new(String::new())),
+            status: Arc::new(Mutex::new(String::new())),
         };
 
         (reader, app)

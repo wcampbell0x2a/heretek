@@ -16,6 +16,7 @@ pub fn draw_input(title_area: Rect, app: &App, f: &mut Frame, input: Rect) {
     let prompt_len = stream_lock.len();
 
     let async_result = app.async_result.lock().unwrap();
+    let status = app.status.lock().unwrap();
 
     let txt_input = Paragraph::new(format!("{}{}", stream_lock, app.input.value()))
         .style(match app.input_mode {
@@ -26,8 +27,8 @@ pub fn draw_input(title_area: Rect, app: &App, f: &mut Frame, input: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Input".fg(BLUE))
-                .title(format!("{async_result}").fg(ORANGE)),
+                .title(format!("|{status}|").fg(BLUE))
+                .title(format!("|{async_result}|").fg(ORANGE)),
         );
 
     f.render_widget(txt_input, input);

@@ -28,29 +28,18 @@ pub fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
         first,
     );
     // Title Area
-    let (mut msg, style) = match app.input_mode {
-        InputMode::Normal => (
-            vec![
-                Span::raw("Press "),
-                Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to exit, "),
-                Span::styled("i", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to enter input | "),
-            ],
-            Style::default(),
-        ),
-        InputMode::Editing => (
-            vec![
-                Span::raw("Press "),
-                Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to stop editing, "),
-                Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(" to send input | "),
-            ],
-            Style::default(),
-        ),
+    match app.input_mode {
+        InputMode::Normal => {
+            let mut status = app.status.lock().unwrap();
+            *status = "Press q to exit, i to enter input".to_owned();
+        }
+        InputMode::Editing => {
+            let mut status = app.status.lock().unwrap();
+            *status = "Press Esc to stop editing, Enter to send input".to_owned();
+        }
     };
-    msg.append(&mut vec![
+
+    let msg = vec![
         Span::styled("F1", Style::default().add_modifier(Modifier::BOLD)),
         Span::raw(" main | "),
         Span::styled("F2", Style::default().add_modifier(Modifier::BOLD)),
@@ -70,8 +59,8 @@ pub fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
         Span::styled("Stack", Style::default().fg(STACK_COLOR).add_modifier(Modifier::BOLD)),
         Span::raw(" | "),
         Span::styled("Code", Style::default().fg(TEXT_COLOR).add_modifier(Modifier::BOLD)),
-    ]);
-    let text = Text::from(Line::from(msg)).style(style);
+    ];
+    let text = Text::from(Line::from(msg));
     let help_message = Paragraph::new(text).alignment(Alignment::Center);
     f.render_widget(help_message, second);
 }

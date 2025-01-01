@@ -24,14 +24,16 @@ use ratatui::crossterm::{
 use ratatui::prelude::*;
 use ratatui::widgets::ScrollbarState;
 use regex::Regex;
+use register::RegisterStorage;
 use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
 
-use mi::{data_read_memory_bytes, Asm, MemoryMapping, Register};
+use mi::{data_read_memory_bytes, Asm, MemoryMapping};
 
 mod deref;
 mod gdb;
 mod mi;
+mod register;
 mod ui;
 
 enum InputMode {
@@ -160,7 +162,7 @@ struct App {
     /// Register TUI
     register_changed: Arc<Mutex<Vec<u8>>>,
     register_names: Arc<Mutex<Vec<String>>>,
-    registers: Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
+    registers: Arc<Mutex<Vec<RegisterStorage>>>,
     /// Saved Stack
     stack: Arc<Mutex<HashMap<u64, Deref>>>,
     /// Saved ASM
@@ -201,7 +203,7 @@ impl App {
                     (reader, gdb_stdin)
                 }
                 (false, Some(remote)) => {
-                    let tcp_stream = TcpStream::connect(remote).unwrap(); // Example address
+                    let tcp_stream = TcpStream::connect(remote).unwrap();
                     let reader = BufReader::new(
                         Box::new(tcp_stream.try_clone().unwrap()) as Box<dyn Read + Send>
                     );
@@ -851,7 +853,7 @@ mod tests {
     use super::*;
     use insta::assert_snapshot;
     use libc::{chmod, S_IRGRP, S_IROTH, S_IRUSR, S_IWUSR, S_IXGRP, S_IXOTH, S_IXUSR};
-    
+
     use ratatui::{backend::TestBackend, Terminal};
     use test_assets_ureq::{dl_test_files_backoff, TestAssetDef};
 
@@ -932,7 +934,7 @@ mod tests {
         let stack = app.stack.lock().unwrap();
 
         // rsi repeating
-        assert!(registers[4].2.repeated_pattern);
+        assert!(registers[4].deref.repeated_pattern);
 
         // stack repeating
         let mut stack: Vec<_> = stack.clone().into_iter().collect();
@@ -1032,7 +1034,7 @@ mod tests {
                 let from = format!(
                     "0x{:02x}",
                     u64::from_str_radix(
-                        &registers[2].1.as_ref().unwrap().value.as_ref().unwrap()[2..],
+                        &registers[2].register.as_ref().unwrap().value.as_ref().unwrap()[2..],
                         16
                     )
                     .unwrap()
@@ -1042,7 +1044,7 @@ mod tests {
                 let from = format!(
                     "0x{:02x}",
                     u64::from_str_radix(
-                        &registers[3].1.as_ref().unwrap().value.as_ref().unwrap()[2..],
+                        &registers[3].register.as_ref().unwrap().value.as_ref().unwrap()[2..],
                         16
                     )
                     .unwrap()
@@ -1052,7 +1054,7 @@ mod tests {
                 let from = format!(
                     "0x{:02x}",
                     u64::from_str_radix(
-                        &registers[4].1.as_ref().unwrap().value.as_ref().unwrap()[2..],
+                        &registers[4].register.as_ref().unwrap().value.as_ref().unwrap()[2..],
                         16
                     )
                     .unwrap()
@@ -1062,26 +1064,30 @@ mod tests {
                 let from = format!(
                     "0x{:02x}",
                     u64::from_str_radix(
-                        &registers[6].1.as_ref().unwrap().value.as_ref().unwrap()[2..],
+                        &registers[6].register.as_ref().unwrap().value.as_ref().unwrap()[2..],
                         16
                     )
                     .unwrap()
                 );
                 let output = output.replace(&from, "<rbp_0>");
 
-                let from = format!("0x{:02x}", registers[3].2.map[0]);
+                let from = format!("0x{:02x}", registers[3].deref.map[0]);
                 let output = output.replace(&from, "<rdx_1>");
-                let from = std::str::from_utf8(&registers[3].2.map[1].to_le_bytes()).unwrap().to_string();
+                let from = std::str::from_utf8(&registers[3].deref.map[1].to_le_bytes())
+                    .unwrap()
+                    .to_string();
                 let output = output.replace(&from, "<rdx_2>");
 
-                let from = format!("0x{:02x}", registers[4].2.map[0]);
+                let from = format!("0x{:02x}", registers[4].deref.map[0]);
                 let output = output.replace(&from, "<rsi_1>");
-                let from = std::str::from_utf8(&registers[4].2.map[1].to_le_bytes()).unwrap().to_string();
+                let from = std::str::from_utf8(&registers[4].deref.map[1].to_le_bytes())
+                    .unwrap()
+                    .to_string();
                 let output = output.replace(&from, "<rsi_2>");
 
-                let from = format!("0x{:02x}", registers[6].2.map[0]);
+                let from = format!("0x{:02x}", registers[6].deref.map[0]);
                 let output = output.replace(&from, "<rbp_1>");
-                let from = format!("0x{:02x}", registers[6].2.map[1]);
+                let from = format!("0x{:02x}", registers[6].deref.map[1]);
                 let output = output.replace(&from, "<rbp_2>");
 
                 assert_snapshot!(output);

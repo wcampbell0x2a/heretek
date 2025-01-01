@@ -12,9 +12,10 @@ use crate::mi::{
     data_disassemble, data_disassemble_pc, data_read_memory_bytes, data_read_sp_bytes,
     join_registers, parse_asm_insns_values, parse_key_value_pairs, parse_memory_mappings_new,
     parse_memory_mappings_old, parse_mi_response, parse_register_names_values,
-    parse_register_values, read_pc_value, Asm, MIResponse, Mapping, MemoryMapping, Register,
-    INSTRUCTION_LEN, MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_OLD,
+    parse_register_values, read_pc_value, Asm, MIResponse, Mapping, MemoryMapping, INSTRUCTION_LEN,
+    MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_OLD,
 };
+use crate::register::RegisterStorage;
 use crate::Written;
 
 pub fn gdb_interact(
@@ -26,7 +27,7 @@ pub fn gdb_interact(
     filepath_arc: Arc<Mutex<Option<PathBuf>>>,
     register_changed_arc: Arc<Mutex<Vec<u8>>>,
     register_names_arc: Arc<Mutex<Vec<String>>>,
-    registers_arc: Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
+    registers_arc: Arc<Mutex<Vec<RegisterStorage>>>,
     current_pc_arc: Arc<Mutex<u64>>,
     stack_arc: Arc<Mutex<HashMap<u64, Deref>>>,
     asm_arc: Arc<Mutex<Vec<Asm>>>,
@@ -168,7 +169,7 @@ fn exec_result_done(
 fn exec_result_running(
     stack_arc: &Arc<Mutex<HashMap<u64, Deref>>>,
     asm_arc: &Arc<Mutex<Vec<Asm>>>,
-    registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
+    registers_arc: &Arc<Mutex<Vec<RegisterStorage>>>,
     hexdump_arc: &Arc<Mutex<Option<(u64, Vec<u8>)>>>,
     async_result_arc: &Arc<Mutex<String>>,
 ) {
@@ -320,7 +321,7 @@ fn stream_output(
 fn recv_exec_result_asm_insns(
     asm: &String,
     asm_arc: &Arc<Mutex<Vec<Asm>>>,
-    registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
+    registers_arc: &Arc<Mutex<Vec<RegisterStorage>>>,
     stack_arc: &Arc<Mutex<HashMap<u64, Deref>>>,
     written: &mut VecDeque<Written>,
 ) {
@@ -336,9 +337,9 @@ fn recv_exec_result_asm_insns(
     }
     if let Written::SymbolAtAddrRegister((base_reg, _n)) = &last_written {
         let mut regs = registers_arc.lock().unwrap();
-        for (_, b, deref) in regs.iter_mut() {
-            if let Some(b) = b {
-                if b.number == *base_reg {
+        for RegisterStorage { name: _, register, deref } in regs.iter_mut() {
+            if let Some(reg) = register {
+                if reg.number == *base_reg {
                     let new_asms = parse_asm_insns_values(asm);
                     if !new_asms.is_empty() {
                         if let Some(func_name) = &new_asms[0].func_name {
@@ -373,7 +374,7 @@ fn recv_exec_result_memory(
     stack_arc: &Arc<Mutex<HashMap<u64, Deref>>>,
     thirty_two_bit: &Arc<AtomicBool>,
     endian_arc: &Arc<Mutex<Option<Endian>>>,
-    registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
+    registers_arc: &Arc<Mutex<Vec<RegisterStorage>>>,
     hexdump_arc: &Arc<Mutex<Option<(u64, Vec<u8>)>>>,
     memory: &String,
     written: &mut VecDeque<Written>,
@@ -393,9 +394,9 @@ fn recv_exec_result_memory(
             let mut regs = registers_arc.lock().unwrap();
 
             let (data, _) = read_memory(memory);
-            for (_, b, deref) in regs.iter_mut() {
-                if let Some(b) = b {
-                    if b.number == base_reg {
+            for RegisterStorage { name: _, register, deref } in regs.iter_mut() {
+                if let Some(reg) = register {
+                    if reg.number == base_reg {
                         let (val, len) = if thirty {
                             let mut val = u32::from_str_radix(&data["contents"], 16).unwrap();
                             let endian = endian_arc.lock().unwrap();
@@ -431,7 +432,7 @@ fn recv_exec_result_memory(
                                     next_write
                                         .push(data_disassemble(val as usize, INSTRUCTION_LEN));
                                     written.push_back(Written::SymbolAtAddrRegister((
-                                        b.number.clone(),
+                                        reg.number.clone(),
                                         val,
                                     )));
                                     break;
@@ -442,7 +443,8 @@ fn recv_exec_result_memory(
                                 // TODO: endian
                                 debug!("register deref: trying to read: {:02x}", val);
                                 next_write.push(data_read_memory_bytes(val, 0, len));
-                                written.push_back(Written::RegisterValue((b.number.clone(), val)));
+                                written
+                                    .push_back(Written::RegisterValue((reg.number.clone(), val)));
                             }
                         }
                         break;
@@ -574,7 +576,7 @@ fn read_memory(memory: &String) -> (HashMap<String, String>, String) {
 fn recv_exec_results_register_values(
     register_values: &String,
     thirty_two_bit: &Arc<AtomicBool>,
-    registers_arc: &Arc<Mutex<Vec<(String, Option<Register>, Deref)>>>,
+    registers_arc: &Arc<Mutex<Vec<RegisterStorage>>>,
     register_names_arc: &Arc<Mutex<Vec<String>>>,
     memory_map_arc: &Arc<Mutex<Option<Vec<MemoryMapping>>>>,
     filepath_arc: &Arc<Mutex<Option<PathBuf>>>,
@@ -669,8 +671,10 @@ fn recv_exec_results_register_values(
         }
     }
     let registers = join_registers(&regs_names, &registers);
-    let registers: Vec<(String, Option<Register>, Deref)> =
-        registers.iter().map(|(a, b)| (a.clone(), b.clone(), Deref::new())).collect();
+    let registers: Vec<RegisterStorage> = registers
+        .iter()
+        .map(|(a, b)| RegisterStorage::new(a.clone(), b.clone(), Deref::new()))
+        .collect();
     *regs = registers.clone();
 
     // assuming we have a valid $pc, get the bytes

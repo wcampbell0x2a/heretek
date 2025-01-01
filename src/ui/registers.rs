@@ -8,6 +8,7 @@ use ratatui::prelude::Stylize;
 use ratatui::widgets::{Block, Borders, Cell, Table};
 use ratatui::{layout::Rect, style::Style, widgets::Row, Frame};
 
+use crate::register::RegisterStorage;
 use crate::App;
 
 /// Registers
@@ -29,7 +30,7 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
         let empty = PathBuf::from("");
         let binding = filepath_lock.as_ref().unwrap_or(&empty);
         let filepath = binding.to_string_lossy();
-        for (i, (name, register, derefs)) in regs.iter().enumerate() {
+        for (i, RegisterStorage { name, register, deref }) in regs.iter().enumerate() {
             if let Some(reg) = register {
                 if !reg.is_set() {
                     continue;
@@ -46,7 +47,7 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
 
                         let mut extra_derefs = Vec::new();
                         add_deref_to_cell(
-                            derefs,
+                            deref,
                             &mut extra_derefs,
                             app,
                             &filepath,

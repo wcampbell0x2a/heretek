@@ -52,12 +52,16 @@ pub fn gdb_interact(
                 MIResponse::ExecResult(status, kv) => {
                     // Parse the status
                     if status == "running" {
+                        let mut next_write = next_write.lock().unwrap();
+                        let mut written = written.lock().unwrap();
                         exec_result_running(
                             &stack_arc,
                             &asm_arc,
                             &registers_arc,
                             &hexdump_arc,
                             &async_result_arc,
+                            &mut written,
+                            &mut next_write,
                         );
                     } else if status == "done" {
                         exec_result_done(&mut current_map, &memory_map_arc, &filepath_arc);
@@ -172,6 +176,8 @@ fn exec_result_running(
     registers_arc: &Arc<Mutex<Vec<RegisterStorage>>>,
     hexdump_arc: &Arc<Mutex<Option<(u64, Vec<u8>)>>>,
     async_result_arc: &Arc<Mutex<String>>,
+    written: &mut VecDeque<Written>,
+    next_write: &mut Vec<String>,
 ) {
     // TODO: this causes a bunch of re-drawing, but
     // I'm sure in the future we could make sure we are leaving our own
@@ -196,6 +202,12 @@ fn exec_result_running(
     // reset status
     let mut async_result = async_result_arc.lock().unwrap();
     *async_result = String::new();
+
+    // reset written
+    // TODO: research this. This prevents the "hold down enter and confuse this program".
+    // but may have other problems arise.
+    written.clear();
+    next_write.clear();
 }
 
 fn async_record_stopped(

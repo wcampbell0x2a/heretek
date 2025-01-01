@@ -115,7 +115,7 @@ impl MemoryMapping {
                 path: Some(parts[4..].join(" ")), // Combine the rest as the path
             })
         } else {
-            return Err(format!("Invalid line format: {}", line));
+            Err(format!("Invalid line format: {}", line))
         }
     }
 }
@@ -237,7 +237,7 @@ pub fn join_registers(
     registers: &[Option<Register>],
 ) -> Vec<(String, Option<Register>)> {
     let mut registers_arch = vec![];
-    for (_i, (register, name)) in registers.iter().zip(register_names.iter()).enumerate() {
+    for (register, name) in registers.iter().zip(register_names.iter()) {
         if let Some(register) = register {
             if !register.number.is_empty() {
                 registers_arch.push((name.to_string(), Some(register.clone())));

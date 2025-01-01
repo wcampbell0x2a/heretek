@@ -95,7 +95,7 @@ pub fn draw_hexdump(app: &mut App, f: &mut Frame, hexdump: Rect, show_popup: boo
         );
         if show_popup {
             let area = popup_area(hexdump, 60);
-            let txt_input = Paragraph::new(format!("{}", app.hexdump_popup.value()))
+            let txt_input = Paragraph::new(app.hexdump_popup.value().to_string())
                 .style(Style::default())
                 .block(
                     Block::default()

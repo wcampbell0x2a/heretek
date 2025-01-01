@@ -70,52 +70,52 @@ mod tests {
     #[test]
     fn test_single_insert() {
         let mut checker = Deref::new();
-        assert_eq!(checker.try_push(1), true);
+        assert!(checker.try_push(1));
     }
 
     #[test]
     fn test_single_repeating_value_blocked() {
         let mut checker = Deref::new();
 
-        assert_eq!(checker.try_push(1), true);
-        assert_eq!(checker.try_push(1), false);
+        assert!(checker.try_push(1));
+        assert!(!checker.try_push(1));
     }
 
     #[test]
     fn test_no_repeating_single_value() {
         let mut checker = Deref::new();
         checker.try_push(1);
-        assert_eq!(checker.try_push(1), false);
+        assert!(!checker.try_push(1));
     }
 
     #[test]
     fn test_multiple_insertions() {
         let mut checker = Deref::new();
-        assert_eq!(checker.try_push(1), true);
-        assert_eq!(checker.try_push(2), true);
-        assert_eq!(checker.try_push(3), true);
+        assert!(checker.try_push(1));
+        assert!(checker.try_push(2));
+        assert!(checker.try_push(3));
     }
 
     #[test]
     fn test_repeating_longer_pattern_blocked() {
         let mut checker = Deref::new();
-        assert_eq!(checker.try_push(1), true);
-        assert_eq!(checker.try_push(2), true);
-        assert_eq!(checker.try_push(3), true);
-        assert_eq!(checker.try_push(2), true);
-        assert_eq!(checker.try_push(3), false);
+        assert!(checker.try_push(1));
+        assert!(checker.try_push(2));
+        assert!(checker.try_push(3));
+        assert!(checker.try_push(2));
+        assert!(!checker.try_push(3));
     }
 
     // 7fffffffb088: [7fffffffb078, 7fffffffb070, 7fffffffb088, 7fffffffb080, 7fffffffb078, 7fffffffb070]
     #[test]
     fn test_repeated_longer_pattern_blocked_real() {
         let mut checker = Deref::new();
-        assert_eq!(checker.try_push(0x7fffffffb078), true);
-        assert_eq!(checker.try_push(0x7fffffffb070), true);
-        assert_eq!(checker.try_push(0x7fffffffb088), true);
-        assert_eq!(checker.try_push(0x7fffffffb080), true);
-        assert_eq!(checker.try_push(0x7fffffffb078), true);
-        assert_eq!(checker.try_push(0x7fffffffb070), false);
+        assert!(checker.try_push(0x7fffffffb078));
+        assert!(checker.try_push(0x7fffffffb070));
+        assert!(checker.try_push(0x7fffffffb088));
+        assert!(checker.try_push(0x7fffffffb080));
+        assert!(checker.try_push(0x7fffffffb078));
+        assert!(!checker.try_push(0x7fffffffb070));
         // assert_eq!(checker.try_push(0x7fffffffb088), false);
     }
 
@@ -125,6 +125,6 @@ mod tests {
         checker.try_push(1);
         checker.try_push(2);
         checker.try_push(3);
-        assert_eq!(checker.try_push(4), true);
+        assert!(checker.try_push(4));
     }
 }

@@ -205,7 +205,7 @@ fn async_record_stopped(
     // in the case of a breakpoint, save the output
     // Either it's a breakpoint event, step, signal
     let mut async_result = async_result_arc.lock().unwrap();
-    async_result.push_str(&format!("Status("));
+    async_result.push_str("Status(");
     if v.get("bkptno").is_some() {
         if let Some(val) = v.get("bkptno") {
             async_result.push_str(&format!("bkptno={val}, "));
@@ -227,7 +227,7 @@ fn async_record_stopped(
     if let Some(val) = v.get("thread-id") {
         async_result.push_str(&format!(", thread-id={val}"));
     }
-    async_result.push_str(")");
+    async_result.push(')');
 
     let mut next_write = next_write.lock().unwrap();
     // get the memory mapping. We do this first b/c most of the deref logic needs
@@ -296,7 +296,7 @@ fn stream_output(
         current_map.0 = Some(Mapping::Old);
     }
     if current_map.0.is_some() {
-        current_map.1.push_str(&s);
+        current_map.1.push_str(s);
         return;
     }
 
@@ -310,11 +310,9 @@ fn stream_output(
     }
 
     // console-stream-output
-    if t == "~" {
-        if !s.contains('\n') {
-            let mut stream_lock = stream_output_prompt_arc.lock().unwrap();
-            *stream_lock = s.to_string();
-        }
+    if t == "~" && !s.contains('\n') {
+        let mut stream_lock = stream_output_prompt_arc.lock().unwrap();
+        *stream_lock = s.to_string();
     }
 }
 
@@ -342,7 +340,7 @@ fn recv_exec_result_asm_insns(
             if let Some(b) = b {
                 if b.number == *base_reg {
                     let new_asms = parse_asm_insns_values(asm);
-                    if new_asms.len() > 0 {
+                    if !new_asms.is_empty() {
                         if let Some(func_name) = &new_asms[0].func_name {
                             deref.final_assembly = func_name.to_owned();
                         } else {
@@ -358,7 +356,7 @@ fn recv_exec_result_asm_insns(
         let key = u64::from_str_radix(&deref, 16).unwrap();
         if let Some(deref) = stack.get_mut(&key) {
             let new_asms = parse_asm_insns_values(asm);
-            if new_asms.len() > 0 {
+            if !new_asms.is_empty() {
                 // Try and show func_name, otherwise asm
                 if let Some(func_name) = &new_asms[0].func_name {
                     deref.final_assembly = func_name.to_owned();
@@ -419,7 +417,7 @@ fn recv_exec_result_memory(
 
                             (val, 8)
                         };
-                        if deref.try_push(val as u64) {
+                        if deref.try_push(val) {
                             // If this is a code location, go ahead and try
                             // to request the asm at that spot
                             let filepath_lock = filepath_arc.lock().unwrap();
@@ -440,7 +438,7 @@ fn recv_exec_result_memory(
                                 }
                             }
 
-                            if !(val == 0) {
+                            if val != 0 {
                                 // TODO: endian
                                 debug!("register deref: trying to read: {:02x}", val);
                                 next_write.push(data_read_memory_bytes(val, 0, len));

@@ -19,12 +19,10 @@ pub fn draw_output(app: &mut App, f: &mut Frame, output: Rect, full: bool) {
         } else {
             app.output_scroll
         }
+    } else if len <= max as usize {
+        0
     } else {
-        if len <= max as usize {
-            0
-        } else {
-            len - max as usize + 2
-        }
+        len - max as usize + 2
     };
 
     app.output_scroll_state = app.output_scroll_state.content_length(len);

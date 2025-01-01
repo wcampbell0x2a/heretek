@@ -145,7 +145,7 @@ pub fn add_deref_to_cell(
 
         // if not, it's a value
         let mut cell = Cell::from(format!("➛ 0x{:02x}", v));
-        let (is_stack, is_heap, is_text) = app.classify_val(*v, &filepath);
+        let (is_stack, is_heap, is_text) = app.classify_val(*v, filepath);
         apply_val_color(&mut cell, is_stack, is_heap, is_text);
         cells.push(cell);
     }

@@ -3,6 +3,7 @@ use std::sync::atomic::Ordering;
 
 use super::{add_deref_to_span, apply_val_color, ORANGE, PURPLE, RED};
 
+use log::debug;
 use ratatui::prelude::Stylize;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph};
@@ -29,9 +30,18 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
         // TODO: cache this
         let reg_changed_lock = app.register_changed.lock().unwrap();
         let filepath_lock = app.filepath.lock().unwrap();
-        for RegisterStorage { name, register: _, deref: _ } in regs.iter() {
-            if longest_register_name < name.len() {
-                longest_register_name = name.len();
+        for RegisterStorage { name, register, deref: _ } in regs.iter() {
+            if let Some(reg) = register {
+                if !reg.is_set() {
+                    continue;
+                }
+                if let Some(reg_value) = &reg.value {
+                    if let Ok(_) = u64::from_str_radix(&reg_value[2..], 16) {
+                        if longest_register_name < name.len() {
+                            longest_register_name = name.len();
+                        }
+                    }
+                }
             }
         }
         let width: usize = if app.thirty_two_bit.load(Ordering::Relaxed) { 11 } else { 19 };
@@ -47,11 +57,9 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
                 if let Some(reg_value) = &reg.value {
                     if let Ok(val) = u64::from_str_radix(&reg_value[2..], 16) {
                         let changed = reg_changed_lock.contains(&(i as u8));
-                        let mut reg_name = Span::from(format!(
-                            "  {name:width$}",
-                            width = longest_register_name - 2
-                        ))
-                        .style(Style::new().fg(PURPLE));
+                        let mut reg_name =
+                            Span::from(format!("  {name:width$}", width = longest_register_name))
+                                .style(Style::new().fg(PURPLE));
                         let (is_stack, is_heap, is_text) = app.classify_val(val, &filepath);
 
                         let mut extra_derefs = Vec::new();

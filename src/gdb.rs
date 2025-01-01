@@ -421,6 +421,7 @@ fn recv_exec_result_memory(
                         if deref.try_push(val) {
                             // If this is a code location, go ahead and try
                             // to request the asm at that spot
+                            let mut is_code = false;
                             let filepath_lock = filepath_arc.lock().unwrap();
                             let memory_map = memory_map_arc.lock().unwrap();
                             for r in memory_map.as_ref().unwrap() {
@@ -435,11 +436,12 @@ fn recv_exec_result_memory(
                                         reg.number.clone(),
                                         val,
                                     )));
+                                    is_code = true;
                                     break;
                                 }
                             }
 
-                            if val != 0 {
+                            if !is_code && val != 0 {
                                 // TODO: endian
                                 debug!("register deref: trying to read: {:02x}", val);
                                 next_write.push(data_read_memory_bytes(val, 0, len));

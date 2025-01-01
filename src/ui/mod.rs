@@ -153,7 +153,8 @@ pub fn add_deref_to_cell(
         cells.push(Cell::from("➛ [loop detected]").style(Style::new().fg(GRAY)));
     }
     if !deref.final_assembly.is_empty() {
-        cells.push(Cell::from(format!("➛ {}", deref.final_assembly)).style(Style::new().fg(GRAY)));
+        cells
+            .push(Cell::from(format!("➛ {}", deref.final_assembly)).style(Style::new().fg(ORANGE)));
     }
     if cells.len() > *longest_cells {
         *longest_cells = cells.len();

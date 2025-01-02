@@ -22,8 +22,8 @@ tui-input = "0.11.0"
 
 [dev-dependencies]
 insta = "1.41.1"
-test-assets-ureq = "*"
-libc = "*"
+test-assets-ureq = "0.3.0"
+libc = "0.2.169"
 
 [profile.release]
 strip = true

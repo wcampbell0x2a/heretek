@@ -29,6 +29,7 @@ use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
 
 use mi::{data_read_memory_bytes, Asm, MemoryMapping};
+use ui::hexdump::HEXDUMP_WIDTH;
 
 mod deref;
 mod gdb;
@@ -504,6 +505,12 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                         app.output_scroll = 0;
                         app.output_scroll_state = app.output_scroll_state.position(0);
                     }
+                    (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyOutput) => {
+                        let output_lock = app.output.lock().unwrap();
+                        let len = output_lock.len();
+                        app.output_scroll = len;
+                        app.output_scroll_state.last();
+                    }
                     (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyOutput) => {
                         let output_lock = app.output.lock().unwrap();
                         let len = output_lock.len();
@@ -525,10 +532,18 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                         app.memory_map_scroll = 0;
                         app.memory_map_scroll_state = app.memory_map_scroll_state.position(0);
                     }
-                    (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyMapping) => {
+                    (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyMapping) => {
                         let memory_lock = app.memory_map.lock().unwrap();
                         if let Some(memory) = memory_lock.as_ref() {
                             let len = memory.len();
+                            app.memory_map_scroll = len;
+                            app.memory_map_scroll_state.last();
+                        }
+                    }
+                    (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyMapping) => {
+                        let memory_lock = app.memory_map.lock().unwrap();
+                        if let Some(memory) = memory_lock.as_ref() {
+                            let len = memory.len() / HEXDUMP_WIDTH;
                             scroll_down(
                                 1,
                                 &mut app.memory_map_scroll,
@@ -543,7 +558,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyMapping) => {
                         let memory_lock = app.memory_map.lock().unwrap();
                         if let Some(memory) = memory_lock.as_ref() {
-                            let len = memory.len();
+                            let len = memory.len() / HEXDUMP_WIDTH;
                             scroll_down(
                                 50,
                                 &mut app.memory_map_scroll,
@@ -559,6 +574,14 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyHexdump) => {
                         app.hexdump_scroll = 0;
                         app.hexdump_scroll_state = app.hexdump_scroll_state.position(0);
+                    }
+                    (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyHexdump) => {
+                        let hexdump = app.hexdump.lock().unwrap();
+                        if let Some(hexdump) = hexdump.as_ref() {
+                            let len = hexdump.1.len() / HEXDUMP_WIDTH;
+                            app.hexdump_scroll = len;
+                            app.hexdump_scroll_state.last();
+                        }
                     }
                     (InputMode::Normal, KeyCode::Char('S'), Mode::OnlyHexdump) => {
                         app.mode = Mode::OnlyHexdumpPopup;
@@ -594,7 +617,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyHexdump) => {
                         let hexdump = app.hexdump.lock().unwrap();
                         if let Some(hexdump) = hexdump.as_ref() {
-                            let len = hexdump.1.len();
+                            let len = hexdump.1.len() / HEXDUMP_WIDTH;
                             scroll_down(
                                 1,
                                 &mut app.hexdump_scroll,
@@ -609,7 +632,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyHexdump) => {
                         let hexdump = app.hexdump.lock().unwrap();
                         if let Some(hexdump) = hexdump.as_ref() {
-                            let len = hexdump.1.len();
+                            let len = hexdump.1.len() / HEXDUMP_WIDTH;
                             scroll_down(
                                 50,
                                 &mut app.hexdump_scroll,

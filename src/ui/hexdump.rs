@@ -10,9 +10,12 @@ use crate::App;
 
 use super::{BLUE, DARK_GRAY, GREEN, ORANGE, SCROLL_CONTROL_TEXT, YELLOW};
 
-fn to_hexdump_str(buffer: &[u8]) -> Vec<Line> {
+pub const HEXDUMP_WIDTH: usize = 16;
+
+/// Convert bytes in hexdump, `skip` that many lines, `take` that many lines
+fn to_hexdump_str(buffer: &[u8], skip: usize, take: usize) -> Vec<Line> {
     let mut lines = Vec::new();
-    for (offset, chunk) in buffer.chunks(16).enumerate() {
+    for (offset, chunk) in buffer.chunks(16).skip(skip).take(take).enumerate() {
         let mut hex_spans = Vec::new();
         // bytes
         for byte in chunk.iter() {
@@ -29,7 +32,7 @@ fn to_hexdump_str(buffer: &[u8]) -> Vec<Line> {
         }
 
         let line = Line::from_iter(
-            vec![Span::raw(format!("{:08x}: ", offset * 16)), Span::raw("")]
+            vec![Span::raw(format!("{:08x}: ", (skip + offset) * HEXDUMP_WIDTH)), Span::raw("")]
                 .into_iter()
                 .chain(hex_spans),
         );
@@ -77,13 +80,13 @@ pub fn draw_hexdump(app: &mut App, f: &mut Frame, hexdump: Rect, show_popup: boo
         pos = format!("(0x{:02x?})", r.0);
         let data = &r.1;
 
-        let lines = to_hexdump_str(data);
-        let len = lines.len();
+        let skip = app.hexdump_scroll;
+        let take = hexdump.height;
+        let lines = to_hexdump_str(data, skip as usize, take as usize);
+        let content_len = data.len() / HEXDUMP_WIDTH;
 
-        let max = hexdump.height;
-        let skip = if len <= max as usize { 0 } else { app.hexdump_scroll };
-        let lines: Vec<Line> = lines.into_iter().skip(skip).collect();
-        app.hexdump_scroll_state = app.hexdump_scroll_state.content_length(len);
+        let lines: Vec<Line> = lines.into_iter().collect();
+        app.hexdump_scroll_state = app.hexdump_scroll_state.content_length(content_len);
         let paragraph =
             Paragraph::new(lines).block(block(&pos)).style(Style::default().fg(Color::White));
 

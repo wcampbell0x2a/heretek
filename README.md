@@ -26,9 +26,6 @@ Yet Another GDB TUI
 Usage: heretek [OPTIONS]
 
 Options:
-  -l, --local
-          Run gdb as child process
-
   -r, --remote <REMOTE>
           Connect to nc session
 

@@ -79,10 +79,6 @@ impl<T> LimitedBuffer<T> {
 #[derive(Parser, Debug, Clone, Default)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Run gdb as child process
-    #[arg(short, long)]
-    local: bool,
-
     /// Connect to nc session
     ///
     /// `mkfifo gdb_pipe; cat gdb_pipe | gdb --interpreter=mi | nc -l -p 12345 > gdb_pipe`
@@ -179,15 +175,14 @@ struct App {
 impl App {
     /// Create new stream to gdb
     /// - remote: Connect to gdb via a TCP connection
-    /// - local: Connect to gdb via spawning a gdb process
     ///
     ///
     /// # Returns
     /// `(gdb_stdin, App)`
     pub fn new_stream(args: Args) -> (BufReader<Box<dyn Read + Send>>, App) {
         let (reader, gdb_stdin): (BufReader<Box<dyn Read + Send>>, Arc<Mutex<dyn Write + Send>>) =
-            match (&args.local, &args.remote) {
-                (true, None) => {
+            match &args.remote {
+                None => {
                     let mut gdb_process = Command::new("gdb")
                         .args(["--interpreter=mi2", "--quiet", "-nx"])
                         .stdin(Stdio::piped())
@@ -203,7 +198,7 @@ impl App {
 
                     (reader, gdb_stdin)
                 }
-                (false, Some(remote)) => {
+                Some(remote) => {
                     let tcp_stream = TcpStream::connect(remote).unwrap();
                     let reader = BufReader::new(
                         Box::new(tcp_stream.try_clone().unwrap()) as Box<dyn Read + Send>
@@ -212,7 +207,6 @@ impl App {
 
                     (reader, gdb_stdin)
                 }
-                _ => panic!("Invalid configuration"),
             };
 
         let app = App {
@@ -927,7 +921,6 @@ mod tests {
         unsafe { chmod(c_path.as_ptr(), mode) };
 
         let mut args = Args::default();
-        args.local = true;
         args.cmd = Some("source test-sources/repeated_ptr.source".to_string());
 
         let (app, terminal) = run_a_bit(args);
@@ -990,7 +983,6 @@ mod tests {
         unsafe { chmod(c_path.as_ptr(), mode) };
 
         let mut args = Args::default();
-        args.local = true;
         args.cmd = Some("source test-sources/test.source".to_string());
 
         let (app, terminal) = run_a_bit(args);

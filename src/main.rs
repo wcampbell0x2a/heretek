@@ -448,7 +448,15 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
 
                         let hexdump_lock = app.hexdump.lock().unwrap();
                         if let Some(hexdump) = hexdump_lock.as_ref() {
-                            std::fs::write(val, &hexdump.1).unwrap();
+                            if let Some(path) = resolve_home(val) {
+                                if std::fs::write(&path, &hexdump.1).is_ok() {
+                                    let mut output_lock = app.output.lock().unwrap();
+                                    output_lock.push(format!(
+                                        "h> hexdump succesfully written to {}",
+                                        path.to_str().unwrap()
+                                    ));
+                                }
+                            }
                         }
                         app.hexdump_popup = Input::default();
                         app.mode = Mode::OnlyHexdump;

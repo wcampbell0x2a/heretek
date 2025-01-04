@@ -5,6 +5,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- Add `--gdb-path` to override gdb executated [#101](https://github.com/wcampbell0x2a/heretek/pull/101)
 
 ## [0.2.0] - 2025-01-02
 - Remove `--local` argument, `heretek` now runs gdb locally by default [#96](https://github.com/wcampbell0x2a/heretek/pull/96)

@@ -80,6 +80,10 @@ impl<T> LimitedBuffer<T> {
 #[derive(Parser, Debug, Clone, Default)]
 #[command(version, about, long_about = None)]
 struct Args {
+    /// Override gdb executable path
+    #[arg(long)]
+    gdb_path: Option<String>,
+
     /// Connect to nc session
     ///
     /// `mkfifo gdb_pipe; cat gdb_pipe | gdb --interpreter=mi | nc -l -p 12345 > gdb_pipe`
@@ -184,7 +188,7 @@ impl App {
         let (reader, gdb_stdin): (BufReader<Box<dyn Read + Send>>, Arc<Mutex<dyn Write + Send>>) =
             match &args.remote {
                 None => {
-                    let mut gdb_process = Command::new("gdb")
+                    let mut gdb_process = Command::new(args.gdb_path.unwrap_or("gdb".to_owned()))
                         .args(["--interpreter=mi2", "--quiet", "-nx"])
                         .stdin(Stdio::piped())
                         .stdout(Stdio::piped())

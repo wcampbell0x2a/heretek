@@ -3,7 +3,7 @@
 [<img alt="crates.io" src="https://img.shields.io/crates/v/heretek.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/heretek)
 [<img alt="build status" src="https://img.shields.io/github/actions/workflow/status/wcampbell0x2a/heretek/main.yml?branch=master&style=for-the-badge" height="20">](https://github.com/wcampbell0x2a/heretek/actions?query=branch%3Amaster)
 
-Yet Another gdb TUI. Connect remotely with gdb when you don't have a working `gdbserver`, and show a tui inspired by `gef`.
+GDB TUI Dashboard. Connect remotely with gdb when you don't have a working `gdbserver`, and show tui inspired by `gef`.
 
 * **No gdbserver requirements**: Many vendors ship invalid `gdbserver` binaries, this works on remote targets with just `gdb`, `nc`, `cat`, and `mkfifo`.
 * **No python requirements**: Many vendors ship `gdb` without python support.
@@ -21,11 +21,14 @@ Or download from [github releases](https://github.com/wcampbell0x2a/heretek/rele
 
 ## Usage
 ```console
-Yet Another GDB TUI
+GDB TUI Dashboard for the understanding of vast knowledge
 
 Usage: heretek [OPTIONS]
 
 Options:
+      --gdb-path <GDB_PATH>
+          Override gdb executable path
+
   -r, --remote <REMOTE>
           Connect to nc session
 

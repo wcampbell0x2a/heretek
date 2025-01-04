@@ -895,7 +895,7 @@ mod tests {
         if let Some(cmd) = args.cmd {
             process_line(&mut app, &cmd);
         }
-        let mut terminal = Terminal::new(TestBackend::new(160, 40)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(160, 50)).unwrap();
         let start_time = Instant::now();
         let duration = Duration::from_secs(10);
 
@@ -1031,33 +1031,55 @@ mod tests {
         if let Ok(stack) = app.stack.lock() {
             let mut entries: Vec<_> = stack.clone().into_iter().collect();
             entries.sort_by(|a, b| a.0.cmp(&b.0));
-            let from = format!("0x{:02x}", entries[0].0);
+            let first_stack = entries[0].0;
+            let from = format!("0x{:02x}", first_stack);
             let output = output.replace(&from, "<stack_0>");
 
-            let from = format!("0x{:02x}", entries[1].0);
+            let from = format!("0x{:02x}", first_stack + 8);
             let output = output.replace(&from, "<stack_1>");
 
-            let from = format!("0x{:02x}", entries[2].0);
+            let from = format!("0x{:02x}", first_stack + 16);
             let output = output.replace(&from, "<stack_2>");
 
-            let from = format!("0x{:02x}", entries[3].0);
+            let from = format!("0x{:02x}", first_stack + 24);
             let output = output.replace(&from, "<stack_3>");
 
-            let from = format!("0x{:02x}", entries[4].0);
+            let from = format!("0x{:02x}", first_stack + 32);
             let output = output.replace(&from, "<stack_4>");
 
-            let from = format!("0x{:02x}", entries[5].0);
+            let from = format!("0x{:02x}", first_stack + 40);
             let output = output.replace(&from, "<stack_5>");
 
-            let from = format!("0x{:02x}", entries[6].0);
+            let from = format!("0x{:02x}", first_stack + 48);
             let output = output.replace(&from, "<stack_6>");
             let from = format!("0x{:02x}", entries[6].1.map[0]);
             let output = output.replace(&from, "<stack_6_0>   ");
             let from = format!("0x{:02x}", entries[6].1.map[1]);
             let output = output.replace(&from, "<stack_6_1>   ");
 
-            let from = format!("0x{:02x}", entries[7].0);
+            let from = format!("0x{:02x}", first_stack + 56);
             let output = output.replace(&from, "<stack_7>");
+
+            let from = format!("0x{:02x}", first_stack + 64);
+            let output = output.replace(&from, "<stack_8>");
+
+            let from = format!("0x{:02x}", first_stack + 72);
+            let output = output.replace(&from, "<stack_9>");
+
+            let from = format!("0x{:02x}", first_stack + 80);
+            let output = output.replace(&from, "<stack_10>");
+
+            let from = format!("0x{:02x}", first_stack + 88);
+            let output = output.replace(&from, "<stack_11>");
+
+            let from = format!("0x{:02x}", first_stack + 96);
+            let output = output.replace(&from, "<stack_12>");
+
+            let from = format!("0x{:02x}", first_stack + 104);
+            let output = output.replace(&from, "<stack_13>");
+
+            let from = format!("0x{:02x}", first_stack + 112);
+            let output = output.replace(&from, "<stack_14>");
 
             if let Ok(registers) = app.registers.lock() {
                 let from = format!(

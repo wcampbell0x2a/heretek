@@ -33,6 +33,9 @@ const TEXT_COLOR: Color = RED;
 
 const SAVED_OUTPUT: usize = 10;
 
+/// Amount of stack addresses we save/display
+pub const SAVED_STACK: u16 = 14;
+
 pub const SCROLL_CONTROL_TEXT: &str = "(up(k), down(j), 50 up(K), 50 down(J), top(g), bottom(G))";
 
 pub fn ui(f: &mut Frame, app: &mut App) {
@@ -63,9 +66,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
 
     match app.mode {
         Mode::All => {
-            let register_size = Min(30);
-            let stack_size = Min(10);
-            let asm_size = Min(15);
+            let register_size = Min(10);
+            let stack_size = Length(10 + 1);
+            // 5 previous, 5 now + after
+            let asm_size = Length(11);
             let vertical = Layout::vertical([register_size, stack_size, asm_size]);
             let [register, stack, asm] = vertical.areas(top);
 

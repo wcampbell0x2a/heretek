@@ -16,6 +16,7 @@ use crate::mi::{
     MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_OLD,
 };
 use crate::register::RegisterStorage;
+use crate::ui::SAVED_STACK;
 use crate::Written;
 
 pub fn gdb_interact(
@@ -587,6 +588,9 @@ fn read_memory(memory: &String) -> (HashMap<String, String>, String) {
 }
 
 /// MIResponse::ExecResult, key: "register-values"
+///
+/// This is the first time we see the register-values, so this is the actual
+/// value for them (not any deref values)
 fn recv_exec_results_register_values(
     register_values: &String,
     thirty_two_bit: &Arc<AtomicBool>,
@@ -697,9 +701,9 @@ fn recv_exec_results_register_values(
 
     // assuming we have a valid $sp, get the bytes
     if thirty {
-        dump_sp_bytes(next_write, written, 4, 14);
+        dump_sp_bytes(next_write, written, 4, u64::from(SAVED_STACK));
     } else {
-        dump_sp_bytes(next_write, written, 8, 14);
+        dump_sp_bytes(next_write, written, 8, u64::from(SAVED_STACK));
     }
 
     // update current asm at pc

@@ -1,5 +1,5 @@
 use std::collections::{HashMap, VecDeque};
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
@@ -11,6 +11,7 @@ use std::{env, thread};
 use std::{error::Error, io};
 
 use clap::Parser;
+use crossterm::event::KeyModifiers;
 use deku::ctx::Endian;
 use deref::Deref;
 use env_logger::{Builder, Env};
@@ -96,7 +97,7 @@ struct Args {
 
     /// Execute GDB commands
     #[arg(short, long)]
-    cmd: Option<String>,
+    cmds: Option<String>,
 }
 
 enum Mode {
@@ -340,8 +341,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     into_gdb(&app, gdb_stdout);
 
-    if let Some(cmd) = args.cmd {
-        process_line(&mut app, &cmd);
+    if let Some(cmds) = args.cmds {
+        let data = fs::read_to_string(cmds).unwrap();
+        for cmd in data.lines() {
+            process_line(&mut app, &cmd);
+        }
     }
 
     // Run tui application
@@ -438,6 +442,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
 
         if crossterm::event::poll(Duration::from_millis(10))? {
             if let Event::Key(key) = event::read()? {
+                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                    gdb::write_mi(&app.gdb_stdin, "-exec-interrupt");
+                    continue;
+                }
                 match (&app.input_mode, key.code, &app.mode) {
                     // hexdump popup
                     (_, KeyCode::Esc, Mode::OnlyHexdumpPopup) => {
@@ -738,7 +746,45 @@ fn process_line(app: &mut App, val: &str) {
     // Resolve parens with expresions
     resolve_paren_expressions(&mut val);
 
-    if val.starts_with("file") {
+    if val == "r" || val == "ru" || val == "run" {
+        // Replace run with -exec-run and target-async
+        // This is to allow control+C to interrupt
+        // gdb::write_mi(&app.gdb_stdin, "-gdb-set target-async on");
+
+        let cmd = "-gdb-set mi-async on";
+        gdb::write_mi(&app.gdb_stdin, cmd);
+
+        let cmd = "-exec-run";
+        gdb::write_mi(&app.gdb_stdin, cmd);
+
+        app.input.reset();
+        return;
+    } else if val == "c"
+        || val == "co"
+        || val == "con"
+        || val == "cont"
+        || val == "conti"
+        || val == "continu"
+        || val == "continue"
+    {
+        let cmd = "-exec-continue";
+        gdb::write_mi(&app.gdb_stdin, cmd);
+
+        app.input.reset();
+        return;
+    } else if val == "si" || val == "stepi" {
+        let cmd = "-exec-step-instruction";
+        gdb::write_mi(&app.gdb_stdin, cmd);
+
+        app.input.reset();
+        return;
+    } else if val == "step" {
+        let cmd = "-exec-step";
+        gdb::write_mi(&app.gdb_stdin, cmd);
+
+        app.input.reset();
+        return;
+    } else if val.starts_with("file") {
         // we parse file, but still send it on
         app.save_filepath(&val);
     } else if val.starts_with("hexdump") {
@@ -892,8 +938,11 @@ mod tests {
         let (gdb_stdout, mut app) = App::new_stream(args.clone());
         into_gdb(&app, gdb_stdout);
 
-        if let Some(cmd) = args.cmd {
-            process_line(&mut app, &cmd);
+        if let Some(cmds) = args.cmds {
+            let data = fs::read_to_string(cmds).unwrap();
+            for cmd in data.lines() {
+                process_line(&mut app, &cmd);
+            }
         }
         let mut terminal = Terminal::new(TestBackend::new(160, 50)).unwrap();
         let start_time = Instant::now();
@@ -956,7 +1005,7 @@ mod tests {
         unsafe { chmod(c_path.as_ptr(), mode) };
 
         let mut args = Args::default();
-        args.cmd = Some("source test-sources/repeated_ptr.source".to_string());
+        args.cmds = Some("test-sources/repeated_ptr.source".to_string());
 
         let (app, terminal) = run_a_bit(args);
         let _output = terminal.backend();
@@ -1018,7 +1067,7 @@ mod tests {
         unsafe { chmod(c_path.as_ptr(), mode) };
 
         let mut args = Args::default();
-        args.cmd = Some("source test-sources/test.source".to_string());
+        args.cmds = Some("test-sources/test.source".to_string());
 
         let (app, terminal) = run_a_bit(args);
         let output = terminal.backend();

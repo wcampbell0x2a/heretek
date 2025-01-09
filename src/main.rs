@@ -762,10 +762,13 @@ fn process_line(app: &mut App, val: &str) {
         // gdb::write_mi(&app.gdb_stdin, "-gdb-set target-async on");
 
         let cmd = "-gdb-set mi-async on";
+        let mut output_lock = app.output.lock().unwrap();
+        output_lock.push(format!("h> {cmd}"));
         gdb::write_mi(&app.gdb_stdin, cmd);
 
         let cmd = "-exec-run";
         gdb::write_mi(&app.gdb_stdin, cmd);
+        output_lock.push(val);
 
         app.input.reset();
         return;
@@ -779,18 +782,24 @@ fn process_line(app: &mut App, val: &str) {
     {
         let cmd = "-exec-continue";
         gdb::write_mi(&app.gdb_stdin, cmd);
+        let mut output_lock = app.output.lock().unwrap();
+        output_lock.push(val);
 
         app.input.reset();
         return;
     } else if val == "si" || val == "stepi" {
         let cmd = "-exec-step-instruction";
         gdb::write_mi(&app.gdb_stdin, cmd);
+        let mut output_lock = app.output.lock().unwrap();
+        output_lock.push(val);
 
         app.input.reset();
         return;
     } else if val == "step" {
         let cmd = "-exec-step";
         gdb::write_mi(&app.gdb_stdin, cmd);
+        let mut output_lock = app.output.lock().unwrap();
+        output_lock.push(val);
 
         app.input.reset();
         return;

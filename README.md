@@ -37,7 +37,7 @@ Options:
       --32
           Switch into 32-bit mode
 
-  -c, --cmd <CMD>
+  -c, --cmds <CMDS>
           Execute GDB commands
 
   -h, --help

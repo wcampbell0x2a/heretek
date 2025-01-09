@@ -51,8 +51,16 @@ impl MemoryMapping {
     }
 
     /// Mapping filepath matches `filepath`
+    ///
+    /// This could be set from something like "file test-assets/test_render_app/a.out"
+    /// so we make sure to match with a mapping such as:
+    /// "/home/wcampbell/projects/wcampbell/heretek/test-assets/test_render_app/a.out"
     pub fn is_path(&self, filepath: &str) -> bool {
-        self.path == Some(filepath.to_owned())
+        if let Some(path) = &self.path {
+            path.ends_with(&filepath.to_owned())
+        } else {
+            false
+        }
     }
 
     pub fn is_exec(&self) -> bool {

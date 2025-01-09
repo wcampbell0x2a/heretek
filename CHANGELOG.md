@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 - Adjusted size of UI elements in Main View [#102](https://github.com/wcampbell0x2a/heretek/pull/102)
 - Add `--gdb-path` to override gdb executated [#101](https://github.com/wcampbell0x2a/heretek/pull/101)
+- Show `Running` in status [#106](https://github.com/wcampbell0x2a/heretek/pull/106)
+- Allow `control+c` to send `SIGINT` to process [#106](https://github.com/wcampbell0x2a/heretek/pull/106)
+  - Always use `mi-async`
+  - Override `continue` into `-exec-continue`
+  - Override `stepi` into `-exec-step-instruction`
+  - Override `step` into `-exec-step`
+- Change `--cmd` into `--cmds` and from using `gdb> source` to just running each line as a gdb cmd [#106](https://github.com/wcampbell0x2a/heretek/pull/106)
 
 ## [0.2.0] - 2025-01-02
 - Remove `--local` argument, `heretek` now runs gdb locally by default [#96](https://github.com/wcampbell0x2a/heretek/pull/96)

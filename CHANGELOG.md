@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Override `stepi` into `-exec-step-instruction`
   - Override `step` into `-exec-step`
 - Change `--cmd` into `--cmds` and from using `gdb> source` to just running each line as a gdb cmd [#106](https://github.com/wcampbell0x2a/heretek/pull/106)
+- Add `--log-path` to control log location and remove writing to `app.log` by default [#108](https://github.com/wcampbell0x2a/heretek/pull/108)
+- Change `RUST_LOG` env to `info` as default [#108](https://github.com/wcampbell0x2a/heretek/pull/108)
 
 ## [0.2.0] - 2025-01-02
 - Remove `--local` argument, `heretek` now runs gdb locally by default [#96](https://github.com/wcampbell0x2a/heretek/pull/96)

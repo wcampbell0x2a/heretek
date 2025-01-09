@@ -16,9 +16,7 @@ pub fn draw_stack(app: &App, f: &mut Frame, stack: Rect) {
     let width: usize = if app.thirty_two_bit.load(Ordering::Relaxed) { 11 } else { 19 };
 
     if let Ok(stack) = app.stack.lock() {
-        let mut entries: Vec<_> = stack.clone().into_iter().collect();
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
-        for (addr, values) in entries.iter() {
+        for (addr, values) in stack.iter() {
             let filepath_lock = app.filepath.lock().unwrap();
             let binding = filepath_lock.as_ref().unwrap();
             let filepath = binding.to_string_lossy();

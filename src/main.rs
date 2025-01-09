@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fs::{self, File};
 use std::io::{BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
@@ -172,7 +172,7 @@ struct App {
     register_names: Arc<Mutex<Vec<String>>>,
     registers: Arc<Mutex<Vec<RegisterStorage>>>,
     /// Saved Stack
-    stack: Arc<Mutex<HashMap<u64, Deref>>>,
+    stack: Arc<Mutex<BTreeMap<u64, Deref>>>,
     /// Saved ASM
     asm: Arc<Mutex<Vec<Asm>>>,
     /// Hexdump
@@ -245,7 +245,7 @@ impl App {
             register_changed: Arc::new(Mutex::new(vec![])),
             register_names: Arc::new(Mutex::new(vec![])),
             registers: Arc::new(Mutex::new(vec![])),
-            stack: Arc::new(Mutex::new(HashMap::new())),
+            stack: Arc::new(Mutex::new(BTreeMap::new())),
             asm: Arc::new(Mutex::new(Vec::new())),
             hexdump: Arc::new(Mutex::new(None)),
             hexdump_scroll: 0,

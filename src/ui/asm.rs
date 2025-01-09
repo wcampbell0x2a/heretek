@@ -16,11 +16,10 @@ pub fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
     let mut function_name = None;
     let mut tallest_function_len = 0;
 
+    // Display asm, this will already be in a sorted order
     if let Ok(asm) = app.asm.lock() {
-        let mut entries: Vec<_> = asm.clone().into_iter().collect();
-        entries.sort_by(|a, b| a.address.cmp(&b.address));
         let app_cur_lock = app.current_pc.lock().unwrap();
-        for (index, a) in entries.iter().enumerate() {
+        for (index, a) in asm.iter().enumerate() {
             if a.address == *app_cur_lock {
                 pc_index = Some(index);
                 if let Some(func_name) = &a.func_name {

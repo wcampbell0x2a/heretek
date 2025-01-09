@@ -174,7 +174,9 @@ struct App {
     hexdump_scroll: usize,
     hexdump_scroll_state: ScrollbarState,
     hexdump_popup: Input,
+    /// Right side of status in TUI
     async_result: Arc<Mutex<String>>,
+    /// Left side of status in TUI
     status: Arc<Mutex<String>>,
 }
 

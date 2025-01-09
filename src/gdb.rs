@@ -202,7 +202,7 @@ fn exec_result_running(
 
     // reset status
     let mut async_result = async_result_arc.lock().unwrap();
-    *async_result = String::new();
+    *async_result = "Status: running".to_string();
 
     // reset written
     // TODO: research this. This prevents the "hold down enter and confuse this program".
@@ -219,7 +219,8 @@ fn async_record_stopped(
     // in the case of a breakpoint, save the output
     // Either it's a breakpoint event, step, signal
     let mut async_result = async_result_arc.lock().unwrap();
-    async_result.push_str("Status(");
+    async_result.clear();
+    async_result.push_str("Status: ");
     if v.get("bkptno").is_some() {
         if let Some(val) = v.get("bkptno") {
             async_result.push_str(&format!("bkptno={val}, "));
@@ -241,7 +242,6 @@ fn async_record_stopped(
     if let Some(val) = v.get("thread-id") {
         async_result.push_str(&format!(", thread-id={val}"));
     }
-    async_result.push(')');
 
     let mut next_write = next_write.lock().unwrap();
     // get the memory mapping. We do this first b/c most of the deref logic needs

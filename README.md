@@ -40,6 +40,11 @@ Options:
   -c, --cmds <CMDS>
           Execute GDB commands
 
+      --log-path <LOG_PATH>
+          Path to write log
+
+          Set env `RUST_LOG` to change log level
+
   -h, --help
           Print help (see a summary with '-h')
 

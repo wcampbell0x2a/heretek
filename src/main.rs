@@ -98,6 +98,12 @@ struct Args {
     /// Execute GDB commands
     #[arg(short, long)]
     cmds: Option<String>,
+
+    /// Path to write log
+    ///
+    /// Set env `RUST_LOG` to change log level
+    #[arg(long)]
+    log_path: Option<String>,
 }
 
 enum Mode {
@@ -333,7 +339,7 @@ enum Written {
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
-    init_logging()?;
+    init_logging(&args.log_path)?;
 
     // Start rx thread
     let (gdb_stdout, mut app) = App::new_stream(args.clone());
@@ -365,22 +371,24 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn init_logging() -> Result<(), Box<dyn Error>> {
-    let log_file = Arc::new(Mutex::new(File::create("app.log")?));
-    Builder::from_env(Env::default().default_filter_or("debug"))
-        .format(move |buf, record| {
-            let mut log_file = log_file.lock().unwrap();
-            let log_msg = format!(
-                "{} [{}] - {}\n",
-                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-                record.level(),
-                record.args()
-            );
-            log_file.write_all(log_msg.as_bytes()).unwrap();
-            writeln!(buf, "{}", log_msg.trim_end())
-        })
-        .target(env_logger::Target::Pipe(Box::new(std::io::sink()))) // Disable stdout/stderr
-        .init();
+fn init_logging(log_path: &Option<String>) -> Result<(), Box<dyn Error>> {
+    if let Some(log_path) = log_path {
+        let log_file = Arc::new(Mutex::new(File::create(log_path)?));
+        Builder::from_env(Env::default().default_filter_or("info"))
+            .format(move |buf, record| {
+                let mut log_file = log_file.lock().unwrap();
+                let log_msg = format!(
+                    "{} [{}] - {}\n",
+                    chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                    record.level(),
+                    record.args()
+                );
+                log_file.write_all(log_msg.as_bytes()).unwrap();
+                writeln!(buf, "{}", log_msg.trim_end())
+            })
+            .target(env_logger::Target::Pipe(Box::new(std::io::sink()))) // Disable stdout/stderr
+            .init();
+    }
     Ok(())
 }
 

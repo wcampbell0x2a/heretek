@@ -566,13 +566,14 @@ fn update_stack(
             let is_path = r.is_path(filepath_lock.as_ref().unwrap().to_str().unwrap());
             if r.contains(val) && (is_path || r.is_exec()) {
                 // send a search for a symbol!
+                debug!("stack deref: trying to read as asm: {val:02x}");
                 next_write.push(data_disassemble(val as usize, INSTRUCTION_LEN));
                 written.push_back(Written::SymbolAtAddrStack(begin.clone()));
                 return;
             }
         }
         // TODO: endian?
-        debug!("stack deref: trying to read: {}", data["contents"]);
+        debug!("stack deref: trying to read as data: {val:02x}");
         next_write.push(data_read_memory_bytes(val, 0, len));
         written.push_back(Written::Stack(Some(begin)));
     }
@@ -696,10 +697,12 @@ fn recv_exec_results_register_values(
     *regs = registers.clone();
 
     // assuming we have a valid $pc, get the bytes
+    trace!("requesting pc bytes");
     let val = read_pc_value();
     next_write.push(val);
 
-    // assuming we have a valid $sp, get the bytes
+    // assuming we have a valid Stack ($sp), get the bytes
+    trace!("requesting stack");
     if thirty {
         dump_sp_bytes(next_write, written, 4, u64::from(SAVED_STACK));
     } else {
@@ -707,6 +710,7 @@ fn recv_exec_results_register_values(
     }
 
     // update current asm at pc
+    trace!("updating pc asm");
     let instruction_length = 8;
     next_write.push(data_disassemble_pc(instruction_length * 5, instruction_length * 15));
     written.push_back(Written::AsmAtPc);

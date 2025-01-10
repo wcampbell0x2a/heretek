@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,7 +30,7 @@ pub fn gdb_interact(
     register_names_arc: Arc<Mutex<Vec<String>>>,
     registers_arc: Arc<Mutex<Vec<RegisterStorage>>>,
     current_pc_arc: Arc<Mutex<u64>>,
-    stack_arc: Arc<Mutex<HashMap<u64, Deref>>>,
+    stack_arc: Arc<Mutex<BTreeMap<u64, Deref>>>,
     asm_arc: Arc<Mutex<Vec<Asm>>>,
     output_arc: Arc<Mutex<Vec<String>>>,
     stream_output_prompt_arc: Arc<Mutex<String>>,
@@ -172,7 +172,7 @@ fn exec_result_done(
 }
 
 fn exec_result_running(
-    stack_arc: &Arc<Mutex<HashMap<u64, Deref>>>,
+    stack_arc: &Arc<Mutex<BTreeMap<u64, Deref>>>,
     asm_arc: &Arc<Mutex<Vec<Asm>>>,
     registers_arc: &Arc<Mutex<Vec<RegisterStorage>>>,
     hexdump_arc: &Arc<Mutex<Option<(u64, Vec<u8>)>>>,
@@ -335,7 +335,7 @@ fn recv_exec_result_asm_insns(
     asm: &String,
     asm_arc: &Arc<Mutex<Vec<Asm>>>,
     registers_arc: &Arc<Mutex<Vec<RegisterStorage>>>,
-    stack_arc: &Arc<Mutex<HashMap<u64, Deref>>>,
+    stack_arc: &Arc<Mutex<BTreeMap<u64, Deref>>>,
     written: &mut VecDeque<Written>,
 ) {
     if written.is_empty() {
@@ -384,7 +384,7 @@ fn recv_exec_result_asm_insns(
 
 /// MIResponse::ExecResult, key: "memory"
 fn recv_exec_result_memory(
-    stack_arc: &Arc<Mutex<HashMap<u64, Deref>>>,
+    stack_arc: &Arc<Mutex<BTreeMap<u64, Deref>>>,
     thirty_two_bit: &Arc<AtomicBool>,
     endian_arc: &Arc<Mutex<Option<Endian>>>,
     registers_arc: &Arc<Mutex<Vec<RegisterStorage>>>,
@@ -522,7 +522,7 @@ fn update_stack(
     thirty_two_bit: &Arc<AtomicBool>,
     endian_arc: &Arc<Mutex<Option<Endian>>>,
     begin: String,
-    stack: &mut std::sync::MutexGuard<HashMap<u64, Deref>>,
+    stack: &mut std::sync::MutexGuard<BTreeMap<u64, Deref>>,
     next_write: &mut Vec<String>,
     written: &mut VecDeque<Written>,
     memory_map_arc: &Arc<Mutex<Option<Vec<MemoryMapping>>>>,

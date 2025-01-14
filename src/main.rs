@@ -926,24 +926,26 @@ fn replace_mapping_start(app: &mut App, line: &mut String) {
     let memory_map = app.memory_map.lock().unwrap();
     if let Some(ref memory_map) = *memory_map {
         static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
-            Regex::new(r"\$HERETEK_MAPPING_START_([/\w\.\-]+(?:/[\w\.\-]+)*)\s*(?::(\d+))?\s+(0x[\da-fA-F]+|\d+)").unwrap()
+            Regex::new(r"\$HERETEK_MAPPING_START_([/\[\]\w\.\-]+(?:/[\w\.\-]+)*)\s*(?::(\d+))?")
+                .unwrap()
         });
-        if let Some(caps) = RE.captures(line) {
-            trace!("caps: {caps:?}");
-            let filename = &caps[1];
-            let index = caps.get(2).map(|m| m.as_str().parse::<u32>().ok());
-            let number_str = &caps[3];
+        *line = RE
+            .replace_all(&*line, |caps: &regex::Captures| {
+                let filename = &caps[1];
+                let index = caps.get(2).map(|m| m.as_str().parse::<u32>().ok());
 
-            *line = format!(
-                "hexdump 0x{:02x} {number_str}",
-                memory_map
-                    .iter()
-                    .filter(|a| a.path == Some(filename.to_owned()))
-                    .nth(index.unwrap_or(Some(0)).unwrap() as usize)
-                    .map(|a| a.start_address)
-                    .unwrap_or(0)
-            )
-        }
+                // HACK: Add space to the end, to make sure there are whitespace after we replace
+                format!(
+                    "0x{:02x}  ",
+                    memory_map
+                        .iter()
+                        .filter(|a| a.path == Some(filename.to_owned()))
+                        .nth(index.unwrap_or(Some(0)).unwrap() as usize)
+                        .map(|a| a.start_address)
+                        .unwrap_or(0)
+                )
+            })
+            .to_string()
     }
 }
 
@@ -951,22 +953,26 @@ fn replace_mapping_end(app: &mut App, line: &mut String) {
     let memory_map = app.memory_map.lock().unwrap();
     if let Some(ref memory_map) = *memory_map {
         static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
-            Regex::new(r"\$HERETEK_MAPPING_END_(.*)(?:$|\[([[:digit:]]*)\])").unwrap()
+            Regex::new(r"\$HERETEK_MAPPING_START_([/\[\]\w\.\-]+(?:/[\w\.\-]+)*)\s*(?::(\d+))?")
+                .unwrap()
         });
         *line = RE
             .replace_all(&*line, |caps: &regex::Captures| {
                 let filename = &caps[1];
+                let index = caps.get(2).map(|m| m.as_str().parse::<u32>().ok());
+
+                // HACK: Add space to the end, to make sure there are whitespace after we replace
                 format!(
-                    "0x{:02x}",
+                    "0x{:02x}  ",
                     memory_map
                         .iter()
-                        // TODO(perf): to_owned
-                        .find(|a| a.path == Some(filename.to_owned()))
-                        .map(|a| a.end_address)
+                        .filter(|a| a.path == Some(filename.to_owned()))
+                        .nth(index.unwrap_or(Some(0)).unwrap() as usize)
+                        .map(|a| a.start_address)
                         .unwrap_or(0)
                 )
             })
-            .to_string();
+            .to_string()
     }
 }
 
@@ -974,22 +980,26 @@ fn replace_mapping_len(app: &mut App, line: &mut String) {
     let memory_map = app.memory_map.lock().unwrap();
     if let Some(ref memory_map) = *memory_map {
         static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
-            Regex::new(r"\$HERETEK_MAPPING_LEN_(.*)(?:$|\[([[:digit:]]*)\])").unwrap()
+            Regex::new(r"\$HERETEK_MAPPING_START_([/\[\]\w\.\-]+(?:/[\w\.\-]+)*)\s*(?::(\d+))?")
+                .unwrap()
         });
         *line = RE
             .replace_all(&*line, |caps: &regex::Captures| {
                 let filename = &caps[1];
+                let index = caps.get(2).map(|m| m.as_str().parse::<u32>().ok());
+
+                // HACK: Add space to the end, to make sure there are whitespace after we replace
                 format!(
-                    "0x{:02x}",
+                    "0x{:02x}  ",
                     memory_map
                         .iter()
-                        // TODO(perf): to_owned
-                        .find(|a| a.path == Some(filename.to_owned()))
-                        .map(|a| a.size)
+                        .filter(|a| a.path == Some(filename.to_owned()))
+                        .nth(index.unwrap_or(Some(0)).unwrap() as usize)
+                        .map(|a| a.start_address)
                         .unwrap_or(0)
                 )
             })
-            .to_string();
+            .to_string()
     }
 }
 

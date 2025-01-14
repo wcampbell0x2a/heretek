@@ -953,7 +953,7 @@ fn replace_mapping_end(app: &mut App, line: &mut String) {
     let memory_map = app.memory_map.lock().unwrap();
     if let Some(ref memory_map) = *memory_map {
         static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
-            Regex::new(r"\$HERETEK_MAPPING_START_([/\[\]\w\.\-]+(?:/[\w\.\-]+)*)\s*(?::(\d+))?")
+            Regex::new(r"\$HERETEK_MAPPING_END_([/\[\]\w\.\-]+(?:/[\w\.\-]+)*)\s*(?::(\d+))?")
                 .unwrap()
         });
         *line = RE
@@ -980,7 +980,7 @@ fn replace_mapping_len(app: &mut App, line: &mut String) {
     let memory_map = app.memory_map.lock().unwrap();
     if let Some(ref memory_map) = *memory_map {
         static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
-            Regex::new(r"\$HERETEK_MAPPING_START_([/\[\]\w\.\-]+(?:/[\w\.\-]+)*)\s*(?::(\d+))?")
+            Regex::new(r"\$HERETEK_MAPPING_LEN_([/\[\]\w\.\-]+(?:/[\w\.\-]+)*)\s*(?::(\d+))?")
                 .unwrap()
         });
         *line = RE

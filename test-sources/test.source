@@ -4,3 +4,4 @@ run
 sleep 2
 hexdump $HERETEK_MAPPING_START_/home/wcampbell/projects/wcampbell/heretek/test-assets/test_render_app/a.out 100
 hexdump $HERETEK_MAPPING_START_/home/wcampbell/projects/wcampbell/heretek/test-assets/test_render_app/a.out:1 100
+hexdump $HERETEK_MAPPING_START_[heap] $HERETEK_MAPPING_LEN_[heap]

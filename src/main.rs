@@ -16,7 +16,7 @@ use deku::ctx::Endian;
 use deref::Deref;
 use env_logger::{Builder, Env};
 use gdb::write_mi;
-use log::{debug, error};
+use log::{debug, error, trace};
 use ratatui::crossterm::{
     event::{self, DisableMouseCapture, Event, KeyCode},
     execute,
@@ -352,7 +352,34 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(cmds) = args.cmds {
         let data = fs::read_to_string(cmds).unwrap();
         for cmd in data.lines() {
-            process_line(&mut app, &cmd);
+            let action = process_line(&mut app, &cmd);
+            // check and see if we need to write to GBD MI
+            {
+                let mut next_write = app.next_write.lock().unwrap();
+                if !next_write.is_empty() {
+                    for w in &*next_write {
+                        write_mi(&app.gdb_stdin, w);
+                    }
+                    next_write.clear();
+                }
+            }
+            if let Action::Sleep(time) = action {
+                trace!("h> sleep {time}");
+                for _ in 0..=time {
+                    std::thread::sleep(Duration::from_secs(1));
+                    // check and see if we need to write to GBD MI
+                    {
+                        let mut next_write = app.next_write.lock().unwrap();
+                        if !next_write.is_empty() {
+                            for w in &*next_write {
+                                write_mi(&app.gdb_stdin, w);
+                            }
+                            next_write.clear();
+                        }
+                    }
+                }
+                trace!("h> sleep done");
+            }
         }
     }
 
@@ -474,10 +501,12 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                             if let Some(path) = resolve_home(val) {
                                 if std::fs::write(&path, &hexdump.1).is_ok() {
                                     let mut output_lock = app.output.lock().unwrap();
-                                    output_lock.push(format!(
+                                    let val = format!(
                                         "h> hexdump succesfully written to {}",
                                         path.to_str().unwrap()
-                                    ));
+                                    );
+                                    output_lock.push(val.clone());
+                                    trace!("h> {val}");
                                 }
                             }
                         }
@@ -733,7 +762,12 @@ fn key_enter(app: &mut App) -> Result<(), io::Error> {
         let messages = app.sent_input.clone();
         let messages = messages.as_slice().iter();
         if let Some(val) = messages.last() {
-            process_line(app, val);
+            let action = process_line(app, val);
+            if let Action::Sleep(time) = action {
+                trace!("h> sleep {time}");
+                std::thread::sleep(Duration::from_secs(time));
+                trace!("h> sleep done");
+            }
         }
     } else {
         app.sent_input.offset = 0;
@@ -741,22 +775,33 @@ fn key_enter(app: &mut App) -> Result<(), io::Error> {
 
         let val = app.input.clone();
         let val = val.value();
-        process_line(app, val)
+        let action = process_line(app, val);
+        if let Action::Sleep(time) = action {
+            trace!("h> sleep {time}");
+            std::thread::sleep(Duration::from_secs(time));
+            trace!("h> sleep done");
+        }
     }
 
     Ok(())
 }
 
-fn process_line(app: &mut App, val: &str) {
-    let mut val = val.to_owned();
+enum Action {
+    Nop,
+    Sleep(u64),
+}
+
+fn process_line(app: &mut App, val: &str) -> Action {
+    let mut line = val.to_owned();
 
     // Replace internal variables
-    replace_internal_variables(app, &mut val);
+    replace_internal_variables(app, &mut line);
 
     // Resolve parens with expresions
-    resolve_paren_expressions(&mut val);
+    resolve_paren_expressions(&mut line);
 
-    if val == "r" || val == "ru" || val == "run" {
+    trace!("process: {line}");
+    if line == "r" || line == "ru" || line == "run" {
         // Replace run with -exec-run and target-async
         // This is to allow control+C to interrupt
         // gdb::write_mi(&app.gdb_stdin, "-gdb-set target-async on");
@@ -764,55 +809,69 @@ fn process_line(app: &mut App, val: &str) {
         let cmd = "-gdb-set mi-async on";
         let mut output_lock = app.output.lock().unwrap();
         output_lock.push(format!("h> {cmd}"));
+        trace!("h> {cmd}");
         gdb::write_mi(&app.gdb_stdin, cmd);
 
         let cmd = "-exec-run";
         gdb::write_mi(&app.gdb_stdin, cmd);
-        output_lock.push(val);
+        output_lock.push(line.clone());
+        trace!("h> {line}");
 
         app.input.reset();
-        return;
-    } else if val == "c"
-        || val == "co"
-        || val == "con"
-        || val == "cont"
-        || val == "conti"
-        || val == "continu"
-        || val == "continue"
+        return Action::Nop;
+    } else if line == "c"
+        || line == "co"
+        || line == "con"
+        || line == "cont"
+        || line == "conti"
+        || line == "continu"
+        || line == "continue"
     {
         let cmd = "-exec-continue";
         gdb::write_mi(&app.gdb_stdin, cmd);
         let mut output_lock = app.output.lock().unwrap();
-        output_lock.push(val);
+        output_lock.push(line.clone());
+        trace!("h> {line}");
 
         app.input.reset();
-        return;
-    } else if val == "si" || val == "stepi" {
+        return Action::Nop;
+    } else if line == "si" || line == "stepi" {
         let cmd = "-exec-step-instruction";
         gdb::write_mi(&app.gdb_stdin, cmd);
         let mut output_lock = app.output.lock().unwrap();
-        output_lock.push(val);
+        output_lock.push(line.clone());
+        trace!("h> {line}");
 
         app.input.reset();
-        return;
-    } else if val == "step" {
+        return Action::Nop;
+    } else if line.starts_with("sleep") {
+        let time: Vec<&str> = line.split_whitespace().collect();
+        let time = u64::from_str_radix(&time[1], 10).unwrap();
+
+        app.input.reset();
+        return Action::Sleep(time);
+    } else if line == "step" {
         let cmd = "-exec-step";
         gdb::write_mi(&app.gdb_stdin, cmd);
         let mut output_lock = app.output.lock().unwrap();
-        output_lock.push(val);
+        output_lock.push(line.clone());
+        trace!("h> {line}");
 
         app.input.reset();
-        return;
-    } else if val.starts_with("file") {
+        return Action::Nop;
+    } else if line.starts_with("file") {
         // we parse file, but still send it on
-        app.save_filepath(&val);
-    } else if val.starts_with("hexdump") {
-        debug!("hexdump: {val}");
+        app.save_filepath(&line);
+    } else if line.starts_with("hexdump") {
+        let mut output_lock = app.output.lock().unwrap();
+        output_lock.push(format!("h> {line}"));
+        trace!("h> {line}");
+
         // don't send it on, parse the hexdump command
-        let split: Vec<&str> = val.split_whitespace().collect();
+        let split: Vec<&str> = line.split_whitespace().collect();
         if split.len() < 3 {
             error!("Invalid arguments, expected 'hexdump addr len'");
-            return;
+            return Action::Nop;
         }
         let mut next_write = app.next_write.lock().unwrap();
         let mut written = app.written.lock().unwrap();
@@ -835,10 +894,11 @@ fn process_line(app: &mut App, val: &str) {
         next_write.push(s);
         written.push_back(Written::Memory);
         app.input.reset();
-        return;
+        return Action::Nop;
     }
-    gdb::write_mi(&app.gdb_stdin, &val);
+    gdb::write_mi(&app.gdb_stdin, &line);
     app.input.reset();
+    return Action::Nop;
 }
 
 fn resolve_paren_expressions(val: &mut String) {
@@ -856,43 +916,45 @@ fn resolve_paren_expressions(val: &mut String) {
         .to_string();
 }
 
-fn replace_internal_variables(app: &mut App, val: &mut String) {
-    replace_mapping_start(app, val);
-    replace_mapping_end(app, val);
-    replace_mapping_len(app, val);
+fn replace_internal_variables(app: &mut App, line: &mut String) {
+    replace_mapping_start(app, line);
+    replace_mapping_end(app, line);
+    replace_mapping_len(app, line);
 }
 
-fn replace_mapping_start(app: &mut App, val: &mut String) {
+fn replace_mapping_start(app: &mut App, line: &mut String) {
     let memory_map = app.memory_map.lock().unwrap();
     if let Some(ref memory_map) = *memory_map {
         static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
-            Regex::new(r"\$HERETEK_MAPPING_START_([\w\[\]/.-]+)").unwrap()
+            Regex::new(r"\$HERETEK_MAPPING_START_([/\w\.\-]+(?:/[\w\.\-]+)*)\s*(?::(\d+))?\s+(0x[\da-fA-F]+|\d+)").unwrap()
         });
-        *val = RE
-            .replace_all(&*val, |caps: &regex::Captures| {
-                let filename = &caps[1];
-                format!(
-                    "0x{:02x}",
-                    memory_map
-                        .iter()
-                        // TODO(perf): to_owned
-                        .find(|a| a.path == Some(filename.to_owned()))
-                        .map(|a| a.start_address)
-                        .unwrap_or(0)
-                )
-            })
-            .to_string();
+        if let Some(caps) = RE.captures(line) {
+            trace!("caps: {caps:?}");
+            let filename = &caps[1];
+            let index = caps.get(2).map(|m| m.as_str().parse::<u32>().ok());
+            let number_str = &caps[3];
+
+            *line = format!(
+                "hexdump 0x{:02x} {number_str}",
+                memory_map
+                    .iter()
+                    .filter(|a| a.path == Some(filename.to_owned()))
+                    .nth(index.unwrap_or(Some(0)).unwrap() as usize)
+                    .map(|a| a.start_address)
+                    .unwrap_or(0)
+            )
+        }
     }
 }
 
-fn replace_mapping_end(app: &mut App, val: &mut String) {
+fn replace_mapping_end(app: &mut App, line: &mut String) {
     let memory_map = app.memory_map.lock().unwrap();
     if let Some(ref memory_map) = *memory_map {
         static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
-            Regex::new(r"\$HERETEK_MAPPING_END_([\w\[\]/.-]+)").unwrap()
+            Regex::new(r"\$HERETEK_MAPPING_END_(.*)(?:$|\[([[:digit:]]*)\])").unwrap()
         });
-        *val = RE
-            .replace_all(&*val, |caps: &regex::Captures| {
+        *line = RE
+            .replace_all(&*line, |caps: &regex::Captures| {
                 let filename = &caps[1];
                 format!(
                     "0x{:02x}",
@@ -908,14 +970,14 @@ fn replace_mapping_end(app: &mut App, val: &mut String) {
     }
 }
 
-fn replace_mapping_len(app: &mut App, val: &mut String) {
+fn replace_mapping_len(app: &mut App, line: &mut String) {
     let memory_map = app.memory_map.lock().unwrap();
     if let Some(ref memory_map) = *memory_map {
         static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
-            Regex::new(r"\$HERETEK_MAPPING_LEN_([\w\[\]/.-]+)").unwrap()
+            Regex::new(r"\$HERETEK_MAPPING_LEN_(.*)(?:$|\[([[:digit:]]*)\])").unwrap()
         });
-        *val = RE
-            .replace_all(&*val, |caps: &regex::Captures| {
+        *line = RE
+            .replace_all(&*line, |caps: &regex::Captures| {
                 let filename = &caps[1];
                 format!(
                     "0x{:02x}",

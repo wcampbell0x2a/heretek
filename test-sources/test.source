@@ -1,3 +1,6 @@
 file test-assets/test_render_app/a.out
 break main
 run
+sleep 5
+hexdump $HERETEK_MAPPING_START_/home/wcampbell/projects/wcampbell/heretek/test-assets/test_render_app/a.out 100
+hexdump $HERETEK_MAPPING_START_/home/wcampbell/projects/wcampbell/heretek/test-assets/test_render_app/a.out:1 100

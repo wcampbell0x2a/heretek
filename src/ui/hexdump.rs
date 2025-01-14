@@ -1,3 +1,7 @@
+use std::sync::atomic::Ordering;
+
+use deku::ctx::Endian;
+use log::{debug, trace};
 use ratatui::{
     layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
@@ -13,7 +17,13 @@ use super::{BLUE, DARK_GRAY, GREEN, ORANGE, SCROLL_CONTROL_TEXT, YELLOW};
 pub const HEXDUMP_WIDTH: usize = 16;
 
 /// Convert bytes in hexdump, `skip` that many lines, `take` that many lines
-fn to_hexdump_str(buffer: &[u8], skip: usize, take: usize) -> Vec<Line> {
+fn to_hexdump_str<'a>(
+    app: &mut App,
+    pos: u64,
+    buffer: &[u8],
+    skip: usize,
+    take: usize,
+) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
     for (offset, chunk) in buffer.chunks(16).skip(skip).take(take).enumerate() {
         let mut hex_spans = Vec::new();
@@ -31,10 +41,82 @@ fn to_hexdump_str(buffer: &[u8], skip: usize, take: usize) -> Vec<Line> {
             hex_spans.push(Span::styled(ascii_char.to_string(), Style::default().fg(color)));
         }
 
+        // check if value has a register reference
+        let thirty = app.thirty_two_bit.load(Ordering::Relaxed);
+
+        let mut ref_spans = Vec::new();
+        let registers = app.registers.lock().unwrap();
+
+        // TODO: should this by config? This adds a ton of references that aren't always high quality.
+        // Maybe just enable for stuff that are values that point to actual memory locations?
+        let windows = if thirty { 4 } else { 8 };
+        for w in chunk.windows(windows) {
+            let bytes_val = if thirty {
+                let endian = app.endian.lock().unwrap();
+                let val = if endian.unwrap() == Endian::Big {
+                    // TODO: try_into()
+                    u32::from_be_bytes([w[0], w[1], w[2], w[3]])
+                } else {
+                    u32::from_le_bytes([w[0], w[1], w[2], w[3]])
+                };
+
+                val as u64
+            } else {
+                let endian = app.endian.lock().unwrap();
+                if endian.unwrap() == Endian::Big {
+                    u64::from_be_bytes([w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]])
+                } else {
+                    u64::from_le_bytes([w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]])
+                }
+            };
+
+            for r in registers.iter() {
+                if let Some(reg) = &r.register {
+                    if !reg.is_set() {
+                        continue;
+                    }
+                    if let Some(reg_value) = &reg.value {
+                        if let Ok(val) = u64::from_str_radix(&reg_value[2..], 16) {
+                            if val != 0 {
+                                // Find registers that are pointing to the value at a byte offset
+                                if bytes_val == val {
+                                    ref_spans.push(Span::raw(format!(
+                                        "${}(0x{:02x?}) ",
+                                        r.name.clone(),
+                                        val
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for r in registers.iter() {
+            if let Some(reg) = &r.register {
+                if !reg.is_set() {
+                    continue;
+                }
+                if let Some(reg_value) = &reg.value {
+                    if let Ok(val) = u64::from_str_radix(&reg_value[2..], 16) {
+                        // TODO: find register values that are pointing to the address
+                        if val as usize == pos as usize + ((offset + skip) * HEXDUMP_WIDTH) {
+                            ref_spans.push(Span::raw(format!(
+                                "${}(0x{:02x}) ",
+                                r.name.clone(),
+                                val
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+
         let line = Line::from_iter(
             vec![Span::raw(format!("{:08x}: ", (skip + offset) * HEXDUMP_WIDTH)), Span::raw("")]
                 .into_iter()
-                .chain(hex_spans),
+                .chain(hex_spans)
+                .chain(ref_spans),
         );
 
         lines.push(line);
@@ -73,16 +155,17 @@ fn block(pos: &str) -> Block {
 }
 
 pub fn draw_hexdump(app: &mut App, f: &mut Frame, hexdump: Rect, show_popup: bool) {
-    let hexdump_lock = app.hexdump.lock().unwrap();
+    let hexdump_active = app.hexdump.lock().unwrap().is_some();
     let mut pos = "".to_string();
 
-    if let Some(r) = hexdump_lock.as_ref() {
+    if hexdump_active {
+        let r = app.hexdump.lock().unwrap().clone().unwrap();
         pos = format!("(0x{:02x?})", r.0);
         let data = &r.1;
 
         let skip = app.hexdump_scroll;
         let take = hexdump.height;
-        let lines = to_hexdump_str(data, skip as usize, take as usize);
+        let lines = to_hexdump_str(app, r.0, data, skip as usize, take as usize);
         let content_len = data.len() / HEXDUMP_WIDTH;
 
         let lines: Vec<Line> = lines.into_iter().collect();

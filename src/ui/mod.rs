@@ -141,7 +141,7 @@ pub fn add_deref_to_span(
                 .all(|a| a.is_ascii_alphabetic() || a.is_ascii_graphic() || a.is_ascii_whitespace())
             {
                 if let Ok(s) = std::str::from_utf8(&bytes) {
-                    let cell = Span::from(format!("➛ \"{}\"", s)).style(Style::new().fg(YELLOW));
+                    let cell = Span::from(format!("→ \"{}\"", s)).style(Style::new().fg(YELLOW));
                     spans.push(cell);
                     continue;
                 }
@@ -153,17 +153,17 @@ pub fn add_deref_to_span(
         let hex_width = hex_string.len();
         let padding_width = width.saturating_sub(hex_width);
         let mut span =
-            Span::from(format!("➛ {}{:padding$}", hex_string, "", padding = padding_width));
+            Span::from(format!("→ {}{:padding$}", hex_string, "", padding = padding_width));
         let (is_stack, is_heap, is_text) = app.classify_val(*v, filepath);
         apply_val_color(&mut span, is_stack, is_heap, is_text);
         spans.push(span);
     }
     if deref.repeated_pattern {
-        spans.push(Span::from("➛ [loop detected]").style(Style::new().fg(GRAY)));
+        spans.push(Span::from("→ [loop detected]").style(Style::new().fg(GRAY)));
     }
     if !deref.final_assembly.is_empty() {
         spans.push(
-            Span::from(format!("➛ {:width$}", deref.final_assembly, width = width))
+            Span::from(format!("→ {:width$}", deref.final_assembly, width = width))
                 .style(Style::new().fg(ORANGE)),
         );
     }

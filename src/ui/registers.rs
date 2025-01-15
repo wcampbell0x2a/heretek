@@ -76,7 +76,7 @@ pub fn draw_registers(app: &App, f: &mut Frame, register: Rect) {
                         let hex_width = hex_string.len();
                         let padding_width = width.saturating_sub(hex_width);
                         let mut span = Span::from(format!(
-                            "➛ {}{:padding$}",
+                            "→ {}{:padding$}",
                             hex_string,
                             "",
                             padding = padding_width

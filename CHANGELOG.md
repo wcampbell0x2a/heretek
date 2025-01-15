@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2025-01-14
+- Display registers that point to addresses in Hexdump [#115](https://github.com/wcampbell0x2a/heretek/pull/115)
+- Show asm and function offset in asm deref [#117](https://github.com/wcampbell0x2a/heretek/pull/117)
+- Expand `HERETEK_MAPPING_{START,END,LEN}` to allow optional index of mapping [#116](https://github.com/wcampbell0x2a/heretek/pull/116)
+- Fix `HERETEK_MAPPING_{START,END,LEN}` to allow all ascii chars as filename [#116](https://github.com/wcampbell0x2a/heretek/pull/116)
+- Add `--cmds` to cmd history [#118](https://github.com/wcampbell0x2a/heretek/pull/118)
+- Ignore `#` comment lines in `--cmds` [#119](https://github.com/wcampbell0x2a/heretek/pull/119)
+
 ## [0.3.0] - 2025-01-09
 - Adjusted size of UI elements in Main View [#102](https://github.com/wcampbell0x2a/heretek/pull/102)
 - Add `--gdb-path` to override gdb executated [#101](https://github.com/wcampbell0x2a/heretek/pull/101)

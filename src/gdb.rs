@@ -356,7 +356,12 @@ fn recv_exec_result_asm_insns(
                     let new_asms = parse_asm_insns_values(asm);
                     if !new_asms.is_empty() {
                         if let Some(func_name) = &new_asms[0].func_name {
-                            deref.final_assembly = func_name.to_owned();
+                            deref.final_assembly = format!(
+                                "{}+{} ({})",
+                                func_name.to_owned(),
+                                new_asms[0].offset,
+                                new_asms[0].inst
+                            );
                         } else {
                             deref.final_assembly = new_asms[0].inst.to_owned();
                         }
@@ -373,7 +378,12 @@ fn recv_exec_result_asm_insns(
             if !new_asms.is_empty() {
                 // Try and show func_name, otherwise asm
                 if let Some(func_name) = &new_asms[0].func_name {
-                    deref.final_assembly = func_name.to_owned();
+                    deref.final_assembly = format!(
+                        "{}+{} ({})",
+                        func_name.to_owned(),
+                        new_asms[0].offset,
+                        new_asms[0].inst
+                    );
                 } else {
                     deref.final_assembly = new_asms[0].inst.to_owned();
                 }

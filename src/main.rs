@@ -856,79 +856,73 @@ fn resolve_paren_expressions(val: &mut String) {
         .to_string();
 }
 
-fn replace_internal_variables(app: &mut App, val: &mut String) {
-    replace_mapping_start(app, val);
-    replace_mapping_end(app, val);
-    replace_mapping_len(app, val);
+enum MappingType {
+    Start,
+    End,
+    Len,
 }
 
-fn replace_mapping_start(app: &mut App, val: &mut String) {
-    let memory_map = app.memory_map.lock().unwrap();
-    if let Some(ref memory_map) = *memory_map {
-        static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
-            Regex::new(r"\$HERETEK_MAPPING_START_([\w\[\]/.-]+)").unwrap()
-        });
-        *val = RE
-            .replace_all(&*val, |caps: &regex::Captures| {
-                let filename = &caps[1];
-                format!(
-                    "0x{:02x}",
-                    memory_map
-                        .iter()
-                        // TODO(perf): to_owned
-                        .find(|a| a.path == Some(filename.to_owned()))
-                        .map(|a| a.start_address)
-                        .unwrap_or(0)
-                )
-            })
-            .to_string();
+impl MappingType {
+    fn env_start(&self) -> &str {
+        match self {
+            MappingType::Start => "$HERETEK_MAPPING_START_",
+            MappingType::End => "$HERETEK_MAPPING_END_",
+            MappingType::Len => "$HERETEK_MAPPING_LEN_",
+        }
     }
 }
 
-fn replace_mapping_end(app: &mut App, val: &mut String) {
-    let memory_map = app.memory_map.lock().unwrap();
-    if let Some(ref memory_map) = *memory_map {
-        static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
-            Regex::new(r"\$HERETEK_MAPPING_END_([\w\[\]/.-]+)").unwrap()
-        });
-        *val = RE
-            .replace_all(&*val, |caps: &regex::Captures| {
-                let filename = &caps[1];
-                format!(
-                    "0x{:02x}",
-                    memory_map
-                        .iter()
-                        // TODO(perf): to_owned
-                        .find(|a| a.path == Some(filename.to_owned()))
-                        .map(|a| a.end_address)
-                        .unwrap_or(0)
-                )
-            })
-            .to_string();
+fn replace_internal_variables(app: &mut App, line: &mut String) {
+    replace_mapping(app, line, MappingType::Start);
+    replace_mapping(app, line, MappingType::End);
+    replace_mapping(app, line, MappingType::Len);
+}
+
+fn replace_mapping(app: &mut App, text: &mut String, mt: MappingType) {
+    let ret = find_mapping(text, &mt);
+    if let Some((path, prefix, start_idx, end_idx)) = ret {
+        let memory_map = app.memory_map.lock().unwrap();
+        if let Some(ref memory_map) = *memory_map {
+            let resolve =
+                memory_map.iter().filter(|a| a.path == Some(path.to_owned())).nth(prefix as usize);
+            let addr = match mt {
+                MappingType::Start => resolve.map(|a| a.start_address),
+                MappingType::End => resolve.map(|a| a.end_address),
+                MappingType::Len => resolve.map(|a| a.size),
+            };
+            if let Some(addr) = addr {
+                text.replace_range(start_idx..end_idx, &format!("{:#08x?}", addr));
+            }
+        }
     }
 }
 
-fn replace_mapping_len(app: &mut App, val: &mut String) {
-    let memory_map = app.memory_map.lock().unwrap();
-    if let Some(ref memory_map) = *memory_map {
-        static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
-            Regex::new(r"\$HERETEK_MAPPING_LEN_([\w\[\]/.-]+)").unwrap()
-        });
-        *val = RE
-            .replace_all(&*val, |caps: &regex::Captures| {
-                let filename = &caps[1];
-                format!(
-                    "0x{:02x}",
-                    memory_map
-                        .iter()
-                        // TODO(perf): to_owned
-                        .find(|a| a.path == Some(filename.to_owned()))
-                        .map(|a| a.size)
-                        .unwrap_or(0)
-                )
-            })
-            .to_string();
-    }
+fn find_mapping(text: &mut String, mt: &MappingType) -> Option<(String, u32, usize, usize)> {
+    let start = mt.env_start();
+    let ret = if let Some(start_idx) = text.find(start) {
+        let prefix_len = start.len();
+        let end_idx =
+            text[start_idx..].find(' ').unwrap_or_else(|| text.len() - start_idx) + start_idx;
+
+        let content = &text[start_idx + prefix_len..end_idx];
+
+        let (prefix, path) = if let Some((prefix, path)) = content.split_once('_') {
+            if prefix.chars().all(char::is_numeric) {
+                (Some(prefix.to_string()), path.to_string())
+            } else {
+                (None, content.to_string())
+            }
+        } else {
+            (None, content.to_string())
+        };
+
+        let prefix = u32::from_str_radix(&prefix.unwrap_or("0".to_string()), 10).unwrap();
+
+        Some((path, prefix, start_idx, end_idx))
+    } else {
+        None
+    };
+    ret
 }
 
 fn update_from_previous_input(app: &mut App) {
@@ -1216,5 +1210,37 @@ mod tests {
         } else {
             unreachable!();
         };
+    }
+
+    #[test]
+    fn test_find_mapping() {
+        let mut line = "hexdump $HERETEK_MAPPING_START_0_/test.so6".to_string();
+        assert_eq!(
+            Some(("/test.so6".to_string(), 0, 8, 42)),
+            find_mapping(&mut line, &MappingType::Start)
+        );
+
+        let mut line = "hexdump    $HERETEK_MAPPING_START_/test.so6".to_string();
+        assert_eq!(
+            Some(("/test.so6".to_string(), 0, 11, 43)),
+            find_mapping(&mut line, &MappingType::Start)
+        );
+
+        let mut line = "hexdump $HERETEK_MAPPING_START_1_/lib/so".to_string();
+        assert_eq!(
+            Some(("/lib/so".to_string(), 1, 8, 40)),
+            find_mapping(&mut line, &MappingType::Start)
+        );
+
+        let mut line = "hexdump $HERETEK_MAPPING_END_1_/lib/so".to_string();
+        assert_eq!(
+            Some(("/lib/so".to_string(), 1, 8, 38)),
+            find_mapping(&mut line, &MappingType::End)
+        );
+        let mut line = "hexdump $HERETEK_MAPPING_LEN_1_/lib/so".to_string();
+        assert_eq!(
+            Some(("/lib/so".to_string(), 1, 8, 38)),
+            find_mapping(&mut line, &MappingType::Len)
+        );
     }
 }

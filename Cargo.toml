@@ -10,7 +10,7 @@ keywords = ["gdb", "tui", "debugging", "embedded", "gdbserver"]
 
 [dependencies]
 chrono = "0.4.38"
-clap = { version = "4.5.21", features = ["derive"] }
+clap = { version = "4.5.26", features = ["derive"] }
 crossterm = "0.28.1"
 deku = { version = "0.18.1", default-features = false, features = ["alloc", "std"] }
 env_logger = "0.11.5"

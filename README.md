@@ -40,6 +40,8 @@ Options:
   -c, --cmds <CMDS>
           Execute GDB commands
 
+          lines starting with # are ignored
+
       --log-path <LOG_PATH>
           Path to write log
 

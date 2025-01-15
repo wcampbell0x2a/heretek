@@ -1,3 +1,4 @@
 file test-assets/test_render_app/a.out
+# ignored
 break main
 run

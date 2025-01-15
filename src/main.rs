@@ -96,6 +96,8 @@ struct Args {
     thirty_two_bit: bool,
 
     /// Execute GDB commands
+    ///
+    /// lines starting with # are ignored
     #[arg(short, long)]
     cmds: Option<String>,
 
@@ -352,8 +354,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(cmds) = args.cmds {
         let data = fs::read_to_string(cmds).unwrap();
         for cmd in data.lines() {
-            app.sent_input.push(cmd.to_string());
-            process_line(&mut app, &cmd);
+            if !cmd.starts_with("#") {
+                app.sent_input.push(cmd.to_string());
+                process_line(&mut app, &cmd);
+            }
         }
     }
 
@@ -955,7 +959,9 @@ mod tests {
         if let Some(cmds) = args.cmds {
             let data = fs::read_to_string(cmds).unwrap();
             for cmd in data.lines() {
-                process_line(&mut app, &cmd);
+                if !cmd.starts_with("#") {
+                    process_line(&mut app, &cmd);
+                }
             }
         }
         let mut terminal = Terminal::new(TestBackend::new(160, 50)).unwrap();

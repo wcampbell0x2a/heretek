@@ -352,6 +352,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(cmds) = args.cmds {
         let data = fs::read_to_string(cmds).unwrap();
         for cmd in data.lines() {
+            app.sent_input.push(cmd.to_string());
             process_line(&mut app, &cmd);
         }
     }

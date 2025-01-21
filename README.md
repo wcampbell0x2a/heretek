@@ -3,11 +3,11 @@
 [<img alt="crates.io" src="https://img.shields.io/crates/v/heretek.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/heretek)
 [<img alt="build status" src="https://img.shields.io/github/actions/workflow/status/wcampbell0x2a/heretek/main.yml?branch=master&style=for-the-badge" height="20">](https://github.com/wcampbell0x2a/heretek/actions?query=branch%3Amaster)
 
-GDB TUI Dashboard. Connect remotely with gdb when you don't have a working `gdbserver`, and show tui inspired by `gef`.
+Display a GDB TUI Dashboard inspired by `gef`, connect remotely with gdb even if you don't have a working `gdbserver`.
 
-* **No gdbserver requirements**: Many vendors ship invalid `gdbserver` binaries, this works on remote targets with just `gdb`, `nc`, `cat`, and `mkfifo`.
-* **No python requirements**: Many vendors ship `gdb` without python support.
+* **No python requirements**: Many vendors ship `gdb` without python support, we ship a single static musl binary.
 * **Architecture agnostic**: `heretek` only uses information given by `gdb`, no extra code required!
+* **No gdbserver requirements**: Many vendors ship invalid `gdbserver` binaries, this works on remote targets with just `gdb`, `nc`, `cat`, and `mkfifo`.
 
 ![screenshot](images/screenshot.png)
 
@@ -55,6 +55,7 @@ Options:
 ```
 
 ## Info
-See [commands](./docs/commands.md) for internal `heretek` commands.
+* See [features](./docs/features.md) for `heretek` demos.
+* See [commands](./docs/commands.md) for internal `heretek` commands.
 
 > "To every problem, a solution lies in the application of tech-lore" - Ferrarch Asklepian, Warhammer 40,000: Mechanicus

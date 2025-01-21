@@ -3,7 +3,6 @@ use std::sync::atomic::Ordering;
 
 use super::{add_deref_to_span, apply_val_color, ORANGE, PURPLE, RED};
 
-use log::debug;
 use ratatui::prelude::Stylize;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph};

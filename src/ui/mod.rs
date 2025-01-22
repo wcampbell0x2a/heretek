@@ -133,18 +133,24 @@ pub fn add_deref_to_span(
     width: usize,
 ) {
     for (i, v) in deref.map.iter().enumerate() {
-        // check if ascii if last deref
-        if i + 1 == deref.map.len() && *v > 0xff {
+        // check if ascii
+        if *v > 0xff {
             let bytes = (*v).to_le_bytes();
             if bytes
                 .iter()
                 .all(|a| a.is_ascii_alphabetic() || a.is_ascii_graphic() || a.is_ascii_whitespace())
             {
-                if let Ok(s) = std::str::from_utf8(&bytes) {
-                    let cell = Span::from(format!("→ \"{}\"", s)).style(Style::new().fg(YELLOW));
-                    spans.push(cell);
-                    continue;
+                // if we detect it's ascii, the rest is ascii
+                let mut full_s = String::new();
+                for r in deref.map.iter().skip(i) {
+                    let bytes = (*r).to_le_bytes();
+                    if let Ok(s) = std::str::from_utf8(&bytes) {
+                        full_s.push_str(s);
+                    }
                 }
+                let cell = Span::from(format!("→ \"{}\"", full_s)).style(Style::new().fg(YELLOW));
+                spans.push(cell);
+                return;
             }
         }
 

@@ -1191,19 +1191,29 @@ mod tests {
                 );
                 let output = output.replace(&from, "<rbp_0>");
 
+                // rdx
                 let from = format!("0x{:02x}", registers[3].deref.map[0]);
                 let output = output.replace(&from, "<rdx_1>");
-                let from = std::str::from_utf8(&registers[3].deref.map[1].to_le_bytes())
-                    .unwrap()
-                    .to_string();
-                let output = output.replace(&from, "<rdx_2>");
+                let mut ret_s = "\"".to_string();
+                for r in registers[3].deref.map.iter().skip(1) {
+                    ret_s.push_str(std::str::from_utf8(&r.to_le_bytes()).unwrap());
+                }
+                ret_s.push_str("\"");
+                let padding_width = ret_s.len() + 7;
+                let output = output
+                    .replace(&ret_s, &format!("<rdx_2>{:padding$}", "", padding = padding_width));
 
+                // rsi
                 let from = format!("0x{:02x}", registers[4].deref.map[0]);
                 let output = output.replace(&from, "<rsi_1>");
-                let from = std::str::from_utf8(&registers[4].deref.map[1].to_le_bytes())
-                    .unwrap()
-                    .to_string();
-                let output = output.replace(&from, "<rsi_2>");
+                let mut ret_s = "\"".to_string();
+                for r in registers[4].deref.map.iter().skip(1) {
+                    ret_s.push_str(std::str::from_utf8(&r.to_le_bytes()).unwrap());
+                }
+                ret_s.push_str("\"");
+                let padding_width = ret_s.len() + 7;
+                let output = output
+                    .replace(&ret_s, &format!("<rsi_2>{:padding$}", "", padding = padding_width));
 
                 let from = format!("0x{:02x}", registers[6].deref.map[0]);
                 let output = output.replace(&from, "<rbp_1>");

@@ -411,7 +411,7 @@ fn recv_exec_result_memory(
     let last_written = written.pop_front().unwrap();
 
     match last_written {
-        Written::RegisterValue((base_reg, _n)) => {
+        Written::RegisterValue((base_reg, begin)) => {
             debug!("new register val for {base_reg}");
             let thirty = thirty_two_bit.load(Ordering::Relaxed);
             let mut regs = registers_arc.lock().unwrap();
@@ -461,6 +461,26 @@ fn recv_exec_result_memory(
                                     )));
                                     is_code = true;
                                     break;
+                                }
+                            }
+
+                            // all string? Request the next
+                            if val > 0xff {
+                                let bytes = val.to_le_bytes();
+                                if bytes.iter().all(|a| {
+                                    a.is_ascii_alphabetic()
+                                        || a.is_ascii_graphic()
+                                        || a.is_ascii_whitespace()
+                                }) {
+                                    let addr =
+                                        data["begin"].strip_prefix("0x").unwrap().to_string();
+                                    let addr = u64::from_str_radix(&addr, 16).unwrap();
+                                    next_write.push(data_read_memory_bytes(addr + len, 0, len));
+                                    written.push_back(Written::RegisterValue((
+                                        reg.number.clone(),
+                                        val,
+                                    )));
+                                    return;
                                 }
                             }
 
@@ -582,7 +602,23 @@ fn update_stack(
                 return;
             }
         }
-        // TODO: endian?
+
+        // all string? Request the next
+        if val > 0xff {
+            let bytes = val.to_le_bytes();
+            if bytes
+                .iter()
+                .all(|a| a.is_ascii_alphabetic() || a.is_ascii_graphic() || a.is_ascii_whitespace())
+            {
+                let addr = data["begin"].strip_prefix("0x").unwrap().to_string();
+                let addr = u64::from_str_radix(&addr, 16).unwrap();
+                next_write.push(data_read_memory_bytes(addr + len, 0, len));
+                written.push_back(Written::Stack(Some(begin)));
+                return;
+            }
+        }
+
+        // regular value to request
         debug!("stack deref: trying to read as data: {val:02x}");
         next_write.push(data_read_memory_bytes(val, 0, len));
         written.push_back(Written::Stack(Some(begin)));
@@ -651,6 +687,7 @@ fn recv_exec_results_register_values(
                                 }
                             }
                             if !asked_for_code {
+                                // just a value
                                 next_write.push(data_read_memory_bytes(val_u32 as u64, 0, 4));
                                 written.push_back(Written::RegisterValue((
                                     r.number.clone(),
@@ -689,6 +726,7 @@ fn recv_exec_results_register_values(
                                 }
                             }
                             if !asked_for_code {
+                                // just a value
                                 next_write.push(data_read_memory_bytes(val_u64, 0, 8));
                                 written
                                     .push_back(Written::RegisterValue((r.number.clone(), val_u64)));

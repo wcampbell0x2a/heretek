@@ -9,6 +9,7 @@ use crate::deref::Deref;
 use crate::{App, Mode};
 
 pub mod asm;
+pub mod bt;
 pub mod hexdump;
 pub mod input;
 pub mod mapping;
@@ -57,12 +58,33 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     // the rest will include the top
     let output_size = Length(SAVED_OUTPUT as u16);
 
-    let vertical = Layout::vertical([Length(2), top_size, output_size, Length(3)]);
-    let [title_area, top, output, input] = vertical.areas(f.area());
+    let bt_len = app.bt.lock().unwrap().len();
+    let top = if bt_len == 0 {
+        let vertical = Layout::vertical([Length(2), top_size, output_size, Length(3)]);
+        let [title_area, top, output, input] = vertical.areas(f.area());
 
-    title::draw_title_area(app, f, title_area);
-    output::draw_output(app, f, output, false);
-    input::draw_input(title_area, app, f, input);
+        title::draw_title_area(app, f, title_area);
+        output::draw_output(app, f, output, false);
+        input::draw_input(title_area, app, f, input);
+
+        top
+    } else {
+        let vertical = Layout::vertical([
+            Length(2),
+            top_size,
+            Length(bt_len as u16 + 1),
+            output_size,
+            Length(3),
+        ]);
+        let [title_area, top, bt_area, output, input] = vertical.areas(f.area());
+
+        bt::draw_bt(app, f, bt_area);
+        title::draw_title_area(app, f, title_area);
+        output::draw_output(app, f, output, false);
+        input::draw_input(title_area, app, f, input);
+
+        top
+    };
 
     match app.mode {
         Mode::All => {

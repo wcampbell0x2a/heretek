@@ -7,7 +7,7 @@ use regex::{CaptureMatches, Regex};
 /// Amount of bytes requested during deref to get symbol/asm
 pub const INSTRUCTION_LEN: usize = 8;
 
-fn match_inner_items(haystack: &str) -> CaptureMatches {
+pub fn match_inner_items(haystack: &str) -> CaptureMatches {
     // compile once and re-use
     // NOTE: this only parses nested 3 {} deep, more and this will fail!
     static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
@@ -264,7 +264,6 @@ pub fn parse_register_values(input: &str) -> Vec<Option<Register>> {
     for capture in match_inner_items(input) {
         let cap_str = &capture[0];
         let cap_str = &cap_str[1..cap_str.len() - 1].to_string();
-        debug!("CAPTURE: {}", cap_str);
         let mut register = Register {
             number: String::new(),
             value: None,

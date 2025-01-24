@@ -134,6 +134,12 @@ impl Mode {
     }
 }
 
+#[derive(Debug, Default)]
+struct Bt {
+    location: u64,
+    function: Option<String>,
+}
+
 // TODO: this could be split up, some of these fields
 // are always set after the file is loaded in gdb
 struct App {
@@ -186,6 +192,7 @@ struct App {
     async_result: Arc<Mutex<String>>,
     /// Left side of status in TUI
     status: Arc<Mutex<String>>,
+    bt: Arc<Mutex<Vec<Bt>>>,
 }
 
 impl App {
@@ -255,6 +262,7 @@ impl App {
             hexdump_popup: Input::default(),
             async_result: Arc::new(Mutex::new(String::new())),
             status: Arc::new(Mutex::new(String::new())),
+            bt: Arc::new(Mutex::new(vec![])),
         };
 
         (reader, app)
@@ -415,6 +423,7 @@ fn into_gdb(app: &App, gdb_stdout: BufReader<Box<dyn Read + Send>>) {
     let asm_arc = Arc::clone(&app.asm);
     let hexdump_arc = Arc::clone(&app.hexdump);
     let async_result_arc = Arc::clone(&app.async_result);
+    let bt_arc = Arc::clone(&app.bt);
 
     // Thread to read GDB output and parse it
     thread::spawn(move || {
@@ -436,6 +445,7 @@ fn into_gdb(app: &App, gdb_stdout: BufReader<Box<dyn Read + Send>>) {
             memory_map_arc,
             hexdump_arc,
             async_result_arc,
+            bt_arc,
         )
     });
 }

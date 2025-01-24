@@ -10,14 +10,14 @@ use log::{debug, error, info, trace};
 use crate::deref::Deref;
 use crate::mi::{
     data_disassemble, data_disassemble_pc, data_read_memory_bytes, data_read_sp_bytes,
-    join_registers, parse_asm_insns_values, parse_key_value_pairs, parse_memory_mappings_new,
-    parse_memory_mappings_old, parse_mi_response, parse_register_names_values,
-    parse_register_values, read_pc_value, Asm, MIResponse, Mapping, MemoryMapping, INSTRUCTION_LEN,
-    MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_OLD,
+    join_registers, match_inner_items, parse_asm_insns_values, parse_key_value_pairs,
+    parse_memory_mappings_new, parse_memory_mappings_old, parse_mi_response,
+    parse_register_names_values, parse_register_values, read_pc_value, Asm, MIResponse, Mapping,
+    MemoryMapping, INSTRUCTION_LEN, MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_OLD,
 };
 use crate::register::RegisterStorage;
 use crate::ui::SAVED_STACK;
-use crate::Written;
+use crate::{Bt, Written};
 
 pub fn gdb_interact(
     gdb_stdout: BufReader<Box<dyn Read + Send>>,
@@ -37,6 +37,7 @@ pub fn gdb_interact(
     memory_map_arc: Arc<Mutex<Option<Vec<MemoryMapping>>>>,
     hexdump_arc: Arc<Mutex<Option<(u64, Vec<u8>)>>>,
     async_result_arc: Arc<Mutex<String>>,
+    bt: Arc<Mutex<Vec<Bt>>>,
 ) {
     let mut current_map = (None, String::new());
 
@@ -65,7 +66,34 @@ pub fn gdb_interact(
                             &mut next_write,
                         );
                     } else if status == "done" {
-                        exec_result_done(&mut current_map, &memory_map_arc, &filepath_arc);
+                        // at this point, current_map was written in completion from StreamOutput
+                        // NOTE: We might be able to reduce the amount of time this is called
+                        exec_result_done_memory_map(
+                            &mut current_map,
+                            &memory_map_arc,
+                            &filepath_arc,
+                        );
+
+                        // result from -stack-list-frames
+                        if kv.contains_key("stack") {
+                            let mut bts = bt.lock().unwrap();
+                            bts.clear();
+                            for capture in match_inner_items(kv.get("stack").unwrap()) {
+                                let cap_str = &capture[0];
+                                let cap_str = &cap_str[1..cap_str.len() - 1].to_string();
+                                let key_values = parse_key_value_pairs(cap_str);
+                                let mut bt = Bt::default();
+                                for (key, val) in key_values {
+                                    if key == "addr" {
+                                        let val = val.strip_prefix("0x").unwrap();
+                                        bt.location = u64::from_str_radix(val, 16).unwrap()
+                                    } else if key == "func" {
+                                        bt.function = Some(val);
+                                    }
+                                }
+                                bts.push(bt);
+                            }
+                        }
                     } else if status == "error" {
                         // assume this is from us, pop off an unexpected
                         // if we can
@@ -144,7 +172,7 @@ pub fn gdb_interact(
     }
 }
 
-fn exec_result_done(
+fn exec_result_done_memory_map(
     current_map: &mut (Option<Mapping>, String),
     memory_map_arc: &Arc<Mutex<Option<Vec<MemoryMapping>>>>,
     filepath_arc: &Arc<Mutex<Option<PathBuf>>>,
@@ -255,6 +283,8 @@ fn async_record_stopped(
     next_write.push("-data-list-register-values x".to_string());
     // get a list of changed registers
     next_write.push("-data-list-changed-registers".to_string());
+    // bt
+    next_write.push("-stack-list-frames".to_string());
 }
 
 fn stream_output(

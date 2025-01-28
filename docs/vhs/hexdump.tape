@@ -9,7 +9,7 @@ Hide
 Type "cargo r --release -- --cmds test-sources/test.source"
 Enter
 
-# Pause for dramatic effect...
+Sleep 1s
 Tab
 Tab
 Tab

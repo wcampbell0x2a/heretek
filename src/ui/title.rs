@@ -6,7 +6,7 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::{layout::Rect, style::Style, Frame};
 
-use super::{HEAP_COLOR, STACK_COLOR, TEXT_COLOR};
+use super::{GRAY_FG, HEAP_COLOR, STACK_COLOR, TEXT_COLOR};
 
 use crate::{App, InputMode};
 
@@ -17,12 +17,12 @@ pub fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
         Block::new()
             .borders(Borders::TOP)
             .title(vec![
-                "|".fg(Color::Rgb(100, 100, 100)),
+                "|".fg(GRAY_FG),
                 env!("CARGO_PKG_NAME").bold(),
-                "-".fg(Color::Rgb(100, 100, 100)),
+                "-".fg(GRAY_FG),
                 "v".into(),
                 env!("CARGO_PKG_VERSION").into(),
-                "|".fg(Color::Rgb(100, 100, 100)),
+                "|".fg(GRAY_FG),
             ])
             .title_alignment(Alignment::Center),
         first,

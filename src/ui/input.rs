@@ -2,7 +2,7 @@ use ratatui::prelude::Stylize;
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::{layout::Rect, style::Style, Frame};
 
-use super::{BLUE, GREEN, ORANGE};
+use super::{BLUE, GRAY_FG, GREEN, ORANGE};
 
 use crate::{App, InputMode};
 
@@ -27,8 +27,12 @@ pub fn draw_input(title_area: Rect, app: &App, f: &mut Frame, input: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(format!("|{status}|").fg(BLUE))
-                .title(format!("|{async_result}|").fg(ORANGE)),
+                .title(vec!["|".fg(GRAY_FG), format!("{status}").fg(BLUE), "|".fg(GRAY_FG)])
+                .title(vec![
+                    "|".fg(GRAY_FG),
+                    format!("{async_result}").fg(ORANGE),
+                    "|".fg(GRAY_FG),
+                ]),
         );
 
     f.render_widget(txt_input, input);

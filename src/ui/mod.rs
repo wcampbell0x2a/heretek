@@ -27,6 +27,7 @@ const GREEN: Color = Color::Rgb(0xaa, 0xd9, 0x4c);
 const RED: Color = Color::Rgb(0xff, 0x33, 0x33);
 const DARK_GRAY: Color = Color::Rgb(0x20, 0x27, 0x34);
 const GRAY: Color = Color::Rgb(0x44, 0x44, 0x44);
+const GRAY_FG: Color = Color::Rgb(100, 100, 100);
 
 const HEAP_COLOR: Color = GREEN;
 const STACK_COLOR: Color = PURPLE;

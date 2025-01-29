@@ -11,7 +11,7 @@ Enter
 Sleep 5s
 
 Show
-Type "i"
+Type "si"
 Type "si"
 Enter
 Sleep 2s

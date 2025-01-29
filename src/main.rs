@@ -108,6 +108,7 @@ struct Args {
     log_path: Option<String>,
 }
 
+#[derive(Copy, Clone)]
 enum Mode {
     All,
     OnlyRegister,

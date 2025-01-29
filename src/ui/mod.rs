@@ -32,6 +32,8 @@ const GRAY_FG: Color = Color::Rgb(100, 100, 100);
 const HEAP_COLOR: Color = GREEN;
 const STACK_COLOR: Color = PURPLE;
 const TEXT_COLOR: Color = RED;
+const STRING_COLOR: Color = YELLOW;
+const ASM_COLOR: Color = ORANGE;
 
 const SAVED_OUTPUT: usize = 10;
 
@@ -171,7 +173,8 @@ pub fn add_deref_to_span(
                         full_s.push_str(s);
                     }
                 }
-                let cell = Span::from(format!("→ \"{}\"", full_s)).style(Style::new().fg(YELLOW));
+                let cell =
+                    Span::from(format!("→ \"{}\"", full_s)).style(Style::new().fg(STRING_COLOR));
                 spans.push(cell);
                 return;
             }
@@ -193,7 +196,7 @@ pub fn add_deref_to_span(
     if !deref.final_assembly.is_empty() {
         spans.push(
             Span::from(format!("→ {:width$}", deref.final_assembly, width = width))
-                .style(Style::new().fg(ORANGE)),
+                .style(Style::new().fg(ASM_COLOR)),
         );
     }
     if spans.len() > *longest_cells {

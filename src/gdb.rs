@@ -10,8 +10,8 @@ use log::{debug, error, info, trace};
 use crate::deref::Deref;
 use crate::mi::{
     data_disassemble, data_disassemble_pc, data_read_memory_bytes, data_read_sp_bytes,
-    join_registers, match_inner_items, parse_asm_insns_values, parse_key_value_pairs,
-    parse_memory_mappings_new, parse_memory_mappings_old, parse_mi_response,
+    join_registers, match_inner_items, normalize_value, parse_asm_insns_values,
+    parse_key_value_pairs, parse_memory_mappings_new, parse_memory_mappings_old, parse_mi_response,
     parse_register_names_values, parse_register_values, read_pc_value, Asm, MIResponse, Mapping,
     MemoryMapping, INSTRUCTION_LEN, MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_OLD,
 };
@@ -38,6 +38,7 @@ pub fn gdb_interact(
     hexdump_arc: Arc<Mutex<Option<(u64, Vec<u8>)>>>,
     async_result_arc: Arc<Mutex<String>>,
     bt: Arc<Mutex<Vec<Bt>>>,
+    completions: Arc<Mutex<Vec<String>>>,
 ) {
     let mut current_map = (None, String::new());
 
@@ -92,6 +93,18 @@ pub fn gdb_interact(
                                     }
                                 }
                                 bts.push(bt);
+                            }
+                        } else if kv.contains_key("matches") {
+                            let mut completions = completions.lock().unwrap();
+                            completions.clear();
+                            let matches = &kv["matches"];
+                            let m_str = matches.strip_prefix(r#"["#).unwrap();
+                            let m_str = m_str.strip_suffix(r#"]"#).unwrap();
+                            let data = parse_key_value_pairs(m_str);
+
+                            for (k, _) in data {
+                                let k: String = k.chars().filter(|&c| c != '\"').collect();
+                                completions.push(k);
                             }
                         }
                     } else if status == "error" {

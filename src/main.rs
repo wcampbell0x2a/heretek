@@ -194,6 +194,7 @@ struct App {
     /// Left side of status in TUI
     status: Arc<Mutex<String>>,
     bt: Arc<Mutex<Vec<Bt>>>,
+    completions: Arc<Mutex<Vec<String>>>,
 }
 
 impl App {
@@ -264,6 +265,7 @@ impl App {
             async_result: Arc::new(Mutex::new(String::new())),
             status: Arc::new(Mutex::new(String::new())),
             bt: Arc::new(Mutex::new(vec![])),
+            completions: Arc::new(Mutex::new(vec![])),
         };
 
         (reader, app)
@@ -425,6 +427,7 @@ fn into_gdb(app: &App, gdb_stdout: BufReader<Box<dyn Read + Send>>) {
     let hexdump_arc = Arc::clone(&app.hexdump);
     let async_result_arc = Arc::clone(&app.async_result);
     let bt_arc = Arc::clone(&app.bt);
+    let completions_arc = Arc::clone(&app.completions);
 
     // Thread to read GDB output and parse it
     thread::spawn(move || {
@@ -447,6 +450,7 @@ fn into_gdb(app: &App, gdb_stdout: BufReader<Box<dyn Read + Send>>) {
             hexdump_arc,
             async_result_arc,
             bt_arc,
+            completions_arc,
         )
     });
 }
@@ -463,6 +467,21 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     write_mi(&app.gdb_stdin, w);
                 }
                 next_write.clear();
+            }
+        }
+
+        // check if completions are back and we need to replace the input
+        {
+            let mut completions = app.completions.lock().unwrap();
+            if !completions.is_empty() {
+                // Just replace if completions is 1
+                if completions.len() == 1 {
+                    app.input = Input::new(completions[0].clone());
+                    // we are done with the values, clear them
+                    completions.clear();
+                }
+
+                // if else, we display them
             }
         }
 
@@ -682,6 +701,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                     (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyHexdump) => {
                         scroll_up(50, &mut app.hexdump_scroll, &mut app.hexdump_scroll_state);
                     }
+                    (_, KeyCode::Tab, _) => {
+                        completion(app)?;
+                    }
                     (_, KeyCode::Enter, _) => {
                         key_enter(app)?;
                     }
@@ -692,6 +714,7 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
                         key_up(app);
                     }
                     (InputMode::Editing, _, _) => {
+                        app.completions.lock().unwrap().clear();
                         app.input.handle_event(&Event::Key(key));
                     }
                     _ => (),
@@ -740,6 +763,15 @@ fn key_down(app: &mut App) {
     } else {
         app.sent_input.offset = 0;
     }
+}
+
+fn completion(app: &mut App) -> Result<(), io::Error> {
+    let val = app.input.clone();
+    let val = val.value();
+    let cmd = format!("-complete \"{val}\"");
+    gdb::write_mi(&app.gdb_stdin, &cmd);
+
+    Ok(())
 }
 
 fn key_enter(app: &mut App) -> Result<(), io::Error> {

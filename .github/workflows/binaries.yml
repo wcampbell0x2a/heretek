@@ -20,8 +20,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: dtolnay/rust-toolchain@d76c2a93c593483c9892fd8d2538734f73ed8588 # stable
+      - uses: dtolnay/rust-toolchain@439cf607258077187679211f12aa6f19af4a0af7 # master
         with:
+          toolchain: stable
           target: ${{ matrix.targets }}
       - run: cargo install cargo-quickinstall
       - run: cargo quickinstall cross

@@ -5,37 +5,20 @@ Set FontSize 10
 Set Width 1000
 Set Height 800
 
-Hide
+# Type a command in the terminal.
 Type "./target/release/heretek --cmds test-sources/test.source"
 Enter
-Sleep 5s
 
-Show
-Type "si"
+# Pause for dramatic effect...
+Sleep 10s
 Type "si"
 Enter
-Sleep 2s
-
-Type "si"
-Enter
-Sleep 2s
+Sleep 10s
 
 Type "si"
 Enter
-Sleep 2s
+Sleep 10s
 
 Type "si"
 Enter
-Sleep 2s
-
-Type "si"
-Enter
-Sleep 2s
-
-Type "si"
-Enter
-Sleep 2s
-
-Type "si"
-Enter
-Sleep 2s
+Sleep 10s

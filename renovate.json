@@ -1,8 +1,14 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:base", "group:allNonMajor", "schedule:weekly"],
+  "extends": [
+    "config:recommended",
+    "group:allNonMajor",
+    "schedule:weekly"
+  ],
   "lockFileMaintenance": {
-   "enabled": true,
-   "schedule":["after 11am on sunday"]
- }
+    "enabled": true,
+    "schedule": [
+      "after 11am on sunday"
+    ]
+  }
 }

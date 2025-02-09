@@ -169,7 +169,7 @@ pub struct Asm {
 }
 
 /// Normalizes a value: trims quotes around strings like "\"0\"" -> "0"
-fn normalize_value(value: &str) -> String {
+pub fn normalize_value(value: &str) -> String {
     let trimmed = value.trim();
     if trimmed.starts_with('"') && trimmed.ends_with('"') {
         trimmed[1..trimmed.len() - 1].to_string() // Remove surrounding quotes

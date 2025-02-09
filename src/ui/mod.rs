@@ -1,8 +1,10 @@
+use log::trace;
 use ratatui::layout::Constraint::{Fill, Length, Min};
 use ratatui::layout::Layout;
 use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::text::Span;
+use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::deref::Deref;
@@ -49,8 +51,16 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     // If only output, then no top and fill all with output
     if let Mode::OnlyOutput = app.mode {
         let output_size = Fill(1);
-        let vertical = Layout::vertical([Length(2), output_size, Length(3)]);
-        let [title_area, output, input] = vertical.areas(f.area());
+        let completions = (!app.completions.lock().unwrap().is_empty()) as u16;
+        let vertical = Layout::vertical([Length(2), output_size, Length(3), Length(completions)]);
+        let [title_area, output, input, completions_area] = vertical.areas(f.area());
+
+        // Add completions if any are found
+        let completions = app.completions.lock().unwrap().join(" ");
+        if completions_area.area() != 0 {
+            let completions_str = Paragraph::new(completions);
+            f.render_widget(completions_str, completions_area);
+        }
 
         title::draw_title_area(app, f, title_area);
         output::draw_output(app, f, output, true);
@@ -62,10 +72,18 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     let output_size = Length(SAVED_OUTPUT as u16);
 
     let bt_len = app.bt.lock().unwrap().len();
+    let completions = (!app.completions.lock().unwrap().is_empty()) as u16;
     let top = if bt_len == 0 {
-        let vertical = Layout::vertical([Length(2), top_size, output_size, Length(3)]);
-        let [title_area, top, output, input] = vertical.areas(f.area());
+        let vertical =
+            Layout::vertical([Length(2), top_size, output_size, Length(3), Length(completions)]);
+        let [title_area, top, output, input, completions_area] = vertical.areas(f.area());
 
+        // Add completions if any are found
+        let completions = app.completions.lock().unwrap().join(" ");
+        if completions_area.area() != 0 {
+            let completions_str = Paragraph::new(completions);
+            f.render_widget(completions_str, completions_area);
+        }
         title::draw_title_area(app, f, title_area);
         output::draw_output(app, f, output, false);
         input::draw_input(title_area, app, f, input);
@@ -78,9 +96,16 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             Length(bt_len as u16 + 1),
             output_size,
             Length(3),
+            Length(completions),
         ]);
-        let [title_area, top, bt_area, output, input] = vertical.areas(f.area());
+        let [title_area, top, bt_area, output, input, completions_area] = vertical.areas(f.area());
 
+        // Add completions if any are found
+        let completions = app.completions.lock().unwrap().join(" ");
+        if completions_area.area() != 0 {
+            let completions_str = Paragraph::new(completions);
+            f.render_widget(completions_str, completions_area);
+        }
         bt::draw_bt(app, f, bt_area);
         title::draw_title_area(app, f, title_area);
         output::draw_output(app, f, output, false);

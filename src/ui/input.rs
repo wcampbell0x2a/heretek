@@ -1,3 +1,5 @@
+use ratatui::layout::Constraint::{Fill, Length, Min};
+use ratatui::layout::Layout;
 use ratatui::prelude::Stylize;
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::{layout::Rect, style::Style, Frame};
@@ -8,7 +10,7 @@ use crate::{App, InputMode};
 
 pub fn draw_input(title_area: Rect, app: &App, f: &mut Frame, input: Rect) {
     // Input
-    let width = title_area.width.max(3) - 3;
+    let width = title_area.width - 3;
     // keep 2 for borders and 1 for cursor
 
     let scroll = app.input.visual_scroll(width as usize);

@@ -5,7 +5,7 @@ Set Width 1000
 Set Height 1000
 
 Hide
-Type "cargo r --release -- --cmds test-sources/test.source"
+Type "./target/release/heretek --cmds test-sources/test.source"
 Enter
 Sleep 2s
 Show

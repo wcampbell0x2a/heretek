@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2025-02-09
+- Add `Tab` completion to show possible completions and overwrite if singular [#134](https://github.com/wcampbell0x2a/heretek/pull/134)
+- Show `-stack-list-frames` otherwise known as `Backtrace` when available [#129](https://github.com/wcampbell0x2a/heretek/pull/129)
+- Add more documentation showing more usage of `heretek` in Hexdump and Normal usage [#128](https://github.com/wcampbell0x2a/heretek/pull/128)
+- Try and deref the *entire* string when looking at a memory address [#127](https://github.com/wcampbell0x2a/heretek/pull/127)
+- Update depends
+
 ## [0.4.0] - 2025-01-14
 - Display registers that point to addresses in Hexdump [#115](https://github.com/wcampbell0x2a/heretek/pull/115)
 - Show asm and function offset in asm deref [#117](https://github.com/wcampbell0x2a/heretek/pull/117)
@@ -16,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] - 2025-01-09
 - Adjusted size of UI elements in Main View [#102](https://github.com/wcampbell0x2a/heretek/pull/102)
-- Add `--gdb-path` to override gdb executated [#101](https://github.com/wcampbell0x2a/heretek/pull/101)
+- Add `--gdb-path` to override gdb executed [#101](https://github.com/wcampbell0x2a/heretek/pull/101)
 - Show `Running` in status [#106](https://github.com/wcampbell0x2a/heretek/pull/106)
 - Allow `control+c` to send `SIGINT` to process [#106](https://github.com/wcampbell0x2a/heretek/pull/106)
   - Always use `mi-async`

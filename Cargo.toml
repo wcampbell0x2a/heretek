@@ -1,9 +1,9 @@
 [package]
 name = "heretek"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 description = "GDB TUI Dashboard for the understanding of vast knowledge"
-license = "MIT/Apache-2.0"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/wcampbell0x2a/heretek"
 categories = ["development-tools"]
 keywords = ["gdb", "tui", "debugging", "embedded", "gdbserver"]

@@ -14,13 +14,15 @@ GDB TUI Dashboard inspired by `gef`, designed to seamlessly connect to remote ta
 
 ![screenshot](images/screenshot.png)
 
-## Build
+## Installation
 Either build from published source in crates.io.
 ```
 $ cargo install heretek --locked
 ```
 
 Or download from [github releases](https://github.com/wcampbell0x2a/heretek/releases).
+
+Arch Linux users can also install from the [official repositories](https://archlinux.org/packages/extra/x86_64/heretek/) via running `pacman -S heretek`
 
 ## Usage
 ```console

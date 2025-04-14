@@ -13,7 +13,8 @@ use crate::mi::{
     join_registers, match_inner_items, normalize_value, parse_asm_insns_values,
     parse_key_value_pairs, parse_memory_mappings_new, parse_memory_mappings_old, parse_mi_response,
     parse_register_names_values, parse_register_values, read_pc_value, Asm, MIResponse, Mapping,
-    MemoryMapping, INSTRUCTION_LEN, MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_OLD,
+    MemoryMapping, INSTRUCTION_LEN, MEMORY_MAP_BEGIN, MEMORY_MAP_START_STR_NEW,
+    MEMORY_MAP_START_STR_NEW_2, MEMORY_MAP_START_STR_OLD,
 };
 use crate::register::RegisterStorage;
 use crate::ui::SAVED_STACK;
@@ -349,8 +350,12 @@ fn stream_output(
     let split: Vec<&str> = s.split_whitespace().collect();
     if split == MEMORY_MAP_START_STR_NEW {
         current_map.0 = Some(Mapping::New);
+    } else if split == MEMORY_MAP_START_STR_NEW_2 {
+        current_map.0 = Some(Mapping::New);
     } else if split == MEMORY_MAP_START_STR_OLD {
         current_map.0 = Some(Mapping::Old);
+    } else if split.starts_with(&MEMORY_MAP_BEGIN) {
+        error!("Expected memory mapping, was not expected mapping");
     }
     if current_map.0.is_some() {
         current_map.1.push_str(s);

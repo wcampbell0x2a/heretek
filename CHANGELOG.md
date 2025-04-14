@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2025-04-14
+- Support reading memory map from gdb >= 16.2 [#141](https://github.com/wcampbell0x2a/heretek/pull/141)
+
 ## [0.5.0] - 2025-02-09
 - Add `Tab` completion to show possible completions and overwrite if singular [#134](https://github.com/wcampbell0x2a/heretek/pull/134)
 - Show `-stack-list-frames` otherwise known as `Backtrace` when available [#129](https://github.com/wcampbell0x2a/heretek/pull/129)

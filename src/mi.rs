@@ -20,9 +20,16 @@ pub fn match_inner_items(haystack: &str) -> CaptureMatches {
 pub const MEMORY_MAP_START_STR_NEW: [&str; 8] =
     ["Start", "Addr", "End", "Addr", "Size", "Offset", "Perms", "objfile"];
 
+/// Seen on gdb 16.2
+pub const MEMORY_MAP_START_STR_NEW_2: [&str; 8] =
+    ["Start", "Addr", "End", "Addr", "Size", "Offset", "Perms", "File"];
+
 /// Seen on gdb 7.12
 pub const MEMORY_MAP_START_STR_OLD: [&str; 7] =
     ["Start", "Addr", "End", "Addr", "Size", "Offset", "objfile"];
+
+/// Common gdb memory map, to try and detect new additions to this return
+pub const MEMORY_MAP_BEGIN: [&str; 6] = ["Start", "Addr", "End", "Addr", "Size", "Offset"];
 
 pub enum Mapping {
     New,

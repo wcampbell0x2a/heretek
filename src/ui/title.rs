@@ -7,14 +7,11 @@ use ratatui::widgets::block::Title;
 use ratatui::widgets::{Block, Borders, Tabs};
 use ratatui::{layout::Rect, style::Style, Frame};
 
-use super::{
-    ASM_COLOR, DARK_GRAY, GRAY, GRAY_FG, GREEN, HEAP_COLOR, RED, STACK_COLOR, STRING_COLOR,
-    TEXT_COLOR,
-};
+use super::{ASM_COLOR, GRAY_FG, GREEN, HEAP_COLOR, STACK_COLOR, STRING_COLOR, TEXT_COLOR};
 
-use crate::{App, InputMode};
+use crate::{InputMode, State};
 
-pub fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
+pub fn draw_title_area(state: &mut State, f: &mut Frame, title_area: Rect) {
     let vertical_title = Layout::vertical([Length(1), Length(1)]);
     let [first, second] = vertical_title.areas(title_area);
     f.render_widget(
@@ -65,18 +62,12 @@ pub fn draw_title_area(app: &App, f: &mut Frame, title_area: Rect) {
         first,
     );
     // Title Area
-    match app.input_mode {
-        InputMode::Normal => {
-            let mut status = app.status.lock().unwrap();
-            *status = "Press q to exit, i to enter input".to_owned();
-        }
-        InputMode::Editing => {
-            let mut status = app.status.lock().unwrap();
-            *status = "Press Esc to stop editing, Enter to send input".to_owned();
-        }
+    state.status = match state.input_mode {
+        InputMode::Normal => "Press q to exit, i to enter input".to_owned(),
+        InputMode::Editing => "Press Esc to stop editing, Enter to send input".to_owned(),
     };
 
-    let mode = &app.mode;
+    let mode = &state.mode;
     let tab = Tabs::new(vec![
         "F1 Main",
         "F2 Registers",

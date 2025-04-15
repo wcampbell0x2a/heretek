@@ -6,9 +6,9 @@ use ratatui::{layout::Rect, style::Style, widgets::Row, Frame};
 
 use super::{GREEN, ORANGE, PURPLE};
 
-use crate::App;
+use crate::State;
 
-pub fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
+pub fn draw_asm(state: &mut State, f: &mut Frame, asm: Rect) {
     // Asm
     // TODO: cache the pc_index if this doesn't change
     let mut rows = vec![];
@@ -17,43 +17,40 @@ pub fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
     let mut tallest_function_len = 0;
 
     // Display asm, this will already be in a sorted order
-    if let Ok(asm) = app.asm.lock() {
-        let app_cur_lock = app.current_pc.lock().unwrap();
-        for (index, a) in asm.iter().enumerate() {
-            if a.address == *app_cur_lock {
-                pc_index = Some(index);
-                if let Some(func_name) = &a.func_name {
-                    function_name = Some(func_name.clone());
-                    if func_name.len() > tallest_function_len {
-                        tallest_function_len = func_name.len();
-                    }
+    for (index, a) in state.asm.iter().enumerate() {
+        if a.address == state.current_pc {
+            pc_index = Some(index);
+            if let Some(func_name) = &a.func_name {
+                function_name = Some(func_name.clone());
+                if func_name.len() > tallest_function_len {
+                    tallest_function_len = func_name.len();
                 }
             }
-            let addr_cell =
-                Cell::from(format!("0x{:02x}", a.address)).style(Style::default().fg(PURPLE));
-            let mut row = vec![addr_cell];
-
-            if let Some(function_name) = &a.func_name {
-                let function_cell = Cell::from(format!("{}+{:02x}", function_name, a.offset))
-                    .style(Style::default().fg(PURPLE));
-                row.push(function_cell);
-            } else {
-                row.push(Cell::from(""));
-            }
-
-            let inst_cell = if let Some(pc_index) = pc_index {
-                if pc_index == index {
-                    Cell::from(a.inst.to_string()).fg(GREEN)
-                } else {
-                    Cell::from(a.inst.to_string()).white()
-                }
-            } else {
-                Cell::from(a.inst.to_string()).dark_gray()
-            };
-            row.push(inst_cell);
-
-            rows.push(Row::new(row));
         }
+        let addr_cell =
+            Cell::from(format!("0x{:02x}", a.address)).style(Style::default().fg(PURPLE));
+        let mut row = vec![addr_cell];
+
+        if let Some(function_name) = &a.func_name {
+            let function_cell = Cell::from(format!("{}+{:02x}", function_name, a.offset))
+                .style(Style::default().fg(PURPLE));
+            row.push(function_cell);
+        } else {
+            row.push(Cell::from(""));
+        }
+
+        let inst_cell = if let Some(pc_index) = pc_index {
+            if pc_index == index {
+                Cell::from(a.inst.to_string()).fg(GREEN)
+            } else {
+                Cell::from(a.inst.to_string()).white()
+            }
+        } else {
+            Cell::from(a.inst.to_string()).dark_gray()
+        };
+        row.push(inst_cell);
+
+        rows.push(Row::new(row));
     }
 
     let tital = if let Some(function_name) = function_name {
@@ -71,7 +68,7 @@ pub fn draw_asm(app: &App, f: &mut Frame, asm: Rect) {
             .block(Block::default().borders(Borders::TOP).title(tital))
             .row_highlight_style(Style::new().fg(GREEN))
             .highlight_symbol(">>");
-        let start_offset = if pc_index < 5 { 0 } else { pc_index - 5 };
+        let start_offset = pc_index.saturating_sub(5);
         let mut table_state =
             TableState::default().with_offset(start_offset).with_selected(pc_index);
         f.render_stateful_widget(table, asm, &mut table_state);

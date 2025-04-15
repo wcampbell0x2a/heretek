@@ -5,23 +5,19 @@ use ratatui::{layout::Rect, style::Style, Frame};
 
 use super::{ORANGE, PURPLE};
 
-use crate::App;
+use crate::State;
 
-pub fn draw_bt(app: &App, f: &mut Frame, bt_rect: Rect) {
+pub fn draw_bt(state: &mut State, f: &mut Frame, bt_rect: Rect) {
     let block = Block::default().borders(Borders::TOP).title("Backtrace".fg(ORANGE));
     let mut lines = vec![];
-    let bt = app.bt.lock().unwrap();
-    if !bt.is_empty() {
-        for b in bt.iter() {
-            let loc_span =
-                Span::from(format!("  {:08x}", b.location,)).style(Style::new().fg(PURPLE));
+    for b in state.bt.iter() {
+        let loc_span = Span::from(format!("  {:08x}", b.location,)).style(Style::new().fg(PURPLE));
 
-            let func_span = Span::from(format!("{}", b.function.clone().unwrap_or("".to_string())))
-                .style(Style::new().fg(ORANGE));
-            let spans = vec![loc_span, Span::from(" → "), func_span];
-            let line = Line::from(spans);
-            lines.push(line);
-        }
+        let func_span = Span::from(b.function.clone().unwrap_or("".to_string()).to_string())
+            .style(Style::new().fg(ORANGE));
+        let spans = vec![loc_span, Span::from(" → "), func_span];
+        let line = Line::from(spans);
+        lines.push(line);
     }
 
     let text = Text::from(lines);

@@ -25,12 +25,12 @@ pub fn draw_input(title_area: Rect, state: &mut State, f: &mut Frame, input: Rec
                     .borders(Borders::ALL)
                     .title(vec![
                         "|".fg(GRAY_FG),
-                        format!("{}", state.status).fg(BLUE),
+                        state.status.to_string().fg(BLUE),
                         "|".fg(GRAY_FG),
                     ])
                     .title(vec![
                         "|".fg(GRAY_FG),
-                        format!("{}", state.async_result).fg(ORANGE),
+                        state.async_result.to_string().fg(ORANGE),
                         "|".fg(GRAY_FG),
                     ]),
             );

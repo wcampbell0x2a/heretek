@@ -13,7 +13,7 @@ pub fn draw_bt(state: &mut State, f: &mut Frame, bt_rect: Rect) {
     for b in state.bt.iter() {
         let loc_span = Span::from(format!("  {:08x}", b.location,)).style(Style::new().fg(PURPLE));
 
-        let func_span = Span::from(format!("{}", b.function.clone().unwrap_or("".to_string())))
+        let func_span = Span::from(b.function.clone().unwrap_or("".to_string()).to_string())
             .style(Style::new().fg(ORANGE));
         let spans = vec![loc_span, Span::from(" → "), func_span];
         let line = Line::from(spans);

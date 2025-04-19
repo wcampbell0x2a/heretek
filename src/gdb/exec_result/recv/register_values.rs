@@ -1,15 +1,10 @@
-use std::collections::VecDeque;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-
 use log::trace;
 
 use crate::deref::Deref;
 use crate::gdb::dump_sp_bytes;
 use crate::mi::{
     data_disassemble, data_disassemble_pc, data_read_memory_bytes, join_registers,
-    parse_register_values, read_pc_value, MemoryMapping, INSTRUCTION_LEN,
+    parse_register_values, read_pc_value, INSTRUCTION_LEN,
 };
 use crate::register::RegisterStorage;
 use crate::ui::SAVED_STACK;

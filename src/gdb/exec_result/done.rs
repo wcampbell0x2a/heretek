@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 use crate::mi::{
     match_inner_items, parse_key_value_pairs, parse_memory_mappings_new, parse_memory_mappings_old,
-    Mapping, MemoryMapping,
+    Mapping,
 };
 use crate::{Bt, State};
 

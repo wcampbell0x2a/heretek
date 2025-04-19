@@ -68,7 +68,7 @@ pub fn draw_asm(state: &mut State, f: &mut Frame, asm: Rect) {
             .block(Block::default().borders(Borders::TOP).title(tital))
             .row_highlight_style(Style::new().fg(GREEN))
             .highlight_symbol(">>");
-        let start_offset = if pc_index < 5 { 0 } else { pc_index - 5 };
+        let start_offset = pc_index.saturating_sub(5);
         let mut table_state =
             TableState::default().with_offset(start_offset).with_selected(pc_index);
         f.render_stateful_widget(table, asm, &mut table_state);

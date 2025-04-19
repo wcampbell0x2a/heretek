@@ -43,7 +43,7 @@ pub const SAVED_STACK: u16 = 14;
 
 pub const SCROLL_CONTROL_TEXT: &str = "(up(k), down(j), 50 up(K), 50 down(J), top(g), bottom(G))";
 
-pub fn ui(f: &mut Frame, mut state: &mut State) {
+pub fn ui(f: &mut Frame, state: &mut State) {
     let (completions, bt_len, mode) = { (state.completions.clone(), state.bt.len(), state.mode) };
 
     // TODO: register size should depend on arch
@@ -64,9 +64,9 @@ pub fn ui(f: &mut Frame, mut state: &mut State) {
             f.render_widget(completions_str, completions_area);
         }
 
-        title::draw_title_area(&mut state, f, title_area);
-        output::draw_output(&mut state, f, output, true);
-        input::draw_input(title_area, &mut state, f, input);
+        title::draw_title_area(state, f, title_area);
+        output::draw_output(state, f, output, true);
+        input::draw_input(title_area, state, f, input);
         return;
     }
 
@@ -90,9 +90,9 @@ pub fn ui(f: &mut Frame, mut state: &mut State) {
             let completions_str = Paragraph::new(completions);
             f.render_widget(completions_str, completions_area);
         }
-        title::draw_title_area(&mut state, f, title_area);
-        output::draw_output(&mut state, f, output, false);
-        input::draw_input(title_area, &mut state, f, input);
+        title::draw_title_area(state, f, title_area);
+        output::draw_output(state, f, output, false);
+        input::draw_input(title_area, state, f, input);
 
         top
     } else {
@@ -113,10 +113,10 @@ pub fn ui(f: &mut Frame, mut state: &mut State) {
             let completions_str = Paragraph::new(completions);
             f.render_widget(completions_str, completions_area);
         }
-        bt::draw_bt(&mut state, f, bt_area);
-        title::draw_title_area(&mut state, f, title_area);
-        output::draw_output(&mut state, f, output, false);
-        input::draw_input(title_area, &mut state, f, input);
+        bt::draw_bt(state, f, bt_area);
+        title::draw_title_area(state, f, title_area);
+        output::draw_output(state, f, output, false);
+        input::draw_input(title_area, state, f, input);
 
         top
     };
@@ -131,8 +131,8 @@ pub fn ui(f: &mut Frame, mut state: &mut State) {
             let [register, stack, asm] = vertical.areas(top);
 
             registers::draw_registers(state, f, register);
-            stack::draw_stack(&mut state, f, stack);
-            asm::draw_asm(&mut state, f, asm);
+            stack::draw_stack(state, f, stack);
+            asm::draw_asm(state, f, asm);
         }
         Mode::OnlyRegister => {
             let vertical = Layout::vertical([Fill(1)]);
@@ -142,27 +142,27 @@ pub fn ui(f: &mut Frame, mut state: &mut State) {
         Mode::OnlyStack => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            stack::draw_stack(&mut state, f, all);
+            stack::draw_stack(state, f, all);
         }
         Mode::OnlyInstructions => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            asm::draw_asm(&mut state, f, all);
+            asm::draw_asm(state, f, all);
         }
         Mode::OnlyMapping => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            mapping::draw_mapping(&mut state, f, all);
+            mapping::draw_mapping(state, f, all);
         }
         Mode::OnlyHexdump => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            hexdump::draw_hexdump(&mut state, f, all, false);
+            hexdump::draw_hexdump(state, f, all, false);
         }
         Mode::OnlyHexdumpPopup => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            hexdump::draw_hexdump(&mut state, f, all, true);
+            hexdump::draw_hexdump(state, f, all, true);
         }
         _ => (),
     }

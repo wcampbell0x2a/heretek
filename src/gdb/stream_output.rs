@@ -1,7 +1,5 @@
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
-use deku::ctx::Endian;
 use log::{debug, error, info};
 
 use crate::mi::{

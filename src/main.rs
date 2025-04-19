@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::fs::{self, File};
 use std::io::{BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
@@ -209,7 +209,7 @@ struct State {
 
 impl State {
     pub fn new(args: Args) -> State {
-        let state = State {
+        State {
             next_write: vec![],
             written: VecDeque::new(),
             thirty_two_bit: args.thirty_two_bit,
@@ -240,8 +240,7 @@ impl State {
             status: String::new(),
             bt: vec![],
             completions: vec![],
-        };
-        state
+        }
     }
 }
 
@@ -385,7 +384,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             if !cmd.starts_with("#") {
                 let mut state = state_share.state.lock().unwrap();
                 state.sent_input.push(cmd.to_string());
-                process_line(&mut app, &mut state, &cmd);
+                process_line(&mut app, &mut state, cmd);
             }
         }
     }
@@ -478,7 +477,7 @@ fn run_app<B: Backend>(
                 }
                 let (input_mode, mode) = {
                     let state = state_share.state.lock().unwrap();
-                    (state.input_mode.clone(), state.mode.clone())
+                    (state.input_mode, state.mode)
                 };
                 match (&input_mode, key.code, &mode) {
                     // hexdump popup
@@ -1022,7 +1021,7 @@ mod tests {
                 if !cmd.starts_with("#") {
                     let mut state = state_share.state.lock().unwrap();
                     state.sent_input.push(cmd.to_string());
-                    process_line(&mut app, &mut state, &cmd);
+                    process_line(&mut app, &mut state, cmd);
                 }
             }
         }
@@ -1261,7 +1260,7 @@ mod tests {
         for r in registers[3].deref.map.iter().skip(1) {
             ret_s.push_str(std::str::from_utf8(&r.to_le_bytes()).unwrap());
         }
-        ret_s.push_str("\"");
+        ret_s.push('"');
         let padding_width = ret_s.len() + 7;
         let output =
             output.replace(&ret_s, &format!("<rdx_2>{:padding$}", "", padding = padding_width));
@@ -1273,7 +1272,7 @@ mod tests {
         for r in registers[4].deref.map.iter().skip(1) {
             ret_s.push_str(std::str::from_utf8(&r.to_le_bytes()).unwrap());
         }
-        ret_s.push_str("\"");
+        ret_s.push('"');
         let padding_width = ret_s.len() + 7;
         let output =
             output.replace(&ret_s, &format!("<rsi_2>{:padding$}", "", padding = padding_width));

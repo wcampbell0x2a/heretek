@@ -102,12 +102,10 @@ fn deref_bytes_to_registers(
             };
 
             val as u64
+        } else if endian.unwrap() == Endian::Big {
+            u64::from_be_bytes([w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]])
         } else {
-            if endian.unwrap() == Endian::Big {
-                u64::from_be_bytes([w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]])
-            } else {
-                u64::from_le_bytes([w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]])
-            }
+            u64::from_le_bytes([w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]])
         };
 
         for r in registers.iter() {
@@ -174,7 +172,7 @@ pub fn draw_hexdump(state: &mut State, f: &mut Frame, hexdump: Rect, show_popup:
 
         let skip = state.hexdump_scroll;
         let take = hexdump.height;
-        let lines = to_hexdump_str(state, r.0, data, skip as usize, take as usize);
+        let lines = to_hexdump_str(state, r.0, data, skip, take as usize);
         let content_len = data.len() / HEXDUMP_WIDTH;
 
         let lines: Vec<Line> = lines.into_iter().collect();

@@ -1,14 +1,11 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
 
 use deku::ctx::Endian;
 use log::{debug, error};
 
 use crate::deref::Deref;
 use crate::gdb::read_memory;
-use crate::mi::{data_disassemble, data_read_memory_bytes, MemoryMapping, INSTRUCTION_LEN};
+use crate::mi::{data_disassemble, data_read_memory_bytes, INSTRUCTION_LEN};
 use crate::register::RegisterStorage;
 use crate::{State, Written};
 

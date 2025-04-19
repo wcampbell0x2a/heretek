@@ -1,12 +1,4 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-
-use crate::deref::Deref;
-use crate::mi::Asm;
-use crate::register::RegisterStorage;
-use crate::{State, Written};
+use crate::State;
 
 pub fn exec_result_running(state: &mut State) {
     // TODO: this causes a bunch of re-drawing, but

@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use crate::mi::parse_register_names_values;
 
 /// `MIResponse::ExecResult`, key: "register-names"

@@ -1,7 +1,5 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 mod stream_output;
@@ -12,9 +10,7 @@ use exec_result::exec_result;
 
 use log::{debug, trace};
 
-use crate::mi::{
-    data_read_sp_bytes, parse_key_value_pairs, parse_mi_response, Asm, MIResponse, MemoryMapping,
-};
+use crate::mi::{data_read_sp_bytes, parse_key_value_pairs, parse_mi_response, MIResponse};
 use crate::{State, Written};
 
 pub fn gdb_interact(gdb_stdout: BufReader<Box<dyn Read + Send>>, state: Arc<Mutex<State>>) {

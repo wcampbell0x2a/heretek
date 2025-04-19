@@ -31,10 +31,10 @@ pub fn draw_registers(state: &mut State, f: &mut Frame, register: Rect) {
                 continue;
             }
             if let Some(reg_value) = &reg.value {
-                if let Ok(_) = u64::from_str_radix(&reg_value[2..], 16) {
-                    if longest_register_name < name.len() {
-                        longest_register_name = name.len();
-                    }
+                if u64::from_str_radix(&reg_value[2..], 16).is_ok()
+                    && longest_register_name < name.len()
+                {
+                    longest_register_name = name.len();
                 }
             }
         }
@@ -60,7 +60,7 @@ pub fn draw_registers(state: &mut State, f: &mut Frame, register: Rect) {
 
                     let mut extra_derefs = Vec::new();
                     add_deref_to_span(
-                        &deref,
+                        deref,
                         &mut extra_derefs,
                         state,
                         &filepath,
@@ -68,7 +68,7 @@ pub fn draw_registers(state: &mut State, f: &mut Frame, register: Rect) {
                         width,
                     );
 
-                    let hex_string = format!("{}", reg.value.as_ref().unwrap());
+                    let hex_string = reg.value.as_ref().unwrap().to_string();
                     let hex_width = hex_string.len();
                     let padding_width = width.saturating_sub(hex_width);
                     let mut span = Span::from(format!(

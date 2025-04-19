@@ -1,4 +1,3 @@
-use deku::ctx::Endian;
 use ratatui::{
     layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
@@ -83,54 +82,6 @@ fn to_hexdump_str<'a>(
 
     lines
 }
-
-// fn deref_bytes_to_registers(
-//     endian: &Option<Endian>,
-//     chunk: &[u8],
-//     thirty: bool,
-//     ref_spans: &mut Vec<Span<'_>>,
-//     registers: &Vec<crate::register::RegisterStorage>,
-// ) {
-//     let windows = if thirty { 4 } else { 8 };
-//     for w in chunk.windows(windows) {
-//         let bytes_val = if thirty {
-//             let val = if endian.unwrap() == Endian::Big {
-//                 // TODO: try_into()
-//                 u32::from_be_bytes([w[0], w[1], w[2], w[3]])
-//             } else {
-//                 u32::from_le_bytes([w[0], w[1], w[2], w[3]])
-//             };
-
-//             val as u64
-//         } else if endian.unwrap() == Endian::Big {
-//             u64::from_be_bytes([w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]])
-//         } else {
-//             u64::from_le_bytes([w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]])
-//         };
-
-//         for r in registers.iter() {
-//             if let Some(reg) = &r.register {
-//                 if !reg.is_set() {
-//                     continue;
-//                 }
-//                 if let Some(reg_value) = &reg.value {
-//                     if let Ok(val) = u64::from_str_radix(&reg_value[2..], 16) {
-//                         if val != 0 {
-//                             // Find registers that are pointing to the value at a byte offset
-//                             if bytes_val == val {
-//                                 ref_spans.push(Span::raw(format!(
-//                                     "${}(0x{:02x?}) ",
-//                                     r.name.clone(),
-//                                     val
-//                                 )));
-//                             }
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
 
 fn color(byte: u8) -> Color {
     if byte == 0x00 {

@@ -10,40 +10,27 @@ use crate::deref::Deref;
 use crate::gdb::read_memory;
 use crate::mi::{data_disassemble, data_read_memory_bytes, MemoryMapping, INSTRUCTION_LEN};
 use crate::register::RegisterStorage;
-use crate::Written;
+use crate::{State, Written};
 
 /// `MIResponse::ExecResult`, key: "memory"
-pub fn recv_exec_result_memory(
-    stack_arc: &Arc<Mutex<BTreeMap<u64, Deref>>>,
-    thirty_two_bit: &Arc<AtomicBool>,
-    endian_arc: &Arc<Mutex<Option<Endian>>>,
-    registers_arc: &Arc<Mutex<Vec<RegisterStorage>>>,
-    hexdump_arc: &Arc<Mutex<Option<(u64, Vec<u8>)>>>,
-    memory: &String,
-    written: &mut VecDeque<Written>,
-    next_write: &mut Vec<String>,
-    memory_map_arc: &Arc<Mutex<Option<Vec<MemoryMapping>>>>,
-    filepath_arc: &Arc<Mutex<Option<PathBuf>>>,
-) {
-    if written.is_empty() {
+pub fn recv_exec_result_memory(state: &mut State, memory: &String) {
+    if state.written.is_empty() {
         return;
     }
-    let last_written = written.pop_front().unwrap();
+    let last_written = state.written.pop_front().unwrap();
 
     match last_written {
-        Written::RegisterValue((base_reg, begin)) => {
+        Written::RegisterValue((base_reg, _begin)) => {
             debug!("new register val for {base_reg}");
-            let thirty = thirty_two_bit.load(Ordering::Relaxed);
-            let mut regs = registers_arc.lock().unwrap();
+            let thirty = state.thirty_two_bit;
 
             let (data, _) = read_memory(memory);
-            for RegisterStorage { name: _, register, deref } in regs.iter_mut() {
+            for RegisterStorage { name: _, register, deref } in state.registers.iter_mut() {
                 if let Some(reg) = register {
                     if reg.number == base_reg {
                         let (val, len) = if thirty {
                             let mut val = u32::from_str_radix(&data["contents"], 16).unwrap();
-                            let endian = endian_arc.lock().unwrap();
-                            if endian.unwrap() == Endian::Big {
+                            if state.endian.unwrap() == Endian::Big {
                                 val = val.to_le();
                             } else {
                                 val = val.to_be();
@@ -52,8 +39,7 @@ pub fn recv_exec_result_memory(
                             (val as u64, 4)
                         } else {
                             let mut val = u64::from_str_radix(&data["contents"], 16).unwrap();
-                            let endian = endian_arc.lock().unwrap();
-                            if endian.unwrap() == Endian::Big {
+                            if state.endian.unwrap() == Endian::Big {
                                 val = val.to_le();
                             } else {
                                 val = val.to_be();
@@ -65,17 +51,16 @@ pub fn recv_exec_result_memory(
                             // If this is a code location, go ahead and try
                             // to request the asm at that spot
                             let mut is_code = false;
-                            let filepath_lock = filepath_arc.lock().unwrap();
-                            let memory_map = memory_map_arc.lock().unwrap();
-                            for r in memory_map.as_ref().unwrap() {
+                            for r in state.memory_map.as_ref().unwrap() {
                                 let is_path =
-                                    r.is_path(filepath_lock.as_ref().unwrap().to_str().unwrap());
+                                    r.is_path(state.filepath.as_ref().unwrap().to_str().unwrap());
                                 if r.contains(val) && (is_path || r.is_exec()) {
                                     // send a search for a symbol!
                                     // TODO: 32-bit?
-                                    next_write
+                                    state
+                                        .next_write
                                         .push(data_disassemble(val as usize, INSTRUCTION_LEN));
-                                    written.push_back(Written::SymbolAtAddrRegister((
+                                    state.written.push_back(Written::SymbolAtAddrRegister((
                                         reg.number.clone(),
                                         val,
                                     )));
@@ -95,8 +80,12 @@ pub fn recv_exec_result_memory(
                                     let addr =
                                         data["begin"].strip_prefix("0x").unwrap().to_string();
                                     let addr = u64::from_str_radix(&addr, 16).unwrap();
-                                    next_write.push(data_read_memory_bytes(addr + len, 0, len));
-                                    written.push_back(Written::RegisterValue((
+                                    state.next_write.push(data_read_memory_bytes(
+                                        addr + len,
+                                        0,
+                                        len,
+                                    ));
+                                    state.written.push_back(Written::RegisterValue((
                                         reg.number.clone(),
                                         val,
                                     )));
@@ -107,8 +96,9 @@ pub fn recv_exec_result_memory(
                             if !is_code && val != 0 {
                                 // TODO: endian
                                 debug!("register deref: trying to read: {:02x}", val);
-                                next_write.push(data_read_memory_bytes(val, 0, len));
-                                written
+                                state.next_write.push(data_read_memory_bytes(val, 0, len));
+                                state
+                                    .written
                                     .push_back(Written::RegisterValue((reg.number.clone(), val)));
                             }
                         }
@@ -121,68 +111,33 @@ pub fn recv_exec_result_memory(
         // we use the begin here as the base key, instead of the base
         // addr we read
         Written::Stack(Some(begin)) => {
-            let mut stack = stack_arc.lock().unwrap();
             let (data, _) = read_memory(memory);
             debug!("stack: {:02x?}", data);
 
-            update_stack(
-                data,
-                thirty_two_bit,
-                endian_arc,
-                begin,
-                &mut stack,
-                next_write,
-                written,
-                memory_map_arc,
-                filepath_arc,
-            );
+            update_stack(data, state, begin);
         }
         Written::Stack(None) => {
-            let mut stack = stack_arc.lock().unwrap();
             let (data, begin) = read_memory(memory);
             debug!("stack: {:02x?}", data);
 
-            update_stack(
-                data,
-                thirty_two_bit,
-                endian_arc,
-                begin,
-                &mut stack,
-                next_write,
-                written,
-                memory_map_arc,
-                filepath_arc,
-            );
+            update_stack(data, state, begin);
         }
         Written::Memory => {
             let (data, begin) = read_memory(memory);
             debug!("memory: ({:02x?}, {:02x?}", begin, data);
             let hex = hex::decode(&data["contents"]).unwrap();
-            let mut hexdump_lock = hexdump_arc.lock().unwrap();
-            *hexdump_lock = Some((u64::from_str_radix(&begin, 16).unwrap(), hex));
+            state.hexdump = Some((u64::from_str_radix(&begin, 16).unwrap(), hex));
         }
         _ => {
             error!("unexpected Written: {last_written:?}");
         }
     }
 }
-fn update_stack(
-    data: HashMap<String, String>,
-    thirty_two_bit: &Arc<AtomicBool>,
-    endian_arc: &Arc<Mutex<Option<Endian>>>,
-    begin: String,
-    stack: &mut std::sync::MutexGuard<BTreeMap<u64, Deref>>,
-    next_write: &mut Vec<String>,
-    written: &mut VecDeque<Written>,
-    memory_map_arc: &Arc<Mutex<Option<Vec<MemoryMapping>>>>,
-    filepath_arc: &Arc<Mutex<Option<PathBuf>>>,
-) {
+fn update_stack(data: HashMap<String, String>, state: &mut State, begin: String) {
     // TODO: this is insane and should be cached
-    let thirty = thirty_two_bit.load(Ordering::Relaxed);
-    let (val, len) = if thirty {
+    let (val, len) = if state.thirty_two_bit {
         let mut val = u32::from_str_radix(&data["contents"], 16).unwrap();
-        let endian = endian_arc.lock().unwrap();
-        if endian.unwrap() == Endian::Big {
+        if state.endian.unwrap() == Endian::Big {
             val = val.to_le();
         } else {
             val = val.to_be();
@@ -191,8 +146,7 @@ fn update_stack(
         (val as u64, 4)
     } else {
         let mut val = u64::from_str_radix(&data["contents"], 16).unwrap();
-        let endian = endian_arc.lock().unwrap();
-        if endian.unwrap() == Endian::Big {
+        if state.endian.unwrap() == Endian::Big {
             val = val.to_le();
         } else {
             val = val.to_be();
@@ -203,21 +157,19 @@ fn update_stack(
 
     // Begin is always correct endian
     let key = u64::from_str_radix(&begin, 16).unwrap();
-    let deref = stack.entry(key).or_insert(Deref::new());
+    let deref = state.stack.entry(key).or_insert(Deref::new());
     let inserted = deref.try_push(val);
 
     if inserted && val != 0 {
         // If this is a code location, go ahead and try
         // to request the asm at that spot
-        let filepath_lock = filepath_arc.lock().unwrap();
-        let memory_map = memory_map_arc.lock().unwrap();
-        for r in memory_map.as_ref().unwrap() {
-            let is_path = r.is_path(filepath_lock.as_ref().unwrap().to_str().unwrap());
+        for r in state.memory_map.as_ref().unwrap() {
+            let is_path = r.is_path(state.filepath.as_ref().unwrap().to_str().unwrap());
             if r.contains(val) && (is_path || r.is_exec()) {
                 // send a search for a symbol!
                 debug!("stack deref: trying to read as asm: {val:02x}");
-                next_write.push(data_disassemble(val as usize, INSTRUCTION_LEN));
-                written.push_back(Written::SymbolAtAddrStack(begin.clone()));
+                state.next_write.push(data_disassemble(val as usize, INSTRUCTION_LEN));
+                state.written.push_back(Written::SymbolAtAddrStack(begin.clone()));
                 return;
             }
         }
@@ -231,15 +183,15 @@ fn update_stack(
             {
                 let addr = data["begin"].strip_prefix("0x").unwrap().to_string();
                 let addr = u64::from_str_radix(&addr, 16).unwrap();
-                next_write.push(data_read_memory_bytes(addr + len, 0, len));
-                written.push_back(Written::Stack(Some(begin)));
+                state.next_write.push(data_read_memory_bytes(addr + len, 0, len));
+                state.written.push_back(Written::Stack(Some(begin)));
                 return;
             }
         }
 
         // regular value to request
         debug!("stack deref: trying to read as data: {val:02x}");
-        next_write.push(data_read_memory_bytes(val, 0, len));
-        written.push_back(Written::Stack(Some(begin)));
+        state.next_write.push(data_read_memory_bytes(val, 0, len));
+        state.written.push_back(Written::Stack(Some(begin)));
     }
 }

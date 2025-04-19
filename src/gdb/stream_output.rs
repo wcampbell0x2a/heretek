@@ -8,25 +8,22 @@ use crate::mi::{
     Mapping, MEMORY_MAP_BEGIN, MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_NEW_2,
     MEMORY_MAP_START_STR_OLD,
 };
+use crate::State;
 
 /// `MIResponse::StreamOutput`
 pub fn stream_output(
     t: &str,
     s: &str,
-    endian_arc: &Arc<Mutex<Option<Endian>>>,
-    filepath_arc: &Arc<Mutex<Option<PathBuf>>>,
+    state: &mut State,
     current_map: &mut (Option<Mapping>, String),
-    output_arc: &Arc<Mutex<Vec<String>>>,
-    stream_output_prompt_arc: &Arc<Mutex<String>>,
 ) {
     if s.starts_with("The target endianness") {
-        let mut endian = endian_arc.lock().unwrap();
-        *endian = if s.contains("little") {
+        state.endian = if s.contains("little") {
             Some(deku::ctx::Endian::Little)
         } else {
             Some(deku::ctx::Endian::Big)
         };
-        debug!("endian: {endian:?}");
+        debug!("endian: {:?}", state.endian);
 
         // don't include this is output
         return;
@@ -34,15 +31,14 @@ pub fn stream_output(
 
     // When using attach, assume the first symbols found are the text field
     // StreamOutput("~", "Reading symbols from /home/wcampbell/a.out...\n")
-    let mut filepath_lock = filepath_arc.lock().unwrap();
-    if filepath_lock.is_none() {
+    if state.filepath.is_none() {
         let symbols = "Reading symbols from ";
         if s.starts_with(symbols) {
             let filepath = &s[symbols.len()..];
             let filepath = filepath.trim_end();
             if let Some(filepath) = filepath.strip_suffix("...") {
                 info!("new filepath: {filepath}");
-                *filepath_lock = Some(PathBuf::from(filepath));
+                state.filepath = Some(PathBuf::from(filepath));
             }
         }
     }
@@ -75,13 +71,12 @@ pub fn stream_output(
         s.split('\n').map(String::from).map(|a| a.trim_end().to_string()).collect();
     for s in split {
         if !s.is_empty() {
-            output_arc.lock().unwrap().push(s);
+            state.output.push(s);
         }
     }
 
     // console-stream-output
     if t == "~" && !s.contains('\n') {
-        let mut stream_lock = stream_output_prompt_arc.lock().unwrap();
-        *stream_lock = s.to_string();
+        state.stream_output_prompt = s.to_string();
     }
 }

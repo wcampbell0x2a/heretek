@@ -1,7 +1,4 @@
-use std::sync::atomic::Ordering;
-
 use deku::ctx::Endian;
-use log::{debug, trace};
 use ratatui::{
     layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
@@ -10,7 +7,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::App;
+use crate::State;
 
 use super::{BLUE, DARK_GRAY, GREEN, ORANGE, SCROLL_CONTROL_TEXT, YELLOW};
 
@@ -18,7 +15,7 @@ pub const HEXDUMP_WIDTH: usize = 16;
 
 /// Convert bytes in hexdump, `skip` that many lines, `take` that many lines
 fn to_hexdump_str<'a>(
-    app: &mut App,
+    state: &mut State,
     pos: u64,
     buffer: &[u8],
     skip: usize,
@@ -42,11 +39,9 @@ fn to_hexdump_str<'a>(
         }
 
         // check if value has a register reference
-        let thirty = app.thirty_two_bit.load(Ordering::Relaxed);
+        let thirty = state.thirty_two_bit;
 
         let mut ref_spans = Vec::new();
-        let endian = app.endian.lock().unwrap();
-        let registers = app.registers.lock().unwrap();
 
         ref_spans.push(Span::raw("| "));
 
@@ -54,7 +49,7 @@ fn to_hexdump_str<'a>(
         //deref_bytes_to_registers(&endian, chunk, thirty, &mut ref_spans, &registers);
 
         let windows = if thirty { 4 } else { 8 };
-        for r in registers.iter() {
+        for r in state.registers.iter() {
             if let Some(reg) = &r.register {
                 if !reg.is_set() {
                     continue;
@@ -168,22 +163,22 @@ fn block(pos: &str) -> Block {
     block
 }
 
-pub fn draw_hexdump(app: &mut App, f: &mut Frame, hexdump: Rect, show_popup: bool) {
-    let hexdump_active = app.hexdump.lock().unwrap().is_some();
+pub fn draw_hexdump(state: &mut State, f: &mut Frame, hexdump: Rect, show_popup: bool) {
+    let hexdump_active = state.hexdump.is_some();
     let mut pos = "".to_string();
 
     if hexdump_active {
-        let r = app.hexdump.lock().unwrap().clone().unwrap();
+        let r = state.hexdump.clone().unwrap();
         pos = format!("(0x{:02x?})", r.0);
         let data = &r.1;
 
-        let skip = app.hexdump_scroll;
+        let skip = state.hexdump_scroll;
         let take = hexdump.height;
-        let lines = to_hexdump_str(app, r.0, data, skip as usize, take as usize);
+        let lines = to_hexdump_str(state, r.0, data, skip as usize, take as usize);
         let content_len = data.len() / HEXDUMP_WIDTH;
 
         let lines: Vec<Line> = lines.into_iter().collect();
-        app.hexdump_scroll_state = app.hexdump_scroll_state.content_length(content_len);
+        state.hexdump_scroll_state = state.hexdump_scroll_state.content_length(content_len);
         let paragraph =
             Paragraph::new(lines).block(block(&pos)).style(Style::default().fg(Color::White));
 
@@ -191,11 +186,11 @@ pub fn draw_hexdump(app: &mut App, f: &mut Frame, hexdump: Rect, show_popup: boo
         f.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight),
             hexdump,
-            &mut app.hexdump_scroll_state,
+            &mut state.hexdump_scroll_state,
         );
         if show_popup {
             let area = popup_area(hexdump, 60);
-            let txt_input = Paragraph::new(app.hexdump_popup.value().to_string())
+            let txt_input = Paragraph::new(state.hexdump_popup.value().to_string())
                 .style(Style::default())
                 .block(
                     Block::default()

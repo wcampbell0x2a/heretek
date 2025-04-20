@@ -121,13 +121,13 @@ pub fn draw_hexdump(state: &mut State, f: &mut Frame, hexdump: Rect, show_popup:
         pos = format!("(0x{:02x?})", r.0);
         let data = &r.1;
 
-        let skip = state.hexdump_scroll;
+        let skip = state.hexdump_scroll.scroll;
         let take = hexdump.height;
         let lines = to_hexdump_str(state, r.0, data, skip, take as usize);
         let content_len = data.len() / HEXDUMP_WIDTH;
 
         let lines: Vec<Line> = lines.into_iter().collect();
-        state.hexdump_scroll_state = state.hexdump_scroll_state.content_length(content_len);
+        state.hexdump_scroll.state = state.hexdump_scroll.state.content_length(content_len);
         let paragraph =
             Paragraph::new(lines).block(block(&pos)).style(Style::default().fg(Color::White));
 
@@ -135,7 +135,7 @@ pub fn draw_hexdump(state: &mut State, f: &mut Frame, hexdump: Rect, show_popup:
         f.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight),
             hexdump,
-            &mut state.hexdump_scroll_state,
+            &mut state.hexdump_scroll.state,
         );
         if show_popup {
             let area = popup_area(hexdump, 60);

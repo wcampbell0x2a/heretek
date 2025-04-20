@@ -15,7 +15,7 @@ pub fn draw_output(state: &mut State, f: &mut Frame, output: Rect, full: bool) {
         if len <= max as usize {
             0
         } else {
-            state.output_scroll
+            state.output_scroll.scroll
         }
     } else if len <= max as usize {
         0
@@ -23,7 +23,7 @@ pub fn draw_output(state: &mut State, f: &mut Frame, output: Rect, full: bool) {
         len - max as usize + 2
     };
 
-    state.output_scroll_state = state.output_scroll_state.content_length(len);
+    state.output_scroll.state = state.output_scroll.state.content_length(len);
 
     let outputs: Vec<ListItem> = state
         .output
@@ -46,7 +46,7 @@ pub fn draw_output(state: &mut State, f: &mut Frame, output: Rect, full: bool) {
         f.render_stateful_widget(
             Scrollbar::new(ScrollbarOrientation::VerticalRight),
             output,
-            &mut state.output_scroll_state,
+            &mut state.output_scroll.state,
         );
     }
 }

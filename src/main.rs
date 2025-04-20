@@ -154,6 +154,40 @@ struct StateShare {
     state: Arc<Mutex<State>>,
 }
 
+#[derive(Default, Clone)]
+struct Scroll {
+    scroll: usize,
+    state: ScrollbarState,
+}
+
+impl Scroll {
+    pub fn reset(&mut self) {
+        self.scroll = 0;
+        self.state = self.state.position(0);
+    }
+
+    pub fn end(&mut self, len: usize) {
+        self.scroll = len;
+        self.state.last();
+    }
+
+    pub fn down(&mut self, n: usize, len: usize) {
+        if self.scroll < len.saturating_sub(1) {
+            self.scroll += n;
+            self.state = self.state.position(self.scroll);
+        }
+    }
+
+    pub fn up(&mut self, n: usize) {
+        if self.scroll > n {
+            self.scroll -= n;
+        } else {
+            self.scroll = 0;
+        }
+        self.state = self.state.position(self.scroll);
+    }
+}
+
 #[derive(Clone)]
 struct State {
     /// Messages to write to gdb mi
@@ -176,14 +210,12 @@ struct State {
     sent_input: LimitedBuffer<String>,
     /// Memory map TUI
     memory_map: Option<Vec<MemoryMapping>>,
-    memory_map_scroll: usize,
-    memory_map_scroll_state: ScrollbarState,
+    memory_map_scroll: Scroll,
     /// Current $pc
     current_pc: u64, // TODO: replace with AtomicU64?
     /// All output from gdb
     output: Vec<String>,
-    output_scroll: usize,
-    output_scroll_state: ScrollbarState,
+    output_scroll: Scroll,
     /// Saved output such as (gdb) or > from gdb
     stream_output_prompt: String,
     /// Register TUI
@@ -196,8 +228,7 @@ struct State {
     asm: Vec<Asm>,
     /// Hexdump
     hexdump: Option<(u64, Vec<u8>)>,
-    hexdump_scroll: usize,
-    hexdump_scroll_state: ScrollbarState,
+    hexdump_scroll: Scroll,
     hexdump_popup: Input,
     /// Right side of status in TUI
     async_result: String,
@@ -220,12 +251,10 @@ impl State {
             input_mode: InputMode::Normal,
             sent_input: LimitedBuffer::new(100),
             memory_map: None,
-            memory_map_scroll: 0,
-            memory_map_scroll_state: ScrollbarState::new(0),
+            memory_map_scroll: Scroll::default(),
             current_pc: 0,
             output: Vec::new(),
-            output_scroll: 0,
-            output_scroll_state: ScrollbarState::new(0),
+            output_scroll: Scroll::default(),
             stream_output_prompt: String::new(),
             register_changed: vec![],
             register_names: vec![],
@@ -233,8 +262,7 @@ impl State {
             stack: BTreeMap::new(),
             asm: Vec::new(),
             hexdump: None,
-            hexdump_scroll: 0,
-            hexdump_scroll_state: ScrollbarState::new(0),
+            hexdump_scroll: Scroll::default(),
             hexdump_popup: Input::default(),
             async_result: String::new(),
             status: String::new(),
@@ -560,97 +588,75 @@ fn run_app<B: Backend>(
                     // output
                     (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyOutput) => {
                         let mut state = state_share.state.lock().unwrap();
-                        state.output_scroll = 0;
-                        state.output_scroll_state = state.output_scroll_state.position(0);
+                        state.output_scroll.reset();
                     }
                     (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyOutput) => {
                         let mut state = state_share.state.lock().unwrap();
                         let len = state.output.len();
-                        state.output_scroll = len;
-                        state.output_scroll_state.last();
+                        state.output_scroll.end(len);
                     }
                     (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyOutput) => {
-                        let state = state_share.state.lock().unwrap();
+                        let mut state = state_share.state.lock().unwrap();
                         let len = state.output.len();
-                        let mut output_scroll = state.output_scroll;
-                        let mut scrollbar_state = state.output_scroll_state;
-                        scroll_down(1, &mut output_scroll, &mut scrollbar_state, len);
+                        state.output_scroll.down(1, len);
                     }
                     (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyOutput) => {
-                        let state = state_share.state.lock().unwrap();
-                        let mut output_scroll = state.output_scroll;
-                        let mut scrollbar_state = state.output_scroll_state;
-                        scroll_up(1, &mut output_scroll, &mut scrollbar_state);
+                        let mut state = state_share.state.lock().unwrap();
+                        state.output_scroll.up(1);
                     }
                     (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyOutput) => {
-                        let state = state_share.state.lock().unwrap();
+                        let mut state = state_share.state.lock().unwrap();
                         let len = state.output.len();
-                        let mut output_scroll = state.output_scroll;
-                        let mut scrollbar_state = state.output_scroll_state;
-                        scroll_down(50, &mut output_scroll, &mut scrollbar_state, len);
+                        state.output_scroll.down(50, len);
                     }
                     (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyOutput) => {
-                        let state = state_share.state.lock().unwrap();
-                        let mut output_scroll = state.output_scroll;
-                        let mut scrollbar_state = state.output_scroll_state;
-                        scroll_up(50, &mut output_scroll, &mut scrollbar_state);
+                        let mut state = state_share.state.lock().unwrap();
+                        state.output_scroll.up(50);
                     }
                     // memory mapping
                     (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyMapping) => {
                         let mut state = state_share.state.lock().unwrap();
-                        state.memory_map_scroll = 0;
-                        state.memory_map_scroll_state = state.memory_map_scroll_state.position(0);
+                        state.output_scroll.reset();
                     }
                     (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyMapping) => {
                         let mut state = state_share.state.lock().unwrap();
                         if let Some(memory) = state.memory_map.as_ref() {
                             let len = memory.len();
-                            state.memory_map_scroll = len;
-                            state.memory_map_scroll_state.last();
+                            state.memory_map_scroll.end(len);
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyMapping) => {
-                        let state = state_share.state.lock().unwrap();
+                        let mut state = state_share.state.lock().unwrap();
                         if let Some(memory) = state.memory_map.as_ref() {
                             let len = memory.len() / HEXDUMP_WIDTH;
-                            let mut memory_map_scroll = state.memory_map_scroll;
-                            let mut scrollbar_state = state.memory_map_scroll_state;
-                            scroll_down(1, &mut memory_map_scroll, &mut scrollbar_state, len);
+                            state.memory_map_scroll.down(1, len);
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyMapping) => {
-                        let state = state_share.state.lock().unwrap();
-                        let mut memory_map_scroll = state.memory_map_scroll;
-                        let mut scrollbar_state = state.memory_map_scroll_state;
-                        scroll_up(1, &mut memory_map_scroll, &mut scrollbar_state);
+                        let mut state = state_share.state.lock().unwrap();
+                        state.memory_map_scroll.up(1);
                     }
                     (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyMapping) => {
-                        let state = state_share.state.lock().unwrap();
+                        let mut state = state_share.state.lock().unwrap();
                         if let Some(memory) = state.memory_map.as_ref() {
                             let len = memory.len() / HEXDUMP_WIDTH;
-                            let mut memory_map_scroll = state.memory_map_scroll;
-                            let mut scrollbar_state = state.memory_map_scroll_state;
-                            scroll_down(50, &mut memory_map_scroll, &mut scrollbar_state, len);
+                            state.memory_map_scroll.down(50, len);
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyMapping) => {
-                        let state = state_share.state.lock().unwrap();
-                        let mut memory_map_scroll = state.memory_map_scroll;
-                        let mut scrollbar_state = state.memory_map_scroll_state;
-                        scroll_up(50, &mut memory_map_scroll, &mut scrollbar_state);
+                        let mut state = state_share.state.lock().unwrap();
+                        state.memory_map_scroll.up(50);
                     }
                     // hexdump
                     (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyHexdump) => {
                         let mut state = state_share.state.lock().unwrap();
-                        state.hexdump_scroll = 0;
-                        state.hexdump_scroll_state = state.hexdump_scroll_state.position(0);
+                        state.hexdump_scroll.reset();
                     }
                     (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyHexdump) => {
                         let mut state = state_share.state.lock().unwrap();
                         if let Some(hexdump) = state.hexdump.as_ref() {
                             let len = hexdump.1.len() / HEXDUMP_WIDTH;
-                            state.hexdump_scroll = len;
-                            state.hexdump_scroll_state.last();
+                            state.hexdump_scroll.end(len);
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('S'), Mode::OnlyHexdump) => {
@@ -666,8 +672,7 @@ fn run_app<B: Backend>(
                             state.written.push_back(Written::Memory);
 
                             // reset position
-                            state.hexdump_scroll = 0;
-                            state.hexdump_scroll_state = state.hexdump_scroll_state.position(0);
+                            state.hexdump_scroll.reset();
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('T'), Mode::OnlyHexdump) => {
@@ -679,41 +684,32 @@ fn run_app<B: Backend>(
                             state.written.push_back(Written::Memory);
 
                             // reset position
-                            state.hexdump_scroll = 0;
-                            state.hexdump_scroll_state = state.hexdump_scroll_state.position(0);
+                            state.hexdump_scroll.reset();
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyHexdump) => {
-                        let state = state_share.state.lock().unwrap();
+                        let mut state = state_share.state.lock().unwrap();
                         let hexdump = &state.hexdump;
                         if let Some(hexdump) = hexdump.as_ref() {
                             let len = hexdump.1.len() / HEXDUMP_WIDTH;
-                            let mut hexdump_scroll = state.hexdump_scroll;
-                            let mut scrollbar_state = state.hexdump_scroll_state;
-                            scroll_down(1, &mut hexdump_scroll, &mut scrollbar_state, len);
+                            state.hexdump_scroll.down(1, len);
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyHexdump) => {
-                        let state = state_share.state.lock().unwrap();
-                        let mut hexdump_scroll = state.hexdump_scroll;
-                        let mut scrollbar_state = state.hexdump_scroll_state;
-                        scroll_up(1, &mut hexdump_scroll, &mut scrollbar_state);
+                        let mut state = state_share.state.lock().unwrap();
+                        state.hexdump_scroll.up(1);
                     }
                     (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyHexdump) => {
-                        let state = state_share.state.lock().unwrap();
+                        let mut state = state_share.state.lock().unwrap();
                         let hexdump = &state.hexdump;
                         if let Some(hexdump) = hexdump.as_ref() {
                             let len = hexdump.1.len() / HEXDUMP_WIDTH;
-                            let mut hexdump_scroll = state.hexdump_scroll;
-                            let mut scrollbar_state = state.hexdump_scroll_state;
-                            scroll_down(50, &mut hexdump_scroll, &mut scrollbar_state, len);
+                            state.hexdump_scroll.down(50, len);
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyHexdump) => {
-                        let state = state_share.state.lock().unwrap();
-                        let mut hexdump_scroll = state.hexdump_scroll;
-                        let mut scrollbar_state = state.hexdump_scroll_state;
-                        scroll_up(50, &mut hexdump_scroll, &mut scrollbar_state);
+                        let mut state = state_share.state.lock().unwrap();
+                        state.hexdump_scroll.up(50);
                     }
                     (_, KeyCode::Tab, _) => {
                         let mut state = state_share.state.lock().unwrap();
@@ -741,22 +737,6 @@ fn run_app<B: Backend>(
             }
         }
     }
-}
-
-fn scroll_down(n: usize, scroll: &mut usize, state: &mut ScrollbarState, len: usize) {
-    if scroll < &mut len.saturating_sub(1) {
-        *scroll += n;
-        *state = state.position(*scroll);
-    }
-}
-
-fn scroll_up(n: usize, scroll: &mut usize, state: &mut ScrollbarState) {
-    if *scroll > n {
-        *scroll -= n;
-    } else {
-        *scroll = 0;
-    }
-    *state = state.position(*scroll);
 }
 
 fn key_up(state: &mut State) {

@@ -31,9 +31,9 @@ pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
     }
     let len = rows.len();
     let max = mapping_rect.height;
-    let skip = if len <= max as usize { 0 } else { state.memory_map_scroll };
+    let skip = if len <= max as usize { 0 } else { state.memory_map_scroll.scroll };
 
-    state.memory_map_scroll_state = state.memory_map_scroll_state.content_length(len);
+    state.memory_map_scroll.state = state.memory_map_scroll.state.content_length(len);
     let rows: Vec<Row> = rows.into_iter().skip(skip).take(max as usize).collect();
 
     let widths = [
@@ -50,6 +50,6 @@ pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
     f.render_stateful_widget(
         Scrollbar::new(ScrollbarOrientation::VerticalRight),
         mapping_rect,
-        &mut state.memory_map_scroll_state,
+        &mut state.memory_map_scroll.state,
     );
 }

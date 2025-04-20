@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use log::debug;
 use regex::{CaptureMatches, Regex};
 
 /// Amount of bytes requested during deref to get symbol/asm

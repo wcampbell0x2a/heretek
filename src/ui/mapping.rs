@@ -5,9 +5,9 @@ use ratatui::{layout::Rect, style::Style, widgets::Row, Frame};
 
 use super::{BLUE, ORANGE, SCROLL_CONTROL_TEXT};
 
-use crate::App;
+use crate::State;
 
-pub fn draw_mapping(app: &mut App, f: &mut Frame, mapping_rect: Rect) {
+pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
     let title = format!("Memory Mapping {SCROLL_CONTROL_TEXT}");
 
     let mut rows = vec![];
@@ -15,7 +15,7 @@ pub fn draw_mapping(app: &mut App, f: &mut Frame, mapping_rect: Rect) {
         Row::new(["Start Address", "End Address", "Size", "Offset", "Permissions", "Path"])
             .style(Style::new().fg(BLUE)),
     );
-    let memory_map = app.memory_map.lock().unwrap();
+    let memory_map = state.memory_map.clone();
     if let Some(memory_map) = memory_map.as_ref() {
         for m in memory_map {
             let row = Row::new([
@@ -31,9 +31,9 @@ pub fn draw_mapping(app: &mut App, f: &mut Frame, mapping_rect: Rect) {
     }
     let len = rows.len();
     let max = mapping_rect.height;
-    let skip = if len <= max as usize { 0 } else { app.memory_map_scroll };
+    let skip = if len <= max as usize { 0 } else { state.memory_map_scroll.scroll };
 
-    app.memory_map_scroll_state = app.memory_map_scroll_state.content_length(len);
+    state.memory_map_scroll.state = state.memory_map_scroll.state.content_length(len);
     let rows: Vec<Row> = rows.into_iter().skip(skip).take(max as usize).collect();
 
     let widths = [
@@ -50,6 +50,6 @@ pub fn draw_mapping(app: &mut App, f: &mut Frame, mapping_rect: Rect) {
     f.render_stateful_widget(
         Scrollbar::new(ScrollbarOrientation::VerticalRight),
         mapping_rect,
-        &mut app.memory_map_scroll_state,
+        &mut state.memory_map_scroll.state,
     );
 }

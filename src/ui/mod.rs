@@ -1,4 +1,3 @@
-use log::trace;
 use ratatui::layout::Constraint::{Fill, Length, Min};
 use ratatui::layout::Layout;
 use ratatui::style::Color;
@@ -8,7 +7,7 @@ use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::deref::Deref;
-use crate::{App, Mode};
+use crate::{Mode, State};
 
 pub mod asm;
 pub mod bt;
@@ -44,77 +43,85 @@ pub const SAVED_STACK: u16 = 14;
 
 pub const SCROLL_CONTROL_TEXT: &str = "(up(k), down(j), 50 up(K), 50 down(J), top(g), bottom(G))";
 
-pub fn ui(f: &mut Frame, app: &mut App) {
+pub fn ui(f: &mut Frame, state: &mut State) {
+    let (completions, bt_len, mode) = { (state.completions.clone(), state.bt.len(), state.mode) };
+
     // TODO: register size should depend on arch
     let top_size = Fill(1);
 
     // If only output, then no top and fill all with output
-    if let Mode::OnlyOutput = app.mode {
+    if let Mode::OnlyOutput = mode {
         let output_size = Fill(1);
-        let completions = (!app.completions.lock().unwrap().is_empty()) as u16;
-        let vertical = Layout::vertical([Length(2), output_size, Length(3), Length(completions)]);
+        let completions_len = (!completions.is_empty()) as u16;
+        let vertical =
+            Layout::vertical([Length(2), output_size, Length(3), Length(completions_len)]);
         let [title_area, output, input, completions_area] = vertical.areas(f.area());
 
         // Add completions if any are found
-        let completions = app.completions.lock().unwrap().join(" ");
+        let completions = completions.join(" ");
         if completions_area.area() != 0 {
             let completions_str = Paragraph::new(completions);
             f.render_widget(completions_str, completions_area);
         }
 
-        title::draw_title_area(app, f, title_area);
-        output::draw_output(app, f, output, true);
-        input::draw_input(title_area, app, f, input);
+        title::draw_title_area(state, f, title_area);
+        output::draw_output(state, f, output, true);
+        input::draw_input(title_area, state, f, input);
         return;
     }
 
     // the rest will include the top
     let output_size = Length(SAVED_OUTPUT as u16);
 
-    let bt_len = app.bt.lock().unwrap().len();
-    let completions = (!app.completions.lock().unwrap().is_empty()) as u16;
     let top = if bt_len == 0 {
-        let vertical =
-            Layout::vertical([Length(2), top_size, output_size, Length(3), Length(completions)]);
+        let completions_len = (!completions.is_empty()) as u16;
+        let vertical = Layout::vertical([
+            Length(2),
+            top_size,
+            output_size,
+            Length(3),
+            Length(completions_len),
+        ]);
         let [title_area, top, output, input, completions_area] = vertical.areas(f.area());
 
         // Add completions if any are found
-        let completions = app.completions.lock().unwrap().join(" ");
+        let completions = completions.join(" ");
         if completions_area.area() != 0 {
             let completions_str = Paragraph::new(completions);
             f.render_widget(completions_str, completions_area);
         }
-        title::draw_title_area(app, f, title_area);
-        output::draw_output(app, f, output, false);
-        input::draw_input(title_area, app, f, input);
+        title::draw_title_area(state, f, title_area);
+        output::draw_output(state, f, output, false);
+        input::draw_input(title_area, state, f, input);
 
         top
     } else {
+        let completions_len = (!completions.is_empty()) as u16;
         let vertical = Layout::vertical([
             Length(2),
             top_size,
             Length(bt_len as u16 + 1),
             output_size,
             Length(3),
-            Length(completions),
+            Length(completions_len),
         ]);
         let [title_area, top, bt_area, output, input, completions_area] = vertical.areas(f.area());
 
         // Add completions if any are found
-        let completions = app.completions.lock().unwrap().join(" ");
+        let completions = completions.join(" ");
         if completions_area.area() != 0 {
             let completions_str = Paragraph::new(completions);
             f.render_widget(completions_str, completions_area);
         }
-        bt::draw_bt(app, f, bt_area);
-        title::draw_title_area(app, f, title_area);
-        output::draw_output(app, f, output, false);
-        input::draw_input(title_area, app, f, input);
+        bt::draw_bt(state, f, bt_area);
+        title::draw_title_area(state, f, title_area);
+        output::draw_output(state, f, output, false);
+        input::draw_input(title_area, state, f, input);
 
         top
     };
 
-    match app.mode {
+    match mode {
         Mode::All => {
             let register_size = Min(10);
             let stack_size = Length(10 + 1);
@@ -123,39 +130,39 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             let vertical = Layout::vertical([register_size, stack_size, asm_size]);
             let [register, stack, asm] = vertical.areas(top);
 
-            registers::draw_registers(app, f, register);
-            stack::draw_stack(app, f, stack);
-            asm::draw_asm(app, f, asm);
+            registers::draw_registers(state, f, register);
+            stack::draw_stack(state, f, stack);
+            asm::draw_asm(state, f, asm);
         }
         Mode::OnlyRegister => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            registers::draw_registers(app, f, all);
+            registers::draw_registers(state, f, all);
         }
         Mode::OnlyStack => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            stack::draw_stack(app, f, all);
+            stack::draw_stack(state, f, all);
         }
         Mode::OnlyInstructions => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            asm::draw_asm(app, f, all);
+            asm::draw_asm(state, f, all);
         }
         Mode::OnlyMapping => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            mapping::draw_mapping(app, f, all);
+            mapping::draw_mapping(state, f, all);
         }
         Mode::OnlyHexdump => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            hexdump::draw_hexdump(app, f, all, false);
+            hexdump::draw_hexdump(state, f, all, false);
         }
         Mode::OnlyHexdumpPopup => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            hexdump::draw_hexdump(app, f, all, true);
+            hexdump::draw_hexdump(state, f, all, true);
         }
         _ => (),
     }
@@ -177,7 +184,7 @@ pub fn apply_val_color(span: &mut Span, is_stack: bool, is_heap: bool, is_text: 
 pub fn add_deref_to_span(
     deref: &Deref,
     spans: &mut Vec<Span>,
-    app: &App,
+    state: &mut State,
     filepath: &str,
     longest_cells: &mut usize,
     width: usize,
@@ -211,7 +218,7 @@ pub fn add_deref_to_span(
         let padding_width = width.saturating_sub(hex_width);
         let mut span =
             Span::from(format!("→ {}{:padding$}", hex_string, "", padding = padding_width));
-        let (is_stack, is_heap, is_text) = app.classify_val(*v, filepath);
+        let (is_stack, is_heap, is_text) = state.classify_val(*v, filepath);
         apply_val_color(&mut span, is_stack, is_heap, is_text);
         spans.push(span);
     }

@@ -1,10 +1,9 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::fs::{self, File};
 use std::io::{BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{env, thread};
@@ -38,6 +37,7 @@ mod mi;
 mod register;
 mod ui;
 
+#[derive(Debug, Copy, Clone)]
 enum InputMode {
     Normal,
     Editing,
@@ -135,7 +135,7 @@ impl Mode {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct Bt {
     location: u64,
     function: Option<String>,
@@ -146,16 +146,60 @@ struct Bt {
 struct App {
     /// Gdb stdin
     gdb_stdin: Arc<Mutex<dyn Write + Send>>,
+}
+
+// TODO: this could be split up, some of these fields
+// are always set after the file is loaded in gdb
+struct StateShare {
+    state: Arc<Mutex<State>>,
+}
+
+#[derive(Default, Clone)]
+struct Scroll {
+    scroll: usize,
+    state: ScrollbarState,
+}
+
+impl Scroll {
+    pub fn reset(&mut self) {
+        self.scroll = 0;
+        self.state = self.state.position(0);
+    }
+
+    pub fn end(&mut self, len: usize) {
+        self.scroll = len;
+        self.state.last();
+    }
+
+    pub fn down(&mut self, n: usize, len: usize) {
+        if self.scroll < len.saturating_sub(1) {
+            self.scroll += n;
+            self.state = self.state.position(self.scroll);
+        }
+    }
+
+    pub fn up(&mut self, n: usize) {
+        if self.scroll > n {
+            self.scroll -= n;
+        } else {
+            self.scroll = 0;
+        }
+        self.state = self.state.position(self.scroll);
+    }
+}
+
+#[derive(Clone)]
+struct State {
     /// Messages to write to gdb mi
-    next_write: Arc<Mutex<Vec<String>>>,
+    next_write: Vec<String>,
     /// Stack of what was written to gdb that is expected back in order to parse correctly
-    written: Arc<Mutex<VecDeque<Written>>>,
+    written: VecDeque<Written>,
     /// -32 bit mode
-    thirty_two_bit: Arc<AtomicBool>,
+    thirty_two_bit: bool,
     /// Current filepath of .text
-    filepath: Arc<Mutex<Option<PathBuf>>>,
+    filepath: Option<PathBuf>,
     /// Current endian
-    endian: Arc<Mutex<Option<Endian>>>,
+    endian: Option<Endian>,
     /// Current mode
     mode: Mode,
     /// TUI input
@@ -165,36 +209,67 @@ struct App {
     /// List of previously sent commands from our own input
     sent_input: LimitedBuffer<String>,
     /// Memory map TUI
-    memory_map: Arc<Mutex<Option<Vec<MemoryMapping>>>>,
-    memory_map_scroll: usize,
-    memory_map_scroll_state: ScrollbarState,
+    memory_map: Option<Vec<MemoryMapping>>,
+    memory_map_scroll: Scroll,
     /// Current $pc
-    current_pc: Arc<Mutex<u64>>, // TODO: replace with AtomicU64?
+    current_pc: u64, // TODO: replace with AtomicU64?
     /// All output from gdb
-    output: Arc<Mutex<Vec<String>>>,
-    output_scroll: usize,
-    output_scroll_state: ScrollbarState,
+    output: Vec<String>,
+    output_scroll: Scroll,
     /// Saved output such as (gdb) or > from gdb
-    stream_output_prompt: Arc<Mutex<String>>,
+    stream_output_prompt: String,
     /// Register TUI
-    register_changed: Arc<Mutex<Vec<u8>>>,
-    register_names: Arc<Mutex<Vec<String>>>,
-    registers: Arc<Mutex<Vec<RegisterStorage>>>,
+    register_changed: Vec<u8>,
+    register_names: Vec<String>,
+    registers: Vec<RegisterStorage>,
     /// Saved Stack
-    stack: Arc<Mutex<BTreeMap<u64, Deref>>>,
+    stack: BTreeMap<u64, Deref>,
     /// Saved ASM
-    asm: Arc<Mutex<Vec<Asm>>>,
+    asm: Vec<Asm>,
     /// Hexdump
-    hexdump: Arc<Mutex<Option<(u64, Vec<u8>)>>>,
-    hexdump_scroll: usize,
-    hexdump_scroll_state: ScrollbarState,
+    hexdump: Option<(u64, Vec<u8>)>,
+    hexdump_scroll: Scroll,
     hexdump_popup: Input,
     /// Right side of status in TUI
-    async_result: Arc<Mutex<String>>,
+    async_result: String,
     /// Left side of status in TUI
-    status: Arc<Mutex<String>>,
-    bt: Arc<Mutex<Vec<Bt>>>,
-    completions: Arc<Mutex<Vec<String>>>,
+    status: String,
+    bt: Vec<Bt>,
+    completions: Vec<String>,
+}
+
+impl State {
+    pub fn new(args: Args) -> State {
+        State {
+            next_write: vec![],
+            written: VecDeque::new(),
+            thirty_two_bit: args.thirty_two_bit,
+            filepath: None,
+            endian: None,
+            mode: Mode::All,
+            input: Input::default(),
+            input_mode: InputMode::Normal,
+            sent_input: LimitedBuffer::new(100),
+            memory_map: None,
+            memory_map_scroll: Scroll::default(),
+            current_pc: 0,
+            output: Vec::new(),
+            output_scroll: Scroll::default(),
+            stream_output_prompt: String::new(),
+            register_changed: vec![],
+            register_names: vec![],
+            registers: vec![],
+            stack: BTreeMap::new(),
+            asm: Vec::new(),
+            hexdump: None,
+            hexdump_scroll: Scroll::default(),
+            hexdump_popup: Input::default(),
+            async_result: String::new(),
+            status: String::new(),
+            bt: vec![],
+            completions: vec![],
+        }
+    }
 }
 
 impl App {
@@ -234,54 +309,23 @@ impl App {
                 }
             };
 
-        let app = App {
-            gdb_stdin,
-            next_write: Arc::new(Mutex::new(vec![])),
-            written: Arc::new(Mutex::new(VecDeque::new())),
-            thirty_two_bit: Arc::new(AtomicBool::new(args.thirty_two_bit)),
-            filepath: Arc::new(Mutex::new(None)),
-            endian: Arc::new(Mutex::new(None)),
-            mode: Mode::All,
-            input: Input::default(),
-            input_mode: InputMode::Normal,
-            sent_input: LimitedBuffer::new(100),
-            memory_map: Arc::new(Mutex::new(None)),
-            memory_map_scroll: 0,
-            memory_map_scroll_state: ScrollbarState::new(0),
-            current_pc: Arc::new(Mutex::new(0)),
-            output: Arc::new(Mutex::new(Vec::new())),
-            output_scroll: 0,
-            output_scroll_state: ScrollbarState::new(0),
-            stream_output_prompt: Arc::new(Mutex::new(String::new())),
-            register_changed: Arc::new(Mutex::new(vec![])),
-            register_names: Arc::new(Mutex::new(vec![])),
-            registers: Arc::new(Mutex::new(vec![])),
-            stack: Arc::new(Mutex::new(BTreeMap::new())),
-            asm: Arc::new(Mutex::new(Vec::new())),
-            hexdump: Arc::new(Mutex::new(None)),
-            hexdump_scroll: 0,
-            hexdump_scroll_state: ScrollbarState::new(0),
-            hexdump_popup: Input::default(),
-            async_result: Arc::new(Mutex::new(String::new())),
-            status: Arc::new(Mutex::new(String::new())),
-            bt: Arc::new(Mutex::new(vec![])),
-            completions: Arc::new(Mutex::new(vec![])),
-        };
+        let app = App { gdb_stdin };
 
         (reader, app)
     }
+}
 
+impl State {
     // Parse a "file filepath" command and save
     fn save_filepath(&mut self, val: &str) {
         let filepath: Vec<&str> = val.split_whitespace().collect();
         let filepath = resolve_home(filepath[1]).unwrap();
         // debug!("filepath: {filepath:?}");
-        self.filepath = Arc::new(Mutex::new(Some(filepath)));
+        self.filepath = Some(filepath);
     }
 
-    pub fn find_first_heap(&self) -> Option<MemoryMapping> {
-        let memory_map = self.memory_map.lock().unwrap();
-        if let Some(memory_map) = memory_map.clone() {
+    pub fn find_first_heap(&mut self) -> Option<MemoryMapping> {
+        if let Some(memory_map) = self.memory_map.clone() {
             memory_map.iter().find(|a| a.is_heap()).cloned()
         } else {
             None
@@ -289,8 +333,7 @@ impl App {
     }
 
     pub fn find_first_stack(&self) -> Option<MemoryMapping> {
-        let memory_map = self.memory_map.lock().unwrap();
-        if let Some(memory_map) = memory_map.clone() {
+        if let Some(memory_map) = self.memory_map.clone() {
             memory_map.iter().find(|a| a.is_stack()).cloned()
         } else {
             None
@@ -303,10 +346,9 @@ impl App {
         let mut is_text = false;
         if val != 0 {
             // look through, add see if the value is part of the stack
-            let memory_map = self.memory_map.lock().unwrap();
             // trace!("{:02x?}", memory_map);
-            if memory_map.is_some() {
-                for r in memory_map.as_ref().unwrap() {
+            if self.memory_map.is_some() {
+                for r in self.memory_map.as_ref().unwrap() {
                     if r.contains(val) {
                         if r.is_stack() {
                             is_stack = true;
@@ -328,7 +370,7 @@ impl App {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Written {
     /// Requested Register Value deref
     // TODO: Could this just be the register name?
@@ -356,24 +398,27 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Start rx thread
     let (gdb_stdout, mut app) = App::new_stream(args.clone());
+    let state = State::new(args.clone());
+    let mut state_share = StateShare { state: Arc::new(Mutex::new(state)) };
 
     // Setup terminal
     let mut terminal = ratatui::init();
 
-    into_gdb(&app, gdb_stdout);
+    into_gdb(&state_share, gdb_stdout);
 
     if let Some(cmds) = args.cmds {
         let data = fs::read_to_string(cmds).unwrap();
         for cmd in data.lines() {
             if !cmd.starts_with("#") {
-                app.sent_input.push(cmd.to_string());
-                process_line(&mut app, &cmd);
+                let mut state = state_share.state.lock().unwrap();
+                state.sent_input.push(cmd.to_string());
+                process_line(&mut app, &mut state, cmd);
             }
         }
     }
 
     // Run tui application
-    let res = run_app(&mut terminal, &mut app);
+    let res = run_app(&mut terminal, &mut app, &mut state_share);
 
     // restore terminal
     disable_raw_mode()?;
@@ -408,60 +453,28 @@ fn init_logging(log_path: &Option<String>) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn into_gdb(app: &App, gdb_stdout: BufReader<Box<dyn Read + Send>>) {
-    // Clone all the variables that need to be accessed into gdb thread
-    let filepath_arc = Arc::clone(&app.filepath);
-    let thirty_two_bit_arc = Arc::clone(&app.thirty_two_bit);
-    let next_write_arc = Arc::clone(&app.next_write);
-    let written_arc = Arc::clone(&app.written);
-    let endian_arc = Arc::clone(&app.endian);
-    let current_pc_arc = Arc::clone(&app.current_pc);
-    let output_arc = Arc::clone(&app.output);
-    let stream_output_prompt_arc = Arc::clone(&app.stream_output_prompt);
-    let register_changed_arc = Arc::clone(&app.register_changed);
-    let register_names_arc = Arc::clone(&app.register_names);
-    let registers_arc = Arc::clone(&app.registers);
-    let memory_map_arc = Arc::clone(&app.memory_map);
-    let stack_arc = Arc::clone(&app.stack);
-    let asm_arc = Arc::clone(&app.asm);
-    let hexdump_arc = Arc::clone(&app.hexdump);
-    let async_result_arc = Arc::clone(&app.async_result);
-    let bt_arc = Arc::clone(&app.bt);
-    let completions_arc = Arc::clone(&app.completions);
+fn into_gdb(state: &StateShare, gdb_stdout: BufReader<Box<dyn Read + Send>>) {
+    let state_arc = Arc::clone(&state.state);
 
     // Thread to read GDB output and parse it
-    thread::spawn(move || {
-        gdb::gdb_interact(
-            gdb_stdout,
-            next_write_arc,
-            written_arc,
-            thirty_two_bit_arc,
-            endian_arc,
-            filepath_arc,
-            register_changed_arc,
-            register_names_arc,
-            registers_arc,
-            current_pc_arc,
-            stack_arc,
-            asm_arc,
-            output_arc,
-            stream_output_prompt_arc,
-            memory_map_arc,
-            hexdump_arc,
-            async_result_arc,
-            bt_arc,
-            completions_arc,
-        )
-    });
+    thread::spawn(move || gdb::gdb_interact(gdb_stdout, state_arc));
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<()> {
+fn run_app<B: Backend>(
+    terminal: &mut Terminal<B>,
+    app: &mut App,
+    state_share: &mut StateShare,
+) -> io::Result<()> {
     loop {
-        terminal.draw(|f| ui::ui(f, app))?;
+        {
+            let mut state = state_share.state.lock().unwrap();
+            terminal.draw(|f| ui::ui(f, &mut state))?;
+        }
 
         // check and see if we need to write to GBD MI
         {
-            let mut next_write = app.next_write.lock().unwrap();
+            let mut state = state_share.state.lock().unwrap();
+            let next_write = &mut state.next_write;
             if !next_write.is_empty() {
                 for w in &*next_write {
                     write_mi(&app.gdb_stdin, w);
@@ -472,250 +485,252 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
 
         // check if completions are back and we need to replace the input
         {
-            let mut completions = app.completions.lock().unwrap();
-            if !completions.is_empty() {
+            let mut state = state_share.state.lock().unwrap();
+            if !state.completions.is_empty() {
                 // Just replace if completions is 1
-                if completions.len() == 1 {
-                    app.input = Input::new(completions[0].clone());
+                if state.completions.len() == 1 {
+                    state.input = Input::new(state.completions[0].clone());
                     // we are done with the values, clear them
-                    completions.clear();
+                    state.completions.clear();
                 }
 
                 // if else, we display them
             }
         }
-
         if crossterm::event::poll(Duration::from_millis(10))? {
             if let Event::Key(key) = event::read()? {
                 if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                     gdb::write_mi(&app.gdb_stdin, "-exec-interrupt");
                     continue;
                 }
-                match (&app.input_mode, key.code, &app.mode) {
+                let (input_mode, mode) = {
+                    let state = state_share.state.lock().unwrap();
+                    (state.input_mode, state.mode)
+                };
+                match (&input_mode, key.code, &mode) {
                     // hexdump popup
                     (_, KeyCode::Esc, Mode::OnlyHexdumpPopup) => {
-                        app.hexdump_popup = Input::default();
-                        app.mode = Mode::OnlyHexdump;
+                        let mut state = state_share.state.lock().unwrap();
+                        state.hexdump_popup = Input::default();
+                        state.mode = Mode::OnlyHexdump;
                     }
                     (_, KeyCode::Char('S'), Mode::OnlyHexdumpPopup) => {
-                        app.input.handle_event(&Event::Key(key));
+                        let mut state = state_share.state.lock().unwrap();
+                        state.input.handle_event(&Event::Key(key));
                     }
                     (_, KeyCode::Enter, Mode::OnlyHexdumpPopup) => {
-                        let val = app.hexdump_popup.clone();
+                        let mut state = state_share.state.lock().unwrap();
+                        let val = state.hexdump_popup.clone();
                         let val = val.value();
 
-                        let hexdump_lock = app.hexdump.lock().unwrap();
-                        if let Some(hexdump) = hexdump_lock.as_ref() {
+                        if let Some(hexdump) = state.hexdump.as_ref() {
                             if let Some(path) = resolve_home(val) {
                                 if std::fs::write(&path, &hexdump.1).is_ok() {
-                                    let mut output_lock = app.output.lock().unwrap();
-                                    output_lock.push(format!(
+                                    state.output.push(format!(
                                         "h> hexdump succesfully written to {}",
                                         path.to_str().unwrap()
                                     ));
                                 }
                             }
                         }
-                        app.hexdump_popup = Input::default();
-                        app.mode = Mode::OnlyHexdump;
+                        state.hexdump_popup = Input::default();
+                        state.mode = Mode::OnlyHexdump;
                     }
                     (_, _, Mode::OnlyHexdumpPopup) => {
-                        app.hexdump_popup.handle_event(&Event::Key(key));
+                        let mut state = state_share.state.lock().unwrap();
+                        state.hexdump_popup.handle_event(&Event::Key(key));
                     }
                     // Input
                     (InputMode::Normal, KeyCode::Char('i'), _) => {
-                        app.input_mode = InputMode::Editing;
+                        let mut state = state_share.state.lock().unwrap();
+                        state.input_mode = InputMode::Editing;
                     }
                     (InputMode::Normal, KeyCode::Char('q'), _) => {
                         return Ok(());
                     }
                     // Modes
                     (InputMode::Normal, KeyCode::Tab, _) => {
-                        app.mode = app.mode.next();
+                        let mut state = state_share.state.lock().unwrap();
+                        state.mode = state.mode.next();
                     }
                     (_, KeyCode::F(1), _) => {
-                        app.mode = Mode::All;
+                        let mut state = state_share.state.lock().unwrap();
+                        state.mode = Mode::All;
                     }
                     (_, KeyCode::F(2), _) => {
-                        app.mode = Mode::OnlyRegister;
+                        let mut state = state_share.state.lock().unwrap();
+                        state.mode = Mode::OnlyRegister;
                     }
                     (_, KeyCode::F(3), _) => {
-                        app.mode = Mode::OnlyStack;
+                        let mut state = state_share.state.lock().unwrap();
+                        state.mode = Mode::OnlyStack;
                     }
                     (_, KeyCode::F(4), _) => {
-                        app.mode = Mode::OnlyInstructions;
+                        let mut state = state_share.state.lock().unwrap();
+                        state.mode = Mode::OnlyInstructions;
                     }
                     (_, KeyCode::F(5), _) => {
-                        app.mode = Mode::OnlyOutput;
+                        let mut state = state_share.state.lock().unwrap();
+                        state.mode = Mode::OnlyOutput;
                     }
                     (_, KeyCode::F(6), _) => {
-                        app.mode = Mode::OnlyMapping;
+                        let mut state = state_share.state.lock().unwrap();
+                        state.mode = Mode::OnlyMapping;
                     }
                     (_, KeyCode::F(7), _) => {
-                        app.mode = Mode::OnlyHexdump;
+                        let mut state = state_share.state.lock().unwrap();
+                        state.mode = Mode::OnlyHexdump;
                     }
                     (InputMode::Editing, KeyCode::Esc, _) => {
-                        app.input_mode = InputMode::Normal;
+                        let mut state = state_share.state.lock().unwrap();
+                        state.input_mode = InputMode::Normal;
                     }
                     // output
                     (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyOutput) => {
-                        app.output_scroll = 0;
-                        app.output_scroll_state = app.output_scroll_state.position(0);
+                        let mut state = state_share.state.lock().unwrap();
+                        state.output_scroll.reset();
                     }
                     (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyOutput) => {
-                        let output_lock = app.output.lock().unwrap();
-                        let len = output_lock.len();
-                        app.output_scroll = len;
-                        app.output_scroll_state.last();
+                        let mut state = state_share.state.lock().unwrap();
+                        let len = state.output.len();
+                        state.output_scroll.end(len);
                     }
                     (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyOutput) => {
-                        let output_lock = app.output.lock().unwrap();
-                        let len = output_lock.len();
-                        scroll_down(1, &mut app.output_scroll, &mut app.output_scroll_state, len);
+                        let mut state = state_share.state.lock().unwrap();
+                        let len = state.output.len();
+                        state.output_scroll.down(1, len);
                     }
                     (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyOutput) => {
-                        scroll_up(1, &mut app.output_scroll, &mut app.output_scroll_state);
+                        let mut state = state_share.state.lock().unwrap();
+                        state.output_scroll.up(1);
                     }
                     (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyOutput) => {
-                        let output_lock = app.output.lock().unwrap();
-                        let len = output_lock.len();
-                        scroll_down(50, &mut app.output_scroll, &mut app.output_scroll_state, len);
+                        let mut state = state_share.state.lock().unwrap();
+                        let len = state.output.len();
+                        state.output_scroll.down(50, len);
                     }
                     (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyOutput) => {
-                        scroll_up(50, &mut app.output_scroll, &mut app.output_scroll_state);
+                        let mut state = state_share.state.lock().unwrap();
+                        state.output_scroll.up(50);
                     }
                     // memory mapping
                     (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyMapping) => {
-                        app.memory_map_scroll = 0;
-                        app.memory_map_scroll_state = app.memory_map_scroll_state.position(0);
+                        let mut state = state_share.state.lock().unwrap();
+                        state.output_scroll.reset();
                     }
                     (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyMapping) => {
-                        let memory_lock = app.memory_map.lock().unwrap();
-                        if let Some(memory) = memory_lock.as_ref() {
+                        let mut state = state_share.state.lock().unwrap();
+                        if let Some(memory) = state.memory_map.as_ref() {
                             let len = memory.len();
-                            app.memory_map_scroll = len;
-                            app.memory_map_scroll_state.last();
+                            state.memory_map_scroll.end(len);
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyMapping) => {
-                        let memory_lock = app.memory_map.lock().unwrap();
-                        if let Some(memory) = memory_lock.as_ref() {
+                        let mut state = state_share.state.lock().unwrap();
+                        if let Some(memory) = state.memory_map.as_ref() {
                             let len = memory.len() / HEXDUMP_WIDTH;
-                            scroll_down(
-                                1,
-                                &mut app.memory_map_scroll,
-                                &mut app.memory_map_scroll_state,
-                                len,
-                            );
+                            state.memory_map_scroll.down(1, len);
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyMapping) => {
-                        scroll_up(1, &mut app.memory_map_scroll, &mut app.memory_map_scroll_state);
+                        let mut state = state_share.state.lock().unwrap();
+                        state.memory_map_scroll.up(1);
                     }
                     (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyMapping) => {
-                        let memory_lock = app.memory_map.lock().unwrap();
-                        if let Some(memory) = memory_lock.as_ref() {
+                        let mut state = state_share.state.lock().unwrap();
+                        if let Some(memory) = state.memory_map.as_ref() {
                             let len = memory.len() / HEXDUMP_WIDTH;
-                            scroll_down(
-                                50,
-                                &mut app.memory_map_scroll,
-                                &mut app.memory_map_scroll_state,
-                                len,
-                            );
+                            state.memory_map_scroll.down(50, len);
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyMapping) => {
-                        scroll_up(50, &mut app.memory_map_scroll, &mut app.memory_map_scroll_state);
+                        let mut state = state_share.state.lock().unwrap();
+                        state.memory_map_scroll.up(50);
                     }
                     // hexdump
                     (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyHexdump) => {
-                        app.hexdump_scroll = 0;
-                        app.hexdump_scroll_state = app.hexdump_scroll_state.position(0);
+                        let mut state = state_share.state.lock().unwrap();
+                        state.hexdump_scroll.reset();
                     }
                     (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyHexdump) => {
-                        let hexdump = app.hexdump.lock().unwrap();
-                        if let Some(hexdump) = hexdump.as_ref() {
+                        let mut state = state_share.state.lock().unwrap();
+                        if let Some(hexdump) = state.hexdump.as_ref() {
                             let len = hexdump.1.len() / HEXDUMP_WIDTH;
-                            app.hexdump_scroll = len;
-                            app.hexdump_scroll_state.last();
+                            state.hexdump_scroll.end(len);
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('S'), Mode::OnlyHexdump) => {
-                        app.mode = Mode::OnlyHexdumpPopup;
+                        let mut state = state_share.state.lock().unwrap();
+                        state.mode = Mode::OnlyHexdumpPopup;
                     }
                     (InputMode::Normal, KeyCode::Char('H'), Mode::OnlyHexdump) => {
-                        if let Some(find_heap) = app.find_first_heap() {
+                        let mut state = state_share.state.lock().unwrap();
+                        if let Some(find_heap) = state.find_first_heap() {
                             let s =
                                 data_read_memory_bytes(find_heap.start_address, 0, find_heap.size);
-                            let mut next_write = app.next_write.lock().unwrap();
-                            let mut written = app.written.lock().unwrap();
-                            next_write.push(s);
-                            written.push_back(Written::Memory);
+                            state.next_write.push(s);
+                            state.written.push_back(Written::Memory);
 
                             // reset position
-                            app.hexdump_scroll = 0;
-                            app.hexdump_scroll_state = app.hexdump_scroll_state.position(0);
+                            state.hexdump_scroll.reset();
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('T'), Mode::OnlyHexdump) => {
-                        if let Some(find_heap) = app.find_first_stack() {
+                        let mut state = state_share.state.lock().unwrap();
+                        if let Some(find_heap) = state.find_first_stack() {
                             let s =
                                 data_read_memory_bytes(find_heap.start_address, 0, find_heap.size);
-                            let mut next_write = app.next_write.lock().unwrap();
-                            let mut written = app.written.lock().unwrap();
-                            next_write.push(s);
-                            written.push_back(Written::Memory);
+                            state.next_write.push(s);
+                            state.written.push_back(Written::Memory);
 
                             // reset position
-                            app.hexdump_scroll = 0;
-                            app.hexdump_scroll_state = app.hexdump_scroll_state.position(0);
+                            state.hexdump_scroll.reset();
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyHexdump) => {
-                        let hexdump = app.hexdump.lock().unwrap();
+                        let mut state = state_share.state.lock().unwrap();
+                        let hexdump = &state.hexdump;
                         if let Some(hexdump) = hexdump.as_ref() {
                             let len = hexdump.1.len() / HEXDUMP_WIDTH;
-                            scroll_down(
-                                1,
-                                &mut app.hexdump_scroll,
-                                &mut app.hexdump_scroll_state,
-                                len,
-                            );
+                            state.hexdump_scroll.down(1, len);
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyHexdump) => {
-                        scroll_up(1, &mut app.hexdump_scroll, &mut app.hexdump_scroll_state);
+                        let mut state = state_share.state.lock().unwrap();
+                        state.hexdump_scroll.up(1);
                     }
                     (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyHexdump) => {
-                        let hexdump = app.hexdump.lock().unwrap();
+                        let mut state = state_share.state.lock().unwrap();
+                        let hexdump = &state.hexdump;
                         if let Some(hexdump) = hexdump.as_ref() {
                             let len = hexdump.1.len() / HEXDUMP_WIDTH;
-                            scroll_down(
-                                50,
-                                &mut app.hexdump_scroll,
-                                &mut app.hexdump_scroll_state,
-                                len,
-                            );
+                            state.hexdump_scroll.down(50, len);
                         }
                     }
                     (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyHexdump) => {
-                        scroll_up(50, &mut app.hexdump_scroll, &mut app.hexdump_scroll_state);
+                        let mut state = state_share.state.lock().unwrap();
+                        state.hexdump_scroll.up(50);
                     }
                     (_, KeyCode::Tab, _) => {
-                        completion(app)?;
+                        let mut state = state_share.state.lock().unwrap();
+                        completion(app, &mut state)?;
                     }
                     (_, KeyCode::Enter, _) => {
-                        key_enter(app)?;
+                        let mut state = state_share.state.lock().unwrap();
+                        key_enter(app, &mut state)?;
                     }
                     (_, KeyCode::Down, _) => {
-                        key_down(app);
+                        let mut state = state_share.state.lock().unwrap();
+                        key_down(&mut state);
                     }
                     (_, KeyCode::Up, _) => {
-                        key_up(app);
+                        let mut state = state_share.state.lock().unwrap();
+                        key_up(&mut state);
                     }
                     (InputMode::Editing, _, _) => {
-                        app.completions.lock().unwrap().clear();
-                        app.input.handle_event(&Event::Key(key));
+                        let mut state = state_share.state.lock().unwrap();
+                        state.completions.clear();
+                        state.input.handle_event(&Event::Key(key));
                     }
                     _ => (),
                 }
@@ -724,49 +739,33 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
     }
 }
 
-fn scroll_down(n: usize, scroll: &mut usize, state: &mut ScrollbarState, len: usize) {
-    if scroll < &mut len.saturating_sub(1) {
-        *scroll += n;
-        *state = state.position(*scroll);
-    }
-}
-
-fn scroll_up(n: usize, scroll: &mut usize, state: &mut ScrollbarState) {
-    if *scroll > n {
-        *scroll -= n;
-    } else {
-        *scroll = 0;
-    }
-    *state = state.position(*scroll);
-}
-
-fn key_up(app: &mut App) {
-    if !app.sent_input.buffer.is_empty() {
-        if app.sent_input.offset < app.sent_input.buffer.len() {
-            app.sent_input.offset += 1;
+fn key_up(state: &mut State) {
+    if !state.sent_input.buffer.is_empty() {
+        if state.sent_input.offset < state.sent_input.buffer.len() {
+            state.sent_input.offset += 1;
         }
-        update_from_previous_input(app);
+        update_from_previous_input(state);
     } else {
-        app.sent_input.offset = 0;
+        state.sent_input.offset = 0;
     }
 }
 
-fn key_down(app: &mut App) {
-    if !app.sent_input.buffer.is_empty() {
-        if app.sent_input.offset != 0 {
-            app.sent_input.offset -= 1;
-            if app.sent_input.offset == 0 {
-                app.input.reset();
+fn key_down(state: &mut State) {
+    if !state.sent_input.buffer.is_empty() {
+        if state.sent_input.offset != 0 {
+            state.sent_input.offset -= 1;
+            if state.sent_input.offset == 0 {
+                state.input.reset();
             }
         }
-        update_from_previous_input(app);
+        update_from_previous_input(state);
     } else {
-        app.sent_input.offset = 0;
+        state.sent_input.offset = 0;
     }
 }
 
-fn completion(app: &mut App) -> Result<(), io::Error> {
-    let val = app.input.clone();
+fn completion(app: &mut App, state: &mut State) -> Result<(), io::Error> {
+    let val = state.input.clone();
     let val = val.value();
     let cmd = format!("-complete \"{val}\"");
     gdb::write_mi(&app.gdb_stdin, &cmd);
@@ -774,34 +773,36 @@ fn completion(app: &mut App) -> Result<(), io::Error> {
     Ok(())
 }
 
-fn key_enter(app: &mut App) -> Result<(), io::Error> {
-    if app.input.value().is_empty() {
-        app.sent_input.offset = 0;
+fn key_enter(app: &mut App, state: &mut State) -> Result<(), io::Error> {
+    if state.input.value().is_empty() {
+        state.sent_input.offset = 0;
 
-        let messages = app.sent_input.clone();
+        let messages = state.sent_input.clone();
         let messages = messages.as_slice().iter();
         if let Some(val) = messages.last() {
-            process_line(app, val);
+            process_line(app, state, val);
         }
     } else {
-        app.sent_input.offset = 0;
-        app.sent_input.push(app.input.value().into());
+        state.sent_input.offset = 0;
+        state.sent_input.push(state.input.value().into());
 
-        let val = app.input.clone();
+        let val = state.input.clone();
         let val = val.value();
-        process_line(app, val)
+        process_line(app, state, val)
     }
 
     Ok(())
 }
 
-fn process_line(app: &mut App, val: &str) {
+fn process_line(app: &mut App, state: &mut State, val: &str) {
     let mut val = val.to_owned();
 
     // Replace internal variables
-    replace_internal_variables(app, &mut val);
+    {
+        replace_internal_variables(state, &mut val);
+    }
 
-    // Resolve parens with expresions
+    // Resolve parens with expressions
     resolve_paren_expressions(&mut val);
 
     if val == "r" || val == "ru" || val == "run" {
@@ -810,15 +811,14 @@ fn process_line(app: &mut App, val: &str) {
         // gdb::write_mi(&app.gdb_stdin, "-gdb-set target-async on");
 
         let cmd = "-gdb-set mi-async on";
-        let mut output_lock = app.output.lock().unwrap();
-        output_lock.push(format!("h> {cmd}"));
+        state.output.push(format!("h> {cmd}"));
         gdb::write_mi(&app.gdb_stdin, cmd);
 
         let cmd = "-exec-run";
         gdb::write_mi(&app.gdb_stdin, cmd);
-        output_lock.push(val);
+        state.output.push(val);
 
-        app.input.reset();
+        state.input.reset();
         return;
     } else if val == "c"
         || val == "co"
@@ -830,30 +830,27 @@ fn process_line(app: &mut App, val: &str) {
     {
         let cmd = "-exec-continue";
         gdb::write_mi(&app.gdb_stdin, cmd);
-        let mut output_lock = app.output.lock().unwrap();
-        output_lock.push(val);
+        state.output.push(val);
 
-        app.input.reset();
+        state.input.reset();
         return;
     } else if val == "si" || val == "stepi" {
         let cmd = "-exec-step-instruction";
         gdb::write_mi(&app.gdb_stdin, cmd);
-        let mut output_lock = app.output.lock().unwrap();
-        output_lock.push(val);
+        state.output.push(val);
 
-        app.input.reset();
+        state.input.reset();
         return;
     } else if val == "step" {
         let cmd = "-exec-step";
         gdb::write_mi(&app.gdb_stdin, cmd);
-        let mut output_lock = app.output.lock().unwrap();
-        output_lock.push(val);
+        state.output.push(val);
 
-        app.input.reset();
+        state.input.reset();
         return;
     } else if val.starts_with("file") {
         // we parse file, but still send it on
-        app.save_filepath(&val);
+        state.save_filepath(&val);
     } else if val.starts_with("hexdump") {
         debug!("hexdump: {val}");
         // don't send it on, parse the hexdump command
@@ -862,8 +859,6 @@ fn process_line(app: &mut App, val: &str) {
             error!("Invalid arguments, expected 'hexdump addr len'");
             return;
         }
-        let mut next_write = app.next_write.lock().unwrap();
-        let mut written = app.written.lock().unwrap();
         let addr = split[1];
         let len = split[2];
 
@@ -880,13 +875,13 @@ fn process_line(app: &mut App, val: &str) {
         };
 
         let s = data_read_memory_bytes(addr_val, 0, len_val);
-        next_write.push(s);
-        written.push_back(Written::Memory);
-        app.input.reset();
+        state.next_write.push(s);
+        state.written.push_back(Written::Memory);
+        state.input.reset();
         return;
     }
     gdb::write_mi(&app.gdb_stdin, &val);
-    app.input.reset();
+    state.input.reset();
 }
 
 fn resolve_paren_expressions(val: &mut String) {
@@ -920,17 +915,16 @@ impl MappingType {
     }
 }
 
-fn replace_internal_variables(app: &mut App, line: &mut String) {
-    replace_mapping(app, line, MappingType::Start);
-    replace_mapping(app, line, MappingType::End);
-    replace_mapping(app, line, MappingType::Len);
+fn replace_internal_variables(state: &mut State, line: &mut String) {
+    replace_mapping(state, line, MappingType::Start);
+    replace_mapping(state, line, MappingType::End);
+    replace_mapping(state, line, MappingType::Len);
 }
 
-fn replace_mapping(app: &mut App, text: &mut String, mt: MappingType) {
+fn replace_mapping(state: &mut State, text: &mut String, mt: MappingType) {
     let ret = find_mapping(text, &mt);
     if let Some((path, prefix, start_idx, end_idx)) = ret {
-        let memory_map = app.memory_map.lock().unwrap();
-        if let Some(ref memory_map) = *memory_map {
+        if let Some(ref memory_map) = state.memory_map {
             let resolve =
                 memory_map.iter().filter(|a| a.path == Some(path.to_owned())).nth(prefix as usize);
             let addr = match mt {
@@ -973,12 +967,12 @@ fn find_mapping(text: &mut String, mt: &MappingType) -> Option<(String, u32, usi
     ret
 }
 
-fn update_from_previous_input(app: &mut App) {
-    if app.sent_input.buffer.len() >= app.sent_input.offset {
+fn update_from_previous_input(state: &mut State) {
+    if state.sent_input.buffer.len() >= state.sent_input.offset {
         if let Some(msg) =
-            app.sent_input.buffer.get(app.sent_input.buffer.len() - app.sent_input.offset)
+            state.sent_input.buffer.get(state.sent_input.buffer.len() - state.sent_input.offset)
         {
-            app.input = Input::new(msg.clone())
+            state.input = Input::new(msg.clone())
         }
     }
 }
@@ -995,15 +989,19 @@ mod tests {
     use ratatui::{backend::TestBackend, Terminal};
     use test_assets_ureq::{dl_test_files_backoff, TestAssetDef};
 
-    fn run_a_bit(args: Args) -> (App, Terminal<TestBackend>) {
+    fn run_a_bit(args: Args) -> (App, StateShare, Terminal<TestBackend>) {
         let (gdb_stdout, mut app) = App::new_stream(args.clone());
-        into_gdb(&app, gdb_stdout);
+        let state = State::new(args.clone());
+        let state_share = StateShare { state: Arc::new(Mutex::new(state)) };
+        into_gdb(&state_share, gdb_stdout);
 
         if let Some(cmds) = args.cmds {
             let data = fs::read_to_string(cmds).unwrap();
             for cmd in data.lines() {
                 if !cmd.starts_with("#") {
-                    process_line(&mut app, &cmd);
+                    let mut state = state_share.state.lock().unwrap();
+                    state.sent_input.push(cmd.to_string());
+                    process_line(&mut app, &mut state, cmd);
                 }
             }
         }
@@ -1012,21 +1010,22 @@ mod tests {
         let duration = Duration::from_secs(10);
 
         while Instant::now() - start_time < duration {
-            terminal.draw(|f| ui::ui(f, &mut app)).unwrap();
+            // Sleep, to make sure that the gdb thread can act
+            thread::sleep(Duration::from_millis(100));
+
+            let mut state = state_share.state.lock().unwrap();
+            terminal.draw(|f| ui::ui(f, &mut state)).unwrap();
 
             // check and see if we need to write to GBD MI
-            {
-                let mut next_write = app.next_write.lock().unwrap();
-                if !next_write.is_empty() {
-                    for w in &*next_write {
-                        write_mi(&app.gdb_stdin, w);
-                    }
-                    next_write.clear();
+            if !state.next_write.is_empty() {
+                for w in &*state.next_write {
+                    write_mi(&app.gdb_stdin, w);
                 }
+                state.next_write.clear();
             }
         }
 
-        (app, terminal)
+        (app, state_share, terminal)
     }
 
     #[test]
@@ -1070,10 +1069,10 @@ mod tests {
         let mut args = Args::default();
         args.cmds = Some("test-sources/repeated_ptr.source".to_string());
 
-        let (app, terminal) = run_a_bit(args);
+        let (_, state, terminal) = run_a_bit(args);
         let _output = terminal.backend();
-        let registers = app.registers.lock().unwrap();
-        let stack = app.stack.lock().unwrap();
+        let registers = state.state.lock().unwrap().registers.clone();
+        let stack = state.state.lock().unwrap().stack.clone();
 
         // rsi repeating
         assert!(registers[4].deref.repeated_pattern);
@@ -1132,7 +1131,7 @@ mod tests {
         let mut args = Args::default();
         args.cmds = Some("test-sources/test.source".to_string());
 
-        let (app, terminal) = run_a_bit(args);
+        let (_, state, terminal) = run_a_bit(args);
         let output = terminal.backend();
 
         // Now, we need to rewrite all the addresses that change for the registers and stack
@@ -1140,136 +1139,130 @@ mod tests {
         // I'm not in love with this testing plan! If this becomes a problem, these
         // could be removed.
         let output = output.to_string();
-        if let Ok(stack) = app.stack.lock() {
-            let mut entries: Vec<_> = stack.clone().into_iter().collect();
-            entries.sort_by(|a, b| a.0.cmp(&b.0));
-            let first_stack = entries[0].0;
-            let from = format!("0x{:02x}", first_stack);
-            let output = output.replace(&from, "<stack_0>");
+        let stack = state.state.lock().unwrap().stack.clone();
+        let mut entries: Vec<_> = stack.clone().into_iter().collect();
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        let first_stack = entries[0].0;
+        let from = format!("0x{:02x}", first_stack);
+        let output = output.replace(&from, "<stack_0>");
 
-            let from = format!("0x{:02x}", first_stack + 8);
-            let output = output.replace(&from, "<stack_1>");
+        let from = format!("0x{:02x}", first_stack + 8);
+        let output = output.replace(&from, "<stack_1>");
 
-            let from = format!("0x{:02x}", first_stack + 16);
-            let output = output.replace(&from, "<stack_2>");
+        let from = format!("0x{:02x}", first_stack + 16);
+        let output = output.replace(&from, "<stack_2>");
 
-            let from = format!("0x{:02x}", first_stack + 24);
-            let output = output.replace(&from, "<stack_3>");
+        let from = format!("0x{:02x}", first_stack + 24);
+        let output = output.replace(&from, "<stack_3>");
 
-            let from = format!("0x{:02x}", first_stack + 32);
-            let output = output.replace(&from, "<stack_4>");
+        let from = format!("0x{:02x}", first_stack + 32);
+        let output = output.replace(&from, "<stack_4>");
 
-            let from = format!("0x{:02x}", first_stack + 40);
-            let output = output.replace(&from, "<stack_5>");
+        let from = format!("0x{:02x}", first_stack + 40);
+        let output = output.replace(&from, "<stack_5>");
 
-            let from = format!("0x{:02x}", first_stack + 48);
-            let output = output.replace(&from, "<stack_6>");
-            let from = format!("0x{:02x}", entries[6].1.map[0]);
-            let output = output.replace(&from, "<stack_6_0>   ");
-            let from = format!("0x{:02x}", entries[6].1.map[1]);
-            let output = output.replace(&from, "<stack_6_1>   ");
+        let from = format!("0x{:02x}", first_stack + 48);
+        let output = output.replace(&from, "<stack_6>");
+        let from = format!("0x{:02x}", entries[6].1.map[0]);
+        let output = output.replace(&from, "<stack_6_0>   ");
+        let from = format!("0x{:02x}", entries[6].1.map[1]);
+        let output = output.replace(&from, "<stack_6_1>   ");
 
-            let from = format!("0x{:02x}", first_stack + 56);
-            let output = output.replace(&from, "<stack_7>");
+        let from = format!("0x{:02x}", first_stack + 56);
+        let output = output.replace(&from, "<stack_7>");
 
-            let from = format!("0x{:02x}", first_stack + 64);
-            let output = output.replace(&from, "<stack_8>");
+        let from = format!("0x{:02x}", first_stack + 64);
+        let output = output.replace(&from, "<stack_8>");
 
-            let from = format!("0x{:02x}", first_stack + 72);
-            let output = output.replace(&from, "<stack_9>");
+        let from = format!("0x{:02x}", first_stack + 72);
+        let output = output.replace(&from, "<stack_9>");
 
-            let from = format!("0x{:02x}", first_stack + 80);
-            let output = output.replace(&from, "<stack_10>");
+        let from = format!("0x{:02x}", first_stack + 80);
+        let output = output.replace(&from, "<stack_10>");
 
-            let from = format!("0x{:02x}", first_stack + 88);
-            let output = output.replace(&from, "<stack_11>");
+        let from = format!("0x{:02x}", first_stack + 88);
+        let output = output.replace(&from, "<stack_11>");
 
-            let from = format!("0x{:02x}", first_stack + 96);
-            let output = output.replace(&from, "<stack_12>");
+        let from = format!("0x{:02x}", first_stack + 96);
+        let output = output.replace(&from, "<stack_12>");
 
-            let from = format!("0x{:02x}", first_stack + 104);
-            let output = output.replace(&from, "<stack_13>");
+        let from = format!("0x{:02x}", first_stack + 104);
+        let output = output.replace(&from, "<stack_13>");
 
-            let from = format!("0x{:02x}", first_stack + 112);
-            let output = output.replace(&from, "<stack_14>");
+        let from = format!("0x{:02x}", first_stack + 112);
+        let output = output.replace(&from, "<stack_14>");
 
-            if let Ok(registers) = app.registers.lock() {
-                let from = format!(
-                    "0x{:02x}",
-                    u64::from_str_radix(
-                        &registers[2].register.as_ref().unwrap().value.as_ref().unwrap()[2..],
-                        16
-                    )
-                    .unwrap()
-                );
-                let output = output.replace(&from, "<rcx_0>");
+        let registers = state.state.lock().unwrap().registers.clone();
+        let from = format!(
+            "0x{:02x}",
+            u64::from_str_radix(
+                &registers[2].register.as_ref().unwrap().value.as_ref().unwrap()[2..],
+                16
+            )
+            .unwrap()
+        );
+        let output = output.replace(&from, "<rcx_0>");
 
-                let from = format!(
-                    "0x{:02x}",
-                    u64::from_str_radix(
-                        &registers[3].register.as_ref().unwrap().value.as_ref().unwrap()[2..],
-                        16
-                    )
-                    .unwrap()
-                );
-                let output = output.replace(&from, "<rdx_0>");
+        let from = format!(
+            "0x{:02x}",
+            u64::from_str_radix(
+                &registers[3].register.as_ref().unwrap().value.as_ref().unwrap()[2..],
+                16
+            )
+            .unwrap()
+        );
+        let output = output.replace(&from, "<rdx_0>");
 
-                let from = format!(
-                    "0x{:02x}",
-                    u64::from_str_radix(
-                        &registers[4].register.as_ref().unwrap().value.as_ref().unwrap()[2..],
-                        16
-                    )
-                    .unwrap()
-                );
-                let output = output.replace(&from, "<rsi_0>");
+        let from = format!(
+            "0x{:02x}",
+            u64::from_str_radix(
+                &registers[4].register.as_ref().unwrap().value.as_ref().unwrap()[2..],
+                16
+            )
+            .unwrap()
+        );
+        let output = output.replace(&from, "<rsi_0>");
 
-                let from = format!(
-                    "0x{:02x}",
-                    u64::from_str_radix(
-                        &registers[6].register.as_ref().unwrap().value.as_ref().unwrap()[2..],
-                        16
-                    )
-                    .unwrap()
-                );
-                let output = output.replace(&from, "<rbp_0>");
+        let from = format!(
+            "0x{:02x}",
+            u64::from_str_radix(
+                &registers[6].register.as_ref().unwrap().value.as_ref().unwrap()[2..],
+                16
+            )
+            .unwrap()
+        );
+        let output = output.replace(&from, "<rbp_0>");
 
-                // rdx
-                let from = format!("0x{:02x}", registers[3].deref.map[0]);
-                let output = output.replace(&from, "<rdx_1>");
-                let mut ret_s = "\"".to_string();
-                for r in registers[3].deref.map.iter().skip(1) {
-                    ret_s.push_str(std::str::from_utf8(&r.to_le_bytes()).unwrap());
-                }
-                ret_s.push_str("\"");
-                let padding_width = ret_s.len() + 7;
-                let output = output
-                    .replace(&ret_s, &format!("<rdx_2>{:padding$}", "", padding = padding_width));
+        // rdx
+        let from = format!("0x{:02x}", registers[3].deref.map[0]);
+        let output = output.replace(&from, "<rdx_1>");
+        let mut ret_s = "\"".to_string();
+        for r in registers[3].deref.map.iter().skip(1) {
+            ret_s.push_str(std::str::from_utf8(&r.to_le_bytes()).unwrap());
+        }
+        ret_s.push('"');
+        let padding_width = ret_s.len() + 7;
+        let output =
+            output.replace(&ret_s, &format!("<rdx_2>{:padding$}", "", padding = padding_width));
 
-                // rsi
-                let from = format!("0x{:02x}", registers[4].deref.map[0]);
-                let output = output.replace(&from, "<rsi_1>");
-                let mut ret_s = "\"".to_string();
-                for r in registers[4].deref.map.iter().skip(1) {
-                    ret_s.push_str(std::str::from_utf8(&r.to_le_bytes()).unwrap());
-                }
-                ret_s.push_str("\"");
-                let padding_width = ret_s.len() + 7;
-                let output = output
-                    .replace(&ret_s, &format!("<rsi_2>{:padding$}", "", padding = padding_width));
+        // rsi
+        let from = format!("0x{:02x}", registers[4].deref.map[0]);
+        let output = output.replace(&from, "<rsi_1>");
+        let mut ret_s = "\"".to_string();
+        for r in registers[4].deref.map.iter().skip(1) {
+            ret_s.push_str(std::str::from_utf8(&r.to_le_bytes()).unwrap());
+        }
+        ret_s.push('"');
+        let padding_width = ret_s.len() + 7;
+        let output =
+            output.replace(&ret_s, &format!("<rsi_2>{:padding$}", "", padding = padding_width));
 
-                let from = format!("0x{:02x}", registers[6].deref.map[0]);
-                let output = output.replace(&from, "<rbp_1>");
-                let from = format!("0x{:02x}", registers[6].deref.map[1]);
-                let output = output.replace(&from, "<rbp_2>");
+        let from = format!("0x{:02x}", registers[6].deref.map[0]);
+        let output = output.replace(&from, "<rbp_1>");
+        let from = format!("0x{:02x}", registers[6].deref.map[1]);
+        let output = output.replace(&from, "<rbp_2>");
 
-                assert_snapshot!(output);
-            } else {
-                unreachable!();
-            }
-        } else {
-            unreachable!();
-        };
+        assert_snapshot!(output);
     }
 
     #[test]

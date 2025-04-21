@@ -1,3 +1,5 @@
+use log::trace;
+use malloc::glibc::{HeapDump, MallocChunk};
 use ratatui::{
     layout::{Constraint, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
@@ -12,6 +14,8 @@ use super::{BLUE, DARK_GRAY, GREEN, ORANGE, SCROLL_CONTROL_TEXT, YELLOW};
 
 pub const HEXDUMP_WIDTH: usize = 16;
 
+mod malloc;
+
 /// Convert bytes in hexdump, `skip` that many lines, `take` that many lines
 fn to_hexdump_str<'a>(
     state: &mut State,
@@ -19,6 +23,7 @@ fn to_hexdump_str<'a>(
     buffer: &[u8],
     skip: usize,
     take: usize,
+    heap: HeapDump,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
     for (offset, chunk) in buffer.chunks(16).skip(skip).take(take).enumerate() {
@@ -68,6 +73,18 @@ fn to_hexdump_str<'a>(
                     }
                 }
             }
+        }
+        let i =
+            heap.chunks.iter().position(|a| a.data_start_offset == (offset + skip) * HEXDUMP_WIDTH);
+        if let Some(i) = i {
+            ref_spans.push(Span::raw(format!(
+                "chunk {i}: [..0x{:02x}] data_size=[..{:02x?}] (in_use={}, mmapped={}, non_main_arena={})",
+                heap.chunks[i].actual_size(),
+                heap.chunks[i].data_size(),
+                heap.chunks[i].is_in_use(),
+                heap.chunks[i].is_mmapped(),
+                heap.chunks[i].is_non_main_arena()
+            )));
         }
 
         let line = Line::from_iter(
@@ -121,9 +138,13 @@ pub fn draw_hexdump(state: &mut State, f: &mut Frame, hexdump: Rect, show_popup:
         pos = format!("(0x{:02x?})", r.0);
         let data = &r.1;
 
+        // If this is the heap, show some extra stats
+        let malloc = malloc::glibc::parse_heap(data);
+        trace!("MALLOC {malloc:02x?}");
+
         let skip = state.hexdump_scroll.scroll;
         let take = hexdump.height;
-        let lines = to_hexdump_str(state, r.0, data, skip, take as usize);
+        let lines = to_hexdump_str(state, r.0, data, skip, take as usize, malloc);
         let content_len = data.len() / HEXDUMP_WIDTH;
 
         let lines: Vec<Line> = lines.into_iter().collect();

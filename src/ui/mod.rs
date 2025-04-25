@@ -48,6 +48,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     // TODO: register size should depend on arch
     let top_size = Fill(1);
 
+    // Remove the input from the completions
+    let completions: Vec<String> =
+        completions.iter().map(|a| a.replace(&state.input.to_string(), "")).collect();
+
     // If only output, then no top and fill all with output
     if let Mode::OnlyOutput = app.mode {
         let output_size = Fill(1);

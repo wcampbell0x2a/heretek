@@ -1,3 +1,9 @@
+use asm::draw_asm;
+use bt::draw_bt;
+use hexdump::draw_hexdump;
+use input::draw_input;
+use mapping::draw_mapping;
+use output::draw_output;
 use ratatui::layout::Constraint::{Fill, Length, Min};
 use ratatui::layout::Layout;
 use ratatui::style::Color;
@@ -5,6 +11,9 @@ use ratatui::style::Style;
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
+use registers::draw_registers;
+use stack::draw_stack;
+use title::draw_title_area;
 
 use crate::deref::Deref;
 use crate::{Mode, State};
@@ -64,9 +73,9 @@ pub fn ui(f: &mut Frame, state: &mut State) {
             f.render_widget(completions_str, completions_area);
         }
 
-        title::draw_title_area(state, f, title_area);
-        output::draw_output(state, f, output, true);
-        input::draw_input(title_area, state, f, input);
+        draw_title_area(state, f, title_area);
+        draw_output(state, f, output, true);
+        draw_input(title_area, state, f, input);
         return;
     }
 
@@ -90,9 +99,9 @@ pub fn ui(f: &mut Frame, state: &mut State) {
             let completions_str = Paragraph::new(completions);
             f.render_widget(completions_str, completions_area);
         }
-        title::draw_title_area(state, f, title_area);
-        output::draw_output(state, f, output, false);
-        input::draw_input(title_area, state, f, input);
+        draw_title_area(state, f, title_area);
+        draw_output(state, f, output, false);
+        draw_input(title_area, state, f, input);
 
         top
     } else {
@@ -113,10 +122,10 @@ pub fn ui(f: &mut Frame, state: &mut State) {
             let completions_str = Paragraph::new(completions);
             f.render_widget(completions_str, completions_area);
         }
-        bt::draw_bt(state, f, bt_area);
-        title::draw_title_area(state, f, title_area);
-        output::draw_output(state, f, output, false);
-        input::draw_input(title_area, state, f, input);
+        draw_bt(state, f, bt_area);
+        draw_title_area(state, f, title_area);
+        draw_output(state, f, output, false);
+        draw_input(title_area, state, f, input);
 
         top
     };
@@ -130,39 +139,39 @@ pub fn ui(f: &mut Frame, state: &mut State) {
             let vertical = Layout::vertical([register_size, stack_size, asm_size]);
             let [register, stack, asm] = vertical.areas(top);
 
-            registers::draw_registers(state, f, register);
-            stack::draw_stack(state, f, stack);
-            asm::draw_asm(state, f, asm);
+            draw_registers(state, f, register);
+            draw_stack(state, f, stack);
+            draw_asm(state, f, asm);
         }
         Mode::OnlyRegister => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            registers::draw_registers(state, f, all);
+            draw_registers(state, f, all);
         }
         Mode::OnlyStack => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            stack::draw_stack(state, f, all);
+            draw_stack(state, f, all);
         }
         Mode::OnlyInstructions => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            asm::draw_asm(state, f, all);
+            draw_asm(state, f, all);
         }
         Mode::OnlyMapping => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            mapping::draw_mapping(state, f, all);
+            draw_mapping(state, f, all);
         }
         Mode::OnlyHexdump => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            hexdump::draw_hexdump(state, f, all, false);
+            draw_hexdump(state, f, all, false);
         }
         Mode::OnlyHexdumpPopup => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            hexdump::draw_hexdump(state, f, all, true);
+            draw_hexdump(state, f, all, true);
         }
         _ => (),
     }

@@ -223,6 +223,7 @@ struct State {
     register_changed: Vec<u8>,
     register_names: Vec<String>,
     registers: Vec<RegisterStorage>,
+    registers_scroll: Scroll,
     /// Saved Stack
     stack: BTreeMap<u64, Deref>,
     /// Saved ASM
@@ -260,6 +261,7 @@ impl State {
             register_changed: vec![],
             register_names: vec![],
             registers: vec![],
+            registers_scroll: Scroll::default(),
             stack: BTreeMap::new(),
             asm: Vec::new(),
             hexdump: None,
@@ -594,6 +596,42 @@ fn run_app<B: Backend>(
                     (InputMode::Editing, KeyCode::Esc, _) => {
                         let mut state = state_share.state.lock().unwrap();
                         state.input_mode = InputMode::Normal;
+                    }
+                    (InputMode::Normal, KeyCode::Char('j'), Mode::All) => {
+                        let mut state = state_share.state.lock().unwrap();
+                        let len = state.registers.len();
+                        state.registers_scroll.down(1, len);
+                    }
+                    (InputMode::Normal, KeyCode::Char('k'), Mode::All) => {
+                        let mut state = state_share.state.lock().unwrap();
+                        state.registers_scroll.up(1);
+                    }
+                    (InputMode::Normal, KeyCode::Char('J'), Mode::All) => {
+                        let mut state = state_share.state.lock().unwrap();
+                        let len = state.registers.len();
+                        state.registers_scroll.down(50, len);
+                    }
+                    (InputMode::Normal, KeyCode::Char('K'), Mode::All) => {
+                        let mut state = state_share.state.lock().unwrap();
+                        state.registers_scroll.up(50);
+                    }
+                    (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyRegister) => {
+                        let mut state = state_share.state.lock().unwrap();
+                        let len = state.registers.len();
+                        state.registers_scroll.down(1, len);
+                    }
+                    (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyRegister) => {
+                        let mut state = state_share.state.lock().unwrap();
+                        state.registers_scroll.up(1);
+                    }
+                    (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyRegister) => {
+                        let mut state = state_share.state.lock().unwrap();
+                        let len = state.registers.len();
+                        state.registers_scroll.down(50, len);
+                    }
+                    (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyRegister) => {
+                        let mut state = state_share.state.lock().unwrap();
+                        state.registers_scroll.up(50);
                     }
                     // output
                     (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyOutput) => {

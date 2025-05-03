@@ -4,7 +4,7 @@ use super::{add_deref_to_span, apply_val_color, ORANGE, PURPLE, RED};
 
 use ratatui::prelude::Stylize;
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation};
 use ratatui::{layout::Rect, style::Style, Frame};
 
 use crate::register::RegisterStorage;
@@ -91,7 +91,21 @@ pub fn draw_registers(state: &mut State, f: &mut Frame, register: Rect) {
         }
     }
 
+    let take = lines.len();
+    let max = register.height;
+    let skip = if take <= max as usize { 0 } else { state.registers_scroll.scroll };
+    state.registers_scroll.state = state.registers_scroll.state.content_length(take);
+
+    // TODO: remove collect, juts skip before
+    let lines: Vec<Line> = lines.into_iter().skip(skip).take(take).collect();
+
     let text = Text::from(lines);
     let paragraph = Paragraph::new(text).block(block);
     f.render_widget(paragraph, register);
+
+    f.render_stateful_widget(
+        Scrollbar::new(ScrollbarOrientation::VerticalRight),
+        register,
+        &mut state.registers_scroll.state,
+    );
 }

@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fs::{self, File};
+use std::io;
 use std::io::{BufReader, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
@@ -7,8 +8,8 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{env, thread};
-use std::{error::Error, io};
 
+use anyhow::Context;
 use clap::Parser;
 use crossterm::event::KeyModifiers;
 use deku::ctx::Endian;
@@ -99,7 +100,7 @@ struct Args {
     ///
     /// lines starting with # are ignored
     #[arg(short, long)]
-    cmds: Option<String>,
+    cmds: Option<PathBuf>,
 
     /// Path to write log
     ///
@@ -391,11 +392,18 @@ enum Written {
     SymbolAtAddrStack(String),
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
+    // initialize logging, to log_path if available
     init_logging(&args.log_path)?;
 
+    // Check for valid cmd file
+    if let Some(cmds) = &args.cmds {
+        if !cmds.exists() {
+            anyhow::bail!("Filepath for --cmds does not exist: `{}`", cmds.display());
+        }
+    }
     // Start rx thread
     let (gdb_stdout, mut app) = App::new_stream(args.clone());
     let state = State::new(args.clone());
@@ -404,8 +412,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Setup terminal
     let mut terminal = ratatui::init();
 
-    into_gdb(&state_share, gdb_stdout);
+    spawn_gdb_interact(&state_share, gdb_stdout);
 
+    // Now that we have a gdb, run each command
     if let Some(cmds) = args.cmds {
         let data = fs::read_to_string(cmds).unwrap();
         for cmd in data.lines() {
@@ -426,15 +435,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     terminal.show_cursor()?;
 
     if let Err(err) = res {
-        println!("{:?}", err)
+        anyhow::bail!("{:?}", err)
     }
 
     Ok(())
 }
 
-fn init_logging(log_path: &Option<String>) -> Result<(), Box<dyn Error>> {
+fn init_logging(log_path: &Option<String>) -> anyhow::Result<()> {
     if let Some(log_path) = log_path {
-        let log_file = Arc::new(Mutex::new(File::create(log_path)?));
+        let log_file =
+            Arc::new(Mutex::new(File::create(log_path).context("Could not create log file")?));
         Builder::from_env(Env::default().default_filter_or("info"))
             .format(move |buf, record| {
                 let mut log_file = log_file.lock().unwrap();
@@ -453,7 +463,7 @@ fn init_logging(log_path: &Option<String>) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn into_gdb(state: &StateShare, gdb_stdout: BufReader<Box<dyn Read + Send>>) {
+fn spawn_gdb_interact(state: &StateShare, gdb_stdout: BufReader<Box<dyn Read + Send>>) {
     let state_arc = Arc::clone(&state.state);
 
     // Thread to read GDB output and parse it
@@ -993,7 +1003,7 @@ mod tests {
         let (gdb_stdout, mut app) = App::new_stream(args.clone());
         let state = State::new(args.clone());
         let state_share = StateShare { state: Arc::new(Mutex::new(state)) };
-        into_gdb(&state_share, gdb_stdout);
+        spawn_gdb_interact(&state_share, gdb_stdout);
 
         if let Some(cmds) = args.cmds {
             let data = fs::read_to_string(cmds).unwrap();
@@ -1067,7 +1077,7 @@ mod tests {
         unsafe { chmod(c_path.as_ptr(), mode) };
 
         let mut args = Args::default();
-        args.cmds = Some("test-sources/repeated_ptr.source".to_string());
+        args.cmds = Some(PathBuf::from("test-sources/repeated_ptr.source"));
 
         let (_, state, terminal) = run_a_bit(args);
         let _output = terminal.backend();
@@ -1129,7 +1139,7 @@ mod tests {
         unsafe { chmod(c_path.as_ptr(), mode) };
 
         let mut args = Args::default();
-        args.cmds = Some("test-sources/test.source".to_string());
+        args.cmds = Some(PathBuf::from("test-sources/test.source"));
 
         let (_, state, terminal) = run_a_bit(args);
         let output = terminal.backend();

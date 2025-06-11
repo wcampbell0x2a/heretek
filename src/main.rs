@@ -109,7 +109,7 @@ struct Args {
     log_path: Option<String>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 enum Mode {
     All,
     OnlyRegister,
@@ -155,7 +155,7 @@ struct StateShare {
     state: Arc<Mutex<State>>,
 }
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 struct Scroll {
     scroll: usize,
     state: ScrollbarState,
@@ -189,7 +189,7 @@ impl Scroll {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct State {
     /// Messages to write to gdb mi
     next_write: Vec<String>,
@@ -220,7 +220,7 @@ struct State {
     /// Saved output such as (gdb) or > from gdb
     stream_output_prompt: String,
     /// Register TUI
-    register_changed: Vec<u8>,
+    register_changed: Vec<u16>,
     register_names: Vec<String>,
     registers: Vec<RegisterStorage>,
     registers_scroll: Scroll,

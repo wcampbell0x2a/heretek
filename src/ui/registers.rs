@@ -52,7 +52,7 @@ pub fn draw_registers(state: &mut State, f: &mut Frame, register: Rect) {
             }
             if let Some(reg_value) = &reg.value {
                 if let Ok(val) = u64::from_str_radix(&reg_value[2..], 16) {
-                    let changed = state.register_changed.contains(&(i as u8));
+                    let changed = state.register_changed.contains(&(i as u16));
                     let mut reg_name =
                         Span::from(format!("  {name:width$}", width = longest_register_name))
                             .style(Style::new().fg(PURPLE));

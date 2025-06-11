@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use ratatui::prelude::Stylize;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph};
@@ -15,7 +17,7 @@ pub fn draw_stack(state: &mut State, f: &mut Frame, stack: Rect) {
 
     let stacks = state.stack.clone();
     for (addr, values) in stacks.iter() {
-        let filepath = state.filepath.clone().unwrap();
+        let filepath = state.filepath.clone().unwrap_or(PathBuf::new());
         let filepath = filepath.to_string_lossy();
 
         let hex_string = format!("0x{:02x}", addr);

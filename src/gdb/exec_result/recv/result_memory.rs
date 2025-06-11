@@ -48,21 +48,24 @@ pub fn recv_exec_result_memory(state: &mut State, memory: &String) {
                             // If this is a code location, go ahead and try
                             // to request the asm at that spot
                             let mut is_code = false;
-                            for r in state.memory_map.as_ref().unwrap() {
-                                let is_path =
-                                    r.is_path(state.filepath.as_ref().unwrap().to_str().unwrap());
-                                if r.contains(val) && (is_path || r.is_exec()) {
-                                    // send a search for a symbol!
-                                    // TODO: 32-bit?
-                                    state
-                                        .next_write
-                                        .push(data_disassemble(val as usize, INSTRUCTION_LEN));
-                                    state.written.push_back(Written::SymbolAtAddrRegister((
-                                        reg.number.clone(),
-                                        val,
-                                    )));
-                                    is_code = true;
-                                    break;
+                            if let Some(mm) = &state.memory_map {
+                                for r in mm {
+                                    let is_path = r.is_path(
+                                        state.filepath.as_ref().unwrap().to_str().unwrap(),
+                                    );
+                                    if r.contains(val) && (is_path || r.is_exec()) {
+                                        // send a search for a symbol!
+                                        // TODO: 32-bit?
+                                        state
+                                            .next_write
+                                            .push(data_disassemble(val as usize, INSTRUCTION_LEN));
+                                        state.written.push_back(Written::SymbolAtAddrRegister((
+                                            reg.number.clone(),
+                                            val,
+                                        )));
+                                        is_code = true;
+                                        break;
+                                    }
                                 }
                             }
 
@@ -160,14 +163,16 @@ fn update_stack(data: HashMap<String, String>, state: &mut State, begin: String)
     if inserted && val != 0 {
         // If this is a code location, go ahead and try
         // to request the asm at that spot
-        for r in state.memory_map.as_ref().unwrap() {
-            let is_path = r.is_path(state.filepath.as_ref().unwrap().to_str().unwrap());
-            if r.contains(val) && (is_path || r.is_exec()) {
-                // send a search for a symbol!
-                debug!("stack deref: trying to read as asm: {val:02x}");
-                state.next_write.push(data_disassemble(val as usize, INSTRUCTION_LEN));
-                state.written.push_back(Written::SymbolAtAddrStack(begin.clone()));
-                return;
+        if let Some(mm) = &state.memory_map {
+            for r in mm {
+                let is_path = r.is_path(state.filepath.as_ref().unwrap().to_str().unwrap());
+                if r.contains(val) && (is_path || r.is_exec()) {
+                    // send a search for a symbol!
+                    debug!("stack deref: trying to read as asm: {val:02x}");
+                    state.next_write.push(data_disassemble(val as usize, INSTRUCTION_LEN));
+                    state.written.push_back(Written::SymbolAtAddrStack(begin.clone()));
+                    return;
+                }
             }
         }
 

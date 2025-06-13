@@ -8,7 +8,7 @@ use crate::mi::{
 };
 use crate::register::RegisterStorage;
 use crate::ui::SAVED_STACK;
-use crate::{State, Written};
+use crate::{PtrSize, State, Written};
 
 /// `MIResponse::ExecResult`, key: "register-values"
 ///
@@ -20,7 +20,7 @@ pub fn recv_exec_results_register_values(register_values: &String, state: &mut S
     for r in registers_local.iter().flatten() {
         if r.is_set() {
             if let Some(val) = &r.value {
-                if state.thirty_two_bit {
+                if state.ptr_size == PtrSize::Size32 {
                     // TODO: this should be able to expect
                     if let Ok(val_u32) = u32::from_str_radix(&val[2..], 16) {
                         // NOTE: This is already in the right endian
@@ -111,7 +111,7 @@ pub fn recv_exec_results_register_values(register_values: &String, state: &mut S
 
     // assuming we have a valid Stack ($sp), get the bytes
     trace!("requesting stack");
-    if state.thirty_two_bit {
+    if state.ptr_size == PtrSize::Size32 {
         dump_sp_bytes(state, 4, u64::from(SAVED_STACK));
     } else {
         dump_sp_bytes(state, 8, u64::from(SAVED_STACK));

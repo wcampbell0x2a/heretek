@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::State;
+use crate::{PtrSize, State};
 
 use super::{BLUE, DARK_GRAY, GREEN, ORANGE, SCROLL_CONTROL_TEXT, YELLOW};
 
@@ -38,7 +38,7 @@ fn to_hexdump_str<'a>(
         }
 
         // check if value has a register reference
-        let thirty = state.thirty_two_bit;
+        let thirty = state.ptr_size == PtrSize::Size32;
 
         let mut ref_spans = Vec::new();
 

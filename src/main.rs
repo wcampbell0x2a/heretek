@@ -10,7 +10,7 @@ use std::time::Duration;
 use std::{env, thread};
 
 use anyhow::Context;
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use crossterm::event::KeyModifiers;
 use deku::ctx::Endian;
 use deref::Deref;
@@ -93,8 +93,13 @@ struct Args {
     remote: Option<SocketAddr>,
 
     /// Switch into 32-bit mode
-    #[arg(long = "32")]
-    thirty_two_bit: bool,
+    ///
+    /// Heretek will do it's best to figure this out on it's own,
+    /// but this will force the pointers to be evaluated as 32 bit
+    #[arg(long)]
+    #[arg(value_enum)]
+    #[arg(default_value_t = PtrSize::default())]
+    ptr_size: PtrSize,
 
     /// Execute GDB commands
     ///
@@ -107,6 +112,16 @@ struct Args {
     /// Set env `RUST_LOG` to change log level
     #[arg(long)]
     log_path: Option<String>,
+}
+
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum PtrSize {
+    #[value(name = "32")]
+    Size32,
+    #[value(name = "64")]
+    Size64,
+    #[default]
+    Auto,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -196,7 +211,7 @@ struct State {
     /// Stack of what was written to gdb that is expected back in order to parse correctly
     written: VecDeque<Written>,
     /// -32 bit mode
-    thirty_two_bit: bool,
+    ptr_size: PtrSize,
     /// Current filepath of .text
     filepath: Option<PathBuf>,
     /// Current endian
@@ -245,7 +260,7 @@ impl State {
         State {
             next_write: vec![],
             written: VecDeque::new(),
-            thirty_two_bit: args.thirty_two_bit,
+            ptr_size: args.ptr_size,
             filepath: None,
             endian: None,
             mode: Mode::All,
@@ -392,6 +407,8 @@ enum Written {
     SymbolAtAddrRegister((String, u64)),
     /// Requested symbol at addr for stack (from deref)
     SymbolAtAddrStack(String),
+    /// Requested size of arch ptr for `ptr_size`
+    SizeOfVoidStar,
 }
 
 fn main() -> anyhow::Result<()> {

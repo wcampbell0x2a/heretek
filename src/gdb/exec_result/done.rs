@@ -17,6 +17,7 @@ pub fn exec_result_done(
     exec_result_done_memory_map(state, current_map);
 
     // result from -stack-list-frames
+    // ^done,stack=[frame={level="0",addr="0x0000555555804a50",func="main",arch="i386:x86-64"},frame={level="1",addr="0x00007ffff7ca1488",func="??",from="/usr/lib/libc.so.6",arch="i386:x86-64"},frame={level="2",addr="0x00007ffff7ca154c",func="__libc_start_main",from="/usr/lib/libc.so.6",arch="i386:x86-64"},frame={level="3",addr="0x00005555557bdcc5",func="_start",arch="i386:x86-64"}]
     if kv.contains_key("stack") {
         state.bt.clear();
         for capture in match_inner_items(kv.get("stack").unwrap()) {

@@ -8,7 +8,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientatio
 use ratatui::{layout::Rect, style::Style, Frame};
 
 use crate::register::RegisterStorage;
-use crate::State;
+use crate::{PtrSize, State};
 
 /// Registers
 pub fn draw_registers(state: &mut State, f: &mut Frame, register: Rect) {
@@ -39,7 +39,7 @@ pub fn draw_registers(state: &mut State, f: &mut Frame, register: Rect) {
             }
         }
     }
-    let width: usize = if state.thirty_two_bit { 11 } else { 19 };
+    let width: usize = if state.ptr_size == PtrSize::Size32 { 11 } else { 19 };
 
     let empty = PathBuf::from("");
     let binding = state.filepath.as_ref().unwrap_or(&empty).clone();

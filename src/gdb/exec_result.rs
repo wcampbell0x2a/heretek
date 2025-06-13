@@ -38,7 +38,7 @@ pub fn exec_result(
 
     // Parse the key-value pairs
     if let Some(value) = kv.get("value") {
-        recv_exec_result_value(&mut state.current_pc, value);
+        recv_exec_result_value(state, value);
     } else if let Some(register_names) = kv.get("register-names") {
         recv_exec_result_register_names(register_names, &mut state.register_names);
     } else if let Some(changed_registers) = kv.get("changed-registers") {

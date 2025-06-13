@@ -1,11 +1,26 @@
 use log::debug;
 
+use crate::{PtrSize, State, Written};
+
 /// MIResponse::ExecResult, key: "value"
-pub fn recv_exec_result_value(current_pc: &mut u64, value: &String) {
-    // This works b/c we only use this for PC, but will most likely
-    // be wrong sometime
-    debug!("value: {value}");
-    let pc: Vec<&str> = value.split_whitespace().collect();
-    let pc = pc[0].strip_prefix("0x").unwrap();
-    *current_pc = u64::from_str_radix(pc, 16).unwrap();
+pub fn recv_exec_result_value(state: &mut State, value: &String) {
+    if let Some(Written::SizeOfVoidStar) = state.written.front() {
+        match value.as_str() {
+            "8" => {
+                state.ptr_size = PtrSize::Size64;
+                log::trace!("Setting to 32 bit mode");
+            }
+            "4" => {
+                state.ptr_size = PtrSize::Size32;
+                log::trace!("Setting to 64 bit mode");
+            }
+            _ => (),
+        };
+        let _ = state.written.pop_front().unwrap();
+    } else {
+        // program is stopped, get the current pc
+        let pc: Vec<&str> = value.split_whitespace().collect();
+        let pc = pc[0].strip_prefix("0x").unwrap();
+        state.current_pc = u64::from_str_radix(pc, 16).unwrap();
+    }
 }

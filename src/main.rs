@@ -96,7 +96,7 @@ struct Args {
     #[arg(long = "32")]
     thirty_two_bit: bool,
 
-    /// Execute GDB commands
+    /// Execute GDB commands line-by-line from file
     ///
     /// lines starting with # are ignored
     #[arg(short, long)]

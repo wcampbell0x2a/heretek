@@ -56,6 +56,13 @@ fn resolve_home(path: &str) -> Option<PathBuf> {
 }
 
 #[derive(Debug, Clone)]
+enum HexdumpType {
+    Memory,
+    Stack,
+    Heap,
+}
+
+#[derive(Debug, Clone)]
 struct LimitedBuffer<T> {
     offset: usize,
     buffer: VecDeque<T>,
@@ -245,6 +252,7 @@ struct State {
     asm: Vec<Asm>,
     /// Hexdump
     hexdump: Option<(u64, Vec<u8>)>,
+    hexdump_type: HexdumpType,
     hexdump_scroll: Scroll,
     hexdump_popup: Input,
     /// Right side of status in TUI
@@ -280,6 +288,7 @@ impl State {
             stack: BTreeMap::new(),
             asm: Vec::new(),
             hexdump: None,
+            hexdump_type: HexdumpType::Memory,
             hexdump_scroll: Scroll::default(),
             hexdump_popup: Input::default(),
             async_result: String::new(),
@@ -731,6 +740,7 @@ fn run_app<B: Backend>(
                     (InputMode::Normal, KeyCode::Char('H'), Mode::OnlyHexdump) => {
                         let mut state = state_share.state.lock().unwrap();
                         if let Some(find_heap) = state.find_first_heap() {
+                            state.hexdump_type = HexdumpType::Heap;
                             let s =
                                 data_read_memory_bytes(find_heap.start_address, 0, find_heap.size);
                             state.next_write.push(s);
@@ -743,6 +753,7 @@ fn run_app<B: Backend>(
                     (InputMode::Normal, KeyCode::Char('T'), Mode::OnlyHexdump) => {
                         let mut state = state_share.state.lock().unwrap();
                         if let Some(find_heap) = state.find_first_stack() {
+                            state.hexdump_type = HexdumpType::Stack;
                             let s =
                                 data_read_memory_bytes(find_heap.start_address, 0, find_heap.size);
                             state.next_write.push(s);
@@ -863,9 +874,7 @@ fn process_line(app: &mut App, state: &mut State, val: &str) {
     let mut val = val.to_owned();
 
     // Replace internal variables
-    {
-        replace_internal_variables(state, &mut val);
-    }
+    replace_internal_variables(state, &mut val);
 
     // Resolve parens with expressions
     resolve_paren_expressions(&mut val);
@@ -943,6 +952,7 @@ fn process_line(app: &mut App, state: &mut State, val: &str) {
         state.next_write.push(s);
         state.written.push_back(Written::Memory);
         state.input.reset();
+        state.hexdump_type = HexdumpType::Memory;
         return;
     }
     gdb::write_mi(&app.gdb_stdin, &val);

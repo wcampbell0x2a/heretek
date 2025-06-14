@@ -5,4 +5,15 @@ update-screenshots:
     vhs docs/vhs/readme.tape
 
 run:
-    RUST_LOG=trace cargo r --release -- --cmds test-sources/test.source --log-path nice.log
+    RUST_LOG=trace cargo r --release -- --cmds test-sources/test.source --log-path heretek.log
+
+# Matches .github
+build:
+    cargo build --release --bins
+test: build
+    cargo nextest run --release
+bench:
+    cargo bench
+lint:
+    cargo fmt
+    cargo clippy

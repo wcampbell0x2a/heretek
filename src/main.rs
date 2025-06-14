@@ -20,16 +20,16 @@ use log::{debug, error};
 use ratatui::crossterm::{
     event::{self, DisableMouseCapture, Event, KeyCode},
     execute,
-    terminal::{disable_raw_mode, LeaveAlternateScreen},
+    terminal::{LeaveAlternateScreen, disable_raw_mode},
 };
 use ratatui::prelude::*;
 use ratatui::widgets::ScrollbarState;
 use regex::Regex;
 use register::RegisterStorage;
-use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
+use tui_input::backend::crossterm::EventHandler;
 
-use mi::{data_read_memory_bytes, Asm, MemoryMapping};
+use mi::{Asm, MemoryMapping, data_read_memory_bytes};
 use ui::hexdump::HEXDUMP_WIDTH;
 
 mod deref;
@@ -1049,10 +1049,10 @@ mod tests {
 
     use super::*;
     use insta::assert_snapshot;
-    use libc::{chmod, S_IRGRP, S_IROTH, S_IRUSR, S_IWUSR, S_IXGRP, S_IXOTH, S_IXUSR};
+    use libc::{S_IRGRP, S_IROTH, S_IRUSR, S_IWUSR, S_IXGRP, S_IXOTH, S_IXUSR, chmod};
 
-    use ratatui::{backend::TestBackend, Terminal};
-    use test_assets_ureq::{dl_test_files_backoff, TestAssetDef};
+    use ratatui::{Terminal, backend::TestBackend};
+    use test_assets_ureq::{TestAssetDef, dl_test_files_backoff};
 
     fn run_a_bit(args: Args) -> (App, StateShare, Terminal<TestBackend>) {
         let (gdb_stdout, mut app) = App::new_stream(args.clone());

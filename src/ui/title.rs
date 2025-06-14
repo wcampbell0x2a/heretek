@@ -5,7 +5,7 @@ use ratatui::style::Modifier;
 use ratatui::text::Span;
 use ratatui::widgets::block::Title;
 use ratatui::widgets::{Block, Borders, Tabs};
-use ratatui::{layout::Rect, style::Style, Frame};
+use ratatui::{Frame, layout::Rect, style::Style};
 
 use super::{ASM_COLOR, GRAY_FG, GREEN, HEAP_COLOR, STACK_COLOR, STRING_COLOR, TEXT_COLOR};
 

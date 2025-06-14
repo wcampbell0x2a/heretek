@@ -1,7 +1,7 @@
 use ratatui::layout::Constraint;
 use ratatui::prelude::Stylize;
 use ratatui::widgets::{Block, Borders, Scrollbar, ScrollbarOrientation, Table};
-use ratatui::{layout::Rect, style::Style, widgets::Row, Frame};
+use ratatui::{Frame, layout::Rect, style::Style, widgets::Row};
 
 use super::{BLUE, ORANGE, SCROLL_CONTROL_TEXT};
 

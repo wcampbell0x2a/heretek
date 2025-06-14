@@ -2,7 +2,7 @@ use ratatui::layout::Constraint;
 use ratatui::prelude::Stylize;
 use ratatui::widgets::block::Title;
 use ratatui::widgets::{Block, Borders, Cell, Table, TableState};
-use ratatui::{layout::Rect, style::Style, widgets::Row, Frame};
+use ratatui::{Frame, layout::Rect, style::Style, widgets::Row};
 
 use super::{GREEN, ORANGE, PURPLE};
 

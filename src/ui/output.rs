@@ -1,8 +1,8 @@
+use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::prelude::Stylize;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Scrollbar, ScrollbarOrientation};
-use ratatui::Frame;
 
 use super::{BLUE, SCROLL_CONTROL_TEXT};
 
@@ -12,11 +12,7 @@ pub fn draw_output(state: &mut State, f: &mut Frame, output: Rect, full: bool) {
     let len = state.output.len();
     let max = output.height;
     let skip = if full {
-        if len <= max as usize {
-            0
-        } else {
-            state.output_scroll.scroll
-        }
+        if len <= max as usize { 0 } else { state.output_scroll.scroll }
     } else if len <= max as usize {
         0
     } else {

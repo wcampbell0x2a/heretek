@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
-use super::{add_deref_to_span, apply_val_color, ORANGE, PURPLE, RED};
+use super::{ORANGE, PURPLE, RED, add_deref_to_span, apply_val_color};
 
 use ratatui::prelude::Stylize;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation};
-use ratatui::{layout::Rect, style::Style, Frame};
+use ratatui::{Frame, layout::Rect, style::Style};
 
 use crate::register::RegisterStorage;
 use crate::{PtrSize, State};

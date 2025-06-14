@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use recv::asm_insns::recv_exec_result_asm_insns;
 use recv::result_memory::recv_exec_result_memory;
 
-use crate::mi::Mapping;
 use crate::State;
+use crate::mi::Mapping;
 
 mod running;
 use running::exec_result_running;

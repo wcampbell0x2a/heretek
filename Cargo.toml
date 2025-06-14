@@ -1,7 +1,7 @@
 [package]
 name = "heretek"
 version = "0.5.1"
-edition = "2021"
+edition = "2024"
 description = "GDB TUI Dashboard for the understanding of vast knowledge"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/wcampbell0x2a/heretek"

@@ -43,7 +43,7 @@ Options:
           Switch into 32-bit mode
 
   -c, --cmds <CMDS>
-          Execute GDB commands
+          Execute GDB commands line-by-line from file
 
           lines starting with # are ignored
 

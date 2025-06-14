@@ -2,11 +2,11 @@ use std::path::PathBuf;
 
 use log::{debug, error, info};
 
-use crate::mi::{
-    Mapping, MEMORY_MAP_BEGIN, MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_NEW_2,
-    MEMORY_MAP_START_STR_OLD,
-};
 use crate::State;
+use crate::mi::{
+    MEMORY_MAP_BEGIN, MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_NEW_2,
+    MEMORY_MAP_START_STR_OLD, Mapping,
+};
 
 /// `MIResponse::StreamOutput`
 pub fn stream_output(

@@ -5,7 +5,7 @@ use log::{debug, error};
 
 use crate::deref::Deref;
 use crate::gdb::read_memory;
-use crate::mi::{data_disassemble, data_read_memory_bytes, INSTRUCTION_LEN};
+use crate::mi::{INSTRUCTION_LEN, data_disassemble, data_read_memory_bytes};
 use crate::register::RegisterStorage;
 use crate::{PtrSize, State, Written};
 

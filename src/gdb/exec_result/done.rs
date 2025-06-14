@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::mi::{
-    match_inner_items, parse_key_value_pairs, parse_memory_mappings_new, parse_memory_mappings_old,
-    Mapping,
+    Mapping, match_inner_items, parse_key_value_pairs, parse_memory_mappings_new,
+    parse_memory_mappings_old,
 };
 use crate::{Bt, State};
 

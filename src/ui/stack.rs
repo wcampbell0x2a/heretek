@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use ratatui::prelude::Stylize;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph};
-use ratatui::{layout::Rect, style::Style, Frame};
+use ratatui::{Frame, layout::Rect, style::Style};
 
-use super::{add_deref_to_span, ORANGE, PURPLE};
+use super::{ORANGE, PURPLE, add_deref_to_span};
 
 use crate::{PtrSize, State};
 

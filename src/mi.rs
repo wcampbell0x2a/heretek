@@ -62,19 +62,11 @@ impl MemoryMapping {
     /// so we make sure to match with a mapping such as:
     /// "/home/wcampbell/projects/wcampbell/heretek/test-assets/test_render_app/a.out"
     pub fn is_path(&self, filepath: &str) -> bool {
-        if let Some(path) = &self.path {
-            path.ends_with(&filepath.to_owned())
-        } else {
-            false
-        }
+        if let Some(path) = &self.path { path.ends_with(&filepath.to_owned()) } else { false }
     }
 
     pub fn is_exec(&self) -> bool {
-        if let Some(permissions) = &self.permissions {
-            permissions.contains('x')
-        } else {
-            false
-        }
+        if let Some(permissions) = &self.permissions { permissions.contains('x') } else { false }
     }
 
     /// Mapping contains the `addr`

@@ -1,6 +1,6 @@
 use ratatui::prelude::Stylize;
 use ratatui::widgets::{Block, Borders, Paragraph};
-use ratatui::{layout::Rect, style::Style, Frame};
+use ratatui::{Frame, layout::Rect, style::Style};
 
 use super::{BLUE, GRAY_FG, GREEN, ORANGE};
 use crate::{InputMode, State};

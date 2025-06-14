@@ -64,4 +64,8 @@ Options:
           Print version
 ```
 
+## Development
+All patches/merge requests are welcome! See the development guide for more details.
+[DEVELOPMENT.md](DEVELOPMENT.md).
+
 > "To every problem, a solution lies in the application of tech-lore" - Ferrarch Asklepian, Warhammer 40,000: Mechanicus

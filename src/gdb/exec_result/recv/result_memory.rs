@@ -7,7 +7,7 @@ use crate::deref::Deref;
 use crate::gdb::read_memory;
 use crate::mi::{data_disassemble, data_read_memory_bytes, INSTRUCTION_LEN};
 use crate::register::RegisterStorage;
-use crate::{State, Written};
+use crate::{PtrSize, State, Written};
 
 /// `MIResponse::ExecResult`, key: "memory"
 pub fn recv_exec_result_memory(state: &mut State, memory: &String) {
@@ -19,7 +19,7 @@ pub fn recv_exec_result_memory(state: &mut State, memory: &String) {
     match last_written {
         Written::RegisterValue((base_reg, _begin)) => {
             debug!("new register val for {base_reg}");
-            let thirty = state.thirty_two_bit;
+            let thirty = state.ptr_size == PtrSize::Size32;
 
             let (data, _) = read_memory(memory);
             for RegisterStorage { name: _, register, deref } in state.registers.iter_mut() {
@@ -135,7 +135,7 @@ pub fn recv_exec_result_memory(state: &mut State, memory: &String) {
 }
 fn update_stack(data: HashMap<String, String>, state: &mut State, begin: String) {
     // TODO: this is insane and should be cached
-    let (val, len) = if state.thirty_two_bit {
+    let (val, len) = if state.ptr_size == PtrSize::Size32 {
         let mut val = u32::from_str_radix(&data["contents"], 16).unwrap();
         if state.endian.unwrap() == Endian::Big {
             val = val.to_le();

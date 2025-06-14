@@ -7,13 +7,13 @@ use ratatui::{layout::Rect, style::Style, Frame};
 
 use super::{add_deref_to_span, ORANGE, PURPLE};
 
-use crate::State;
+use crate::{PtrSize, State};
 
 pub fn draw_stack(state: &mut State, f: &mut Frame, stack: Rect) {
     let block = Block::default().borders(Borders::TOP).title("Stack".fg(ORANGE));
     let mut lines = vec![];
     let mut longest_cells = 0;
-    let width: usize = if state.thirty_two_bit { 11 } else { 19 };
+    let width: usize = if state.ptr_size == PtrSize::Size32 { 11 } else { 19 };
 
     let stacks = state.stack.clone();
     for (addr, values) in stacks.iter() {

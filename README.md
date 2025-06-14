@@ -39,8 +39,13 @@ Options:
 
           `mkfifo gdb_pipe; cat gdb_pipe | gdb --interpreter=mi | nc -l -p 12345 > gdb_pipe`
 
-      --32
+      --ptr-size <PTR_SIZE>
           Switch into 32-bit mode
+
+          Heretek will do it's best to figure this out on it's own, but this will force the pointers to be evaluated as 32 bit
+
+          [default: auto]
+          [possible values: 32, 64, auto]
 
   -c, --cmds <CMDS>
           Execute GDB commands line-by-line from file

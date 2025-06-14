@@ -11,7 +11,7 @@ use exec_result::exec_result;
 use log::{debug, trace};
 
 use crate::mi::{data_read_sp_bytes, parse_key_value_pairs, parse_mi_response, MIResponse};
-use crate::{State, Written};
+use crate::{PtrSize, State, Written};
 
 pub fn gdb_interact(gdb_stdout: BufReader<Box<dyn Read + Send>>, state: Arc<Mutex<State>>) {
     let mut current_map = (None, String::new());
@@ -73,9 +73,10 @@ fn async_record_stopped(state: &mut State, kv: &HashMap<String, String>) {
     // get the memory mapping. We do this first b/c most of the deref logic needs
     // these locations
     state.next_write.push(r#"-interpreter-exec console "info proc mappings""#.to_string());
+    // TODO: We only need to do this once
     // Get endian
     state.next_write.push(r#"-interpreter-exec console "show endian""#.to_string());
-    // TODO: we could cache this, per file opened
+    // TODO: We only need to do this once
     state.next_write.push("-data-list-register-names".to_string());
     // When a breakpoint is hit, query for register values
     state.next_write.push("-data-list-register-values x".to_string());
@@ -83,6 +84,13 @@ fn async_record_stopped(state: &mut State, kv: &HashMap<String, String>) {
     state.next_write.push("-data-list-changed-registers".to_string());
     // bt
     state.next_write.push("-stack-list-frames".to_string());
+
+    // query the size of the arch
+    if state.ptr_size == PtrSize::Auto {
+        // sizeof ptr in arch
+        state.next_write.push("-data-evaluate-expression \"sizeof(long)\"".to_string());
+        state.written.push_back(Written::SizeOfVoidStar);
+    }
 }
 
 fn read_memory(memory: &String) -> (HashMap<String, String>, String) {

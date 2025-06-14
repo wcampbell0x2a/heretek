@@ -50,6 +50,12 @@ pub fn stream_output(
         // effect of not having a GDB MI way of getting a memory map
         return;
     }
+
+    if s.contains("warning: unable to open /proc file '/proc/1/maps'") {
+        log::trace!("proc file could not be read, abort memory map reading");
+        return;
+    }
+
     let split: Vec<&str> = s.split_whitespace().collect();
     if split == MEMORY_MAP_START_STR_NEW {
         current_map.0 = Some(Mapping::New);

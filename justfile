@@ -11,7 +11,7 @@ run:
 build:
     cargo build --release --bins
 test: build
-    cargo nextest run --release
+    cargo test --release
 bench:
     cargo bench
 lint:

@@ -896,10 +896,8 @@ fn process_line(app: &mut App, state: &mut State, val: &str) {
     {
         // Write original cmd
         gdb::write_mi(&app.gdb_stdin, &val);
-        // let cmd = "-gdb-set mi-async on";
-        // state.output.push(format!("h> {cmd}"));
-        // gdb::write_mi(&app.gdb_stdin, cmd);
-        // state.output.push(cmd.to_owned());
+        state.output.push(val);
+        state.input.reset();
 
         let cmd = "-gdb-set disassembly-flavor intel";
         gdb::write_mi(&app.gdb_stdin, cmd);

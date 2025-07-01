@@ -902,9 +902,6 @@ fn process_line(app: &mut App, state: &mut State, val: &str) {
         let cmd = "-gdb-set disassembly-flavor intel";
         gdb::write_mi(&app.gdb_stdin, cmd);
         state.output.push(cmd.to_owned());
-
-        state.output.push(val);
-        state.input.reset();
         return;
     } else if val == "c"
         || val == "co"

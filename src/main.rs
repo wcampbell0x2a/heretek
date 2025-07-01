@@ -881,9 +881,27 @@ fn process_line(app: &mut App, state: &mut State, val: &str) {
 
         let cmd = "-exec-run";
         gdb::write_mi(&app.gdb_stdin, cmd);
+
+        let cmd = "-gdb-set disassembly-flavor intel";
+        gdb::write_mi(&app.gdb_stdin, cmd);
         state.output.push(val);
 
         state.input.reset();
+        return;
+    } else if val.starts_with("at")
+        || val.starts_with("att")
+        || val.starts_with("atta")
+        || val.starts_with("attac")
+        || val.starts_with("attach")
+    {
+        // Write original cmd
+        gdb::write_mi(&app.gdb_stdin, &val);
+        state.output.push(val);
+        state.input.reset();
+
+        let cmd = "-gdb-set disassembly-flavor intel";
+        gdb::write_mi(&app.gdb_stdin, cmd);
+        state.output.push(cmd.to_owned());
         return;
     } else if val == "c"
         || val == "co"

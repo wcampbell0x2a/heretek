@@ -2,6 +2,7 @@
 [<img alt="github" src="https://img.shields.io/badge/github-wcampbell0x2a/heretek-8da0cb?style=for-the-badge&labelColor=555555&logo=github" height="20">](https://github.com/wcampbell0x2a/heretek)
 [<img alt="crates.io" src="https://img.shields.io/crates/v/heretek.svg?style=for-the-badge&color=fc8d62&logo=rust" height="20">](https://crates.io/crates/heretek)
 [<img alt="build status" src="https://img.shields.io/github/actions/workflow/status/wcampbell0x2a/heretek/main.yml?branch=master&style=for-the-badge" height="20">](https://github.com/wcampbell0x2a/heretek/actions?query=branch%3Amaster)
+[<img alt="Codecov" src="https://img.shields.io/codecov/c/github/wcampbell0x2a/heretek?style=for-the-badge" height="20">](https://app.codecov.io/gh/wcampbell0x2a/heretek)
 
 GDB TUI Dashboard inspired by `gef`, designed to seamlessly connect to remote targets even without a functioning `gdbserver`.
 

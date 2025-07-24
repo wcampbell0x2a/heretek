@@ -17,13 +17,13 @@ pub fn draw_stack(state: &mut State, f: &mut Frame, stack: Rect) {
 
     let stacks = state.stack.clone();
     for (addr, values) in stacks.iter() {
-        let filepath = state.filepath.clone().unwrap_or(PathBuf::new());
+        let filepath = state.filepath.clone().unwrap_or_default();
         let filepath = filepath.to_string_lossy();
 
-        let hex_string = format!("0x{:02x}", addr);
+        let hex_string = format!("0x{addr:02x}");
         let hex_width = hex_string.len();
         let padding_width = (width - 4).saturating_sub(hex_width);
-        let span = Span::from(format!("  {}{:padding$}", hex_string, "", padding = padding_width))
+        let span = Span::from(format!("  {hex_string}{:padding$}", "", padding = padding_width))
             .style(Style::new().fg(PURPLE));
         let mut spans = vec![span];
         add_deref_to_span(values, &mut spans, state, &filepath, &mut longest_cells, width);

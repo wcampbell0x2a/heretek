@@ -30,12 +30,11 @@ pub fn draw_registers(state: &mut State, f: &mut Frame, register: Rect) {
             if !reg.is_set() {
                 continue;
             }
-            if let Some(reg_value) = &reg.value {
-                if u64::from_str_radix(&reg_value[2..], 16).is_ok()
-                    && longest_register_name < name.len()
-                {
-                    longest_register_name = name.len();
-                }
+            if let Some(reg_value) = &reg.value
+                && u64::from_str_radix(&reg_value[2..], 16).is_ok()
+                && longest_register_name < name.len()
+            {
+                longest_register_name = name.len();
             }
         }
     }
@@ -50,43 +49,38 @@ pub fn draw_registers(state: &mut State, f: &mut Frame, register: Rect) {
             if !reg.is_set() {
                 continue;
             }
-            if let Some(reg_value) = &reg.value {
-                if let Ok(val) = u64::from_str_radix(&reg_value[2..], 16) {
-                    let changed = state.register_changed.contains(&(i as u16));
-                    let mut reg_name =
-                        Span::from(format!("  {name:width$}", width = longest_register_name))
-                            .style(Style::new().fg(PURPLE));
-                    let (is_stack, is_heap, is_text) = state.classify_val(val, &filepath);
+            if let Some(reg_value) = &reg.value
+                && let Ok(val) = u64::from_str_radix(&reg_value[2..], 16)
+            {
+                let changed = state.register_changed.contains(&(i as u16));
+                let mut reg_name = Span::from(format!("  {name:longest_register_name$}"))
+                    .style(Style::new().fg(PURPLE));
+                let (is_stack, is_heap, is_text) = state.classify_val(val, &filepath);
 
-                    let mut extra_derefs = Vec::new();
-                    add_deref_to_span(
-                        deref,
-                        &mut extra_derefs,
-                        state,
-                        &filepath,
-                        &mut longest_extra_val,
-                        width,
-                    );
+                let mut extra_derefs = Vec::new();
+                add_deref_to_span(
+                    deref,
+                    &mut extra_derefs,
+                    state,
+                    &filepath,
+                    &mut longest_extra_val,
+                    width,
+                );
 
-                    let hex_string = reg.value.as_ref().unwrap().to_string();
-                    let hex_width = hex_string.len();
-                    let padding_width = width.saturating_sub(hex_width);
-                    let mut span = Span::from(format!(
-                        "→ {}{:padding$}",
-                        hex_string,
-                        "",
-                        padding = padding_width
-                    ));
-                    apply_val_color(&mut span, is_stack, is_heap, is_text);
+                let hex_string = reg.value.as_ref().unwrap().to_string();
+                let hex_width = hex_string.len();
+                let padding_width = width.saturating_sub(hex_width);
+                let mut span =
+                    Span::from(format!("→ {hex_string}{:padding$}", "", padding = padding_width));
+                apply_val_color(&mut span, is_stack, is_heap, is_text);
 
-                    // Apply color to reg name
-                    if changed {
-                        reg_name = reg_name.style(Style::new().fg(RED));
-                    }
-                    let mut line = Line::from(vec![reg_name, span]);
-                    line.spans.append(&mut extra_derefs);
-                    lines.push(line);
+                // Apply color to reg name
+                if changed {
+                    reg_name = reg_name.style(Style::new().fg(RED));
                 }
+                let mut line = Line::from(vec![reg_name, span]);
+                line.spans.append(&mut extra_derefs);
+                lines.push(line);
             }
         }
     }

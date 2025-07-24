@@ -6,7 +6,7 @@ use regex::{CaptureMatches, Regex};
 /// Amount of bytes requested during deref to get symbol/asm
 pub const INSTRUCTION_LEN: usize = 8;
 
-pub fn match_inner_items(haystack: &str) -> CaptureMatches {
+pub fn match_inner_items(haystack: &str) -> CaptureMatches<'_, '_> {
     // compile once and re-use
     // NOTE: this only parses nested 3 {} deep, more and this will fail!
     static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
@@ -102,7 +102,7 @@ impl MemoryMapping {
                 path: Some(parts[5..].join(" ")), // Combine the rest as the path
             })
         } else {
-            return Err(format!("Invalid line format: {}", line));
+            return Err(format!("Invalid line format: {line}"));
         }
     }
 
@@ -121,7 +121,7 @@ impl MemoryMapping {
                 path: Some(parts[4..].join(" ")), // Combine the rest as the path
             })
         } else {
-            Err(format!("Invalid line format: {}", line))
+            Err(format!("Invalid line format: {line}"))
         }
     }
 }
@@ -244,11 +244,10 @@ pub fn join_registers(
 ) -> Vec<(String, Option<Register>)> {
     let mut registers_arch = vec![];
     for (register, name) in registers.iter().zip(register_names.iter()) {
-        if let Some(register) = register {
-            if !register.number.is_empty() {
-                registers_arch.push((name.to_string(), Some(register.clone())));
-                // debug!("[{i}] register({name}): {:?}", register);
-            }
+        if let Some(register) = register
+            && !register.number.is_empty()
+        {
+            registers_arch.push((name.to_string(), Some(register.clone())));
         }
     }
     registers_arch
@@ -405,7 +404,7 @@ fn parse_stream_output(input: &str) -> MIResponse {
     MIResponse::StreamOutput(kind.to_string(), unescaped_content.to_string())
 }
 
-fn unescape_gdb_output(input: &str) -> Cow<str> {
+fn unescape_gdb_output(input: &str) -> Cow<'_, str> {
     input.replace("\\n", "\n").replace("\\t", "\t").into()
 }
 

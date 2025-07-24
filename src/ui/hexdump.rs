@@ -26,7 +26,7 @@ fn to_hexdump_str<'a>(
         // bytes
         for byte in chunk.iter() {
             let color = color(*byte);
-            hex_spans.push(Span::styled(format!("{:02x} ", byte), Style::default().fg(color)));
+            hex_spans.push(Span::styled(format!("{byte:02x} "), Style::default().fg(color)));
         }
 
         // ascii
@@ -53,17 +53,16 @@ fn to_hexdump_str<'a>(
                 if !reg.is_set() {
                     continue;
                 }
-                if let Some(reg_value) = &reg.value {
-                    if let Ok(val) = u64::from_str_radix(&reg_value[2..], 16) {
-                        for n in 0..=windows {
-                            if val as usize == pos as usize + ((offset + skip) * HEXDUMP_WIDTH + n)
-                            {
-                                ref_spans.push(Span::raw(format!(
-                                    "← ${}(0x{:02x}) ",
-                                    r.name.clone(),
-                                    val
-                                )));
-                            }
+                if let Some(reg_value) = &reg.value
+                    && let Ok(val) = u64::from_str_radix(&reg_value[2..], 16)
+                {
+                    for n in 0..=windows {
+                        if val as usize == pos as usize + ((offset + skip) * HEXDUMP_WIDTH + n) {
+                            ref_spans.push(Span::raw(format!(
+                                "← ${}(0x{:02x}) ",
+                                r.name.clone(),
+                                val
+                            )));
                         }
                     }
                 }
@@ -105,11 +104,10 @@ fn popup_area(area: Rect, percent_x: u16) -> Rect {
     area
 }
 
-fn block(pos: &str) -> Block {
-    let block = Block::default().borders(Borders::ALL).title(
+fn block(pos: &str) -> Block<'_> {
+    Block::default().borders(Borders::ALL).title(
         format!("Hexdump{pos} {SCROLL_CONTROL_TEXT}, Save(S), HEAP(H), STACK(T))").fg(ORANGE),
-    );
-    block
+    )
 }
 
 pub fn draw_hexdump(state: &mut State, f: &mut Frame, hexdump: Rect, show_popup: bool) {

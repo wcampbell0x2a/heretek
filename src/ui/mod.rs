@@ -215,18 +215,18 @@ pub fn add_deref_to_span(
                     }
                 }
                 let cell =
-                    Span::from(format!("→ \"{}\"", full_s)).style(Style::new().fg(STRING_COLOR));
+                    Span::from(format!("→ \"{full_s}\"")).style(Style::new().fg(STRING_COLOR));
                 spans.push(cell);
                 return;
             }
         }
 
         // if not, it's a value
-        let hex_string = format!("0x{:02x}", v);
+        let hex_string = format!("0x{v:02x}");
         let hex_width = hex_string.len();
         let padding_width = width.saturating_sub(hex_width);
         let mut span =
-            Span::from(format!("→ {}{:padding$}", hex_string, "", padding = padding_width));
+            Span::from(format!("→ {hex_string}{:padding$}", "", padding = padding_width));
         let (is_stack, is_heap, is_text) = state.classify_val(*v, filepath);
         apply_val_color(&mut span, is_stack, is_heap, is_text);
         spans.push(span);

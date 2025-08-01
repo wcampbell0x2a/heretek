@@ -1,5 +1,3 @@
-use log::debug;
-
 use crate::{PtrSize, State, Written};
 
 /// MIResponse::ExecResult, key: "value"

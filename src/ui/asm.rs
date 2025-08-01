@@ -32,7 +32,7 @@ pub fn draw_asm(state: &mut State, f: &mut Frame, asm: Rect) {
         let mut row = vec![addr_cell];
 
         if let Some(function_name) = &a.func_name {
-            let function_cell = Cell::from(format!("{}+{:02x}", function_name, a.offset))
+            let function_cell = Cell::from(format!("{function_name}+{:02x}", a.offset))
                 .style(Style::default().fg(PURPLE));
             row.push(function_cell);
         } else {
@@ -54,7 +54,7 @@ pub fn draw_asm(state: &mut State, f: &mut Frame, asm: Rect) {
     }
 
     let tital = if let Some(function_name) = function_name {
-        Title::from(format!("Instructions ({})", function_name).fg(ORANGE))
+        Title::from(format!("Instructions ({function_name})").fg(ORANGE))
     } else {
         Title::from("Instructions".fg(ORANGE))
     };

@@ -418,10 +418,10 @@ fn main() -> anyhow::Result<()> {
     init_logging(&args.log_path)?;
 
     // Check for valid cmd file
-    if let Some(cmds) = &args.cmds {
-        if !cmds.exists() {
-            anyhow::bail!("Filepath for --cmds does not exist: `{}`", cmds.display());
-        }
+    if let Some(cmds) = &args.cmds
+        && !cmds.exists()
+    {
+        anyhow::bail!("Filepath for --cmds does not exist: `{}`", cmds.display());
     }
     // Start rx thread
     let (gdb_stdout, mut app) = App::new_stream(args.clone());
@@ -526,279 +526,276 @@ fn run_app<B: Backend>(
                 // if else, we display them
             }
         }
-        if crossterm::event::poll(Duration::from_millis(10))? {
-            if let Event::Key(key) = event::read()? {
-                if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                    gdb::write_mi(&app.gdb_stdin, "-exec-interrupt");
-                    continue;
+        if crossterm::event::poll(Duration::from_millis(10))?
+            && let Event::Key(key) = event::read()?
+        {
+            if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                gdb::write_mi(&app.gdb_stdin, "-exec-interrupt");
+                continue;
+            }
+            let (input_mode, mode) = {
+                let state = state_share.state.lock().unwrap();
+                (state.input_mode, state.mode)
+            };
+            match (&input_mode, key.code, &mode) {
+                // hexdump popup
+                (_, KeyCode::Esc, Mode::OnlyHexdumpPopup) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.hexdump_popup = Input::default();
+                    state.mode = Mode::OnlyHexdump;
                 }
-                let (input_mode, mode) = {
-                    let state = state_share.state.lock().unwrap();
-                    (state.input_mode, state.mode)
-                };
-                match (&input_mode, key.code, &mode) {
-                    // hexdump popup
-                    (_, KeyCode::Esc, Mode::OnlyHexdumpPopup) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.hexdump_popup = Input::default();
-                        state.mode = Mode::OnlyHexdump;
-                    }
-                    (_, KeyCode::Char('S'), Mode::OnlyHexdumpPopup) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.input.handle_event(&Event::Key(key));
-                    }
-                    (_, KeyCode::Enter, Mode::OnlyHexdumpPopup) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        let val = state.hexdump_popup.clone();
-                        let val = val.value();
+                (_, KeyCode::Char('S'), Mode::OnlyHexdumpPopup) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.input.handle_event(&Event::Key(key));
+                }
+                (_, KeyCode::Enter, Mode::OnlyHexdumpPopup) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let val = state.hexdump_popup.clone();
+                    let val = val.value();
 
-                        if let Some(hexdump) = state.hexdump.as_ref() {
-                            if let Some(path) = resolve_home(val) {
-                                if std::fs::write(&path, &hexdump.1).is_ok() {
-                                    state.output.push(format!(
-                                        "h> hexdump succesfully written to {}",
-                                        path.to_str().unwrap()
-                                    ));
-                                }
-                            }
-                        }
-                        state.hexdump_popup = Input::default();
-                        state.mode = Mode::OnlyHexdump;
+                    if let Some(hexdump) = state.hexdump.as_ref()
+                        && let Some(path) = resolve_home(val)
+                        && std::fs::write(&path, &hexdump.1).is_ok()
+                    {
+                        state.output.push(format!(
+                            "h> hexdump succesfully written to {}",
+                            path.to_str().unwrap()
+                        ));
                     }
-                    (_, _, Mode::OnlyHexdumpPopup) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.hexdump_popup.handle_event(&Event::Key(key));
+                    state.hexdump_popup = Input::default();
+                    state.mode = Mode::OnlyHexdump;
+                }
+                (_, _, Mode::OnlyHexdumpPopup) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.hexdump_popup.handle_event(&Event::Key(key));
+                }
+                // Input
+                (InputMode::Normal, KeyCode::Char('i'), _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.input_mode = InputMode::Editing;
+                }
+                (InputMode::Normal, KeyCode::Char('q'), _) => {
+                    return Ok(());
+                }
+                // Modes
+                (InputMode::Normal, KeyCode::Tab, _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = state.mode.next();
+                }
+                (_, KeyCode::F(1), _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = Mode::All;
+                }
+                (_, KeyCode::F(2), _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = Mode::OnlyRegister;
+                }
+                (_, KeyCode::F(3), _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = Mode::OnlyStack;
+                }
+                (_, KeyCode::F(4), _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = Mode::OnlyInstructions;
+                }
+                (_, KeyCode::F(5), _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = Mode::OnlyOutput;
+                }
+                (_, KeyCode::F(6), _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = Mode::OnlyMapping;
+                }
+                (_, KeyCode::F(7), _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = Mode::OnlyHexdump;
+                }
+                (InputMode::Editing, KeyCode::Esc, _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.input_mode = InputMode::Normal;
+                }
+                (InputMode::Normal, KeyCode::Char('j'), Mode::All) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let len = state.registers.len();
+                    state.registers_scroll.down(1, len);
+                }
+                (InputMode::Normal, KeyCode::Char('k'), Mode::All) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.registers_scroll.up(1);
+                }
+                (InputMode::Normal, KeyCode::Char('J'), Mode::All) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let len = state.registers.len();
+                    state.registers_scroll.down(50, len);
+                }
+                (InputMode::Normal, KeyCode::Char('K'), Mode::All) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.registers_scroll.up(50);
+                }
+                (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyRegister) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let len = state.registers.len();
+                    state.registers_scroll.down(1, len);
+                }
+                (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyRegister) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.registers_scroll.up(1);
+                }
+                (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyRegister) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let len = state.registers.len();
+                    state.registers_scroll.down(50, len);
+                }
+                (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyRegister) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.registers_scroll.up(50);
+                }
+                // output
+                (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyOutput) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.output_scroll.reset();
+                }
+                (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyOutput) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let len = state.output.len();
+                    state.output_scroll.end(len);
+                }
+                (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyOutput) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let len = state.output.len();
+                    state.output_scroll.down(1, len);
+                }
+                (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyOutput) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.output_scroll.up(1);
+                }
+                (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyOutput) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let len = state.output.len();
+                    state.output_scroll.down(50, len);
+                }
+                (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyOutput) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.output_scroll.up(50);
+                }
+                // memory mapping
+                (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyMapping) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.output_scroll.reset();
+                }
+                (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyMapping) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    if let Some(memory) = state.memory_map.as_ref() {
+                        let len = memory.len();
+                        state.memory_map_scroll.end(len);
                     }
-                    // Input
-                    (InputMode::Normal, KeyCode::Char('i'), _) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.input_mode = InputMode::Editing;
+                }
+                (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyMapping) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    if let Some(memory) = state.memory_map.as_ref() {
+                        let len = memory.len() / HEXDUMP_WIDTH;
+                        state.memory_map_scroll.down(1, len);
                     }
-                    (InputMode::Normal, KeyCode::Char('q'), _) => {
-                        return Ok(());
+                }
+                (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyMapping) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.memory_map_scroll.up(1);
+                }
+                (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyMapping) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    if let Some(memory) = state.memory_map.as_ref() {
+                        let len = memory.len() / HEXDUMP_WIDTH;
+                        state.memory_map_scroll.down(50, len);
                     }
-                    // Modes
-                    (InputMode::Normal, KeyCode::Tab, _) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.mode = state.mode.next();
+                }
+                (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyMapping) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.memory_map_scroll.up(50);
+                }
+                // hexdump
+                (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyHexdump) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.hexdump_scroll.reset();
+                }
+                (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyHexdump) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    if let Some(hexdump) = state.hexdump.as_ref() {
+                        let len = hexdump.1.len() / HEXDUMP_WIDTH;
+                        state.hexdump_scroll.end(len);
                     }
-                    (_, KeyCode::F(1), _) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.mode = Mode::All;
-                    }
-                    (_, KeyCode::F(2), _) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.mode = Mode::OnlyRegister;
-                    }
-                    (_, KeyCode::F(3), _) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.mode = Mode::OnlyStack;
-                    }
-                    (_, KeyCode::F(4), _) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.mode = Mode::OnlyInstructions;
-                    }
-                    (_, KeyCode::F(5), _) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.mode = Mode::OnlyOutput;
-                    }
-                    (_, KeyCode::F(6), _) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.mode = Mode::OnlyMapping;
-                    }
-                    (_, KeyCode::F(7), _) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.mode = Mode::OnlyHexdump;
-                    }
-                    (InputMode::Editing, KeyCode::Esc, _) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.input_mode = InputMode::Normal;
-                    }
-                    (InputMode::Normal, KeyCode::Char('j'), Mode::All) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        let len = state.registers.len();
-                        state.registers_scroll.down(1, len);
-                    }
-                    (InputMode::Normal, KeyCode::Char('k'), Mode::All) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.registers_scroll.up(1);
-                    }
-                    (InputMode::Normal, KeyCode::Char('J'), Mode::All) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        let len = state.registers.len();
-                        state.registers_scroll.down(50, len);
-                    }
-                    (InputMode::Normal, KeyCode::Char('K'), Mode::All) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.registers_scroll.up(50);
-                    }
-                    (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyRegister) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        let len = state.registers.len();
-                        state.registers_scroll.down(1, len);
-                    }
-                    (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyRegister) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.registers_scroll.up(1);
-                    }
-                    (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyRegister) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        let len = state.registers.len();
-                        state.registers_scroll.down(50, len);
-                    }
-                    (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyRegister) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.registers_scroll.up(50);
-                    }
-                    // output
-                    (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyOutput) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.output_scroll.reset();
-                    }
-                    (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyOutput) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        let len = state.output.len();
-                        state.output_scroll.end(len);
-                    }
-                    (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyOutput) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        let len = state.output.len();
-                        state.output_scroll.down(1, len);
-                    }
-                    (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyOutput) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.output_scroll.up(1);
-                    }
-                    (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyOutput) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        let len = state.output.len();
-                        state.output_scroll.down(50, len);
-                    }
-                    (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyOutput) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.output_scroll.up(50);
-                    }
-                    // memory mapping
-                    (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyMapping) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.output_scroll.reset();
-                    }
-                    (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyMapping) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        if let Some(memory) = state.memory_map.as_ref() {
-                            let len = memory.len();
-                            state.memory_map_scroll.end(len);
-                        }
-                    }
-                    (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyMapping) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        if let Some(memory) = state.memory_map.as_ref() {
-                            let len = memory.len() / HEXDUMP_WIDTH;
-                            state.memory_map_scroll.down(1, len);
-                        }
-                    }
-                    (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyMapping) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.memory_map_scroll.up(1);
-                    }
-                    (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyMapping) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        if let Some(memory) = state.memory_map.as_ref() {
-                            let len = memory.len() / HEXDUMP_WIDTH;
-                            state.memory_map_scroll.down(50, len);
-                        }
-                    }
-                    (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyMapping) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.memory_map_scroll.up(50);
-                    }
-                    // hexdump
-                    (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyHexdump) => {
-                        let mut state = state_share.state.lock().unwrap();
+                }
+                (InputMode::Normal, KeyCode::Char('S'), Mode::OnlyHexdump) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = Mode::OnlyHexdumpPopup;
+                }
+                (InputMode::Normal, KeyCode::Char('H'), Mode::OnlyHexdump) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    if let Some(find_heap) = state.find_first_heap() {
+                        let s = data_read_memory_bytes(find_heap.start_address, 0, find_heap.size);
+                        state.next_write.push(s);
+                        state.written.push_back(Written::Memory);
+
+                        // reset position
                         state.hexdump_scroll.reset();
                     }
-                    (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyHexdump) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        if let Some(hexdump) = state.hexdump.as_ref() {
-                            let len = hexdump.1.len() / HEXDUMP_WIDTH;
-                            state.hexdump_scroll.end(len);
-                        }
-                    }
-                    (InputMode::Normal, KeyCode::Char('S'), Mode::OnlyHexdump) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.mode = Mode::OnlyHexdumpPopup;
-                    }
-                    (InputMode::Normal, KeyCode::Char('H'), Mode::OnlyHexdump) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        if let Some(find_heap) = state.find_first_heap() {
-                            let s =
-                                data_read_memory_bytes(find_heap.start_address, 0, find_heap.size);
-                            state.next_write.push(s);
-                            state.written.push_back(Written::Memory);
-
-                            // reset position
-                            state.hexdump_scroll.reset();
-                        }
-                    }
-                    (InputMode::Normal, KeyCode::Char('T'), Mode::OnlyHexdump) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        if let Some(find_heap) = state.find_first_stack() {
-                            let s =
-                                data_read_memory_bytes(find_heap.start_address, 0, find_heap.size);
-                            state.next_write.push(s);
-                            state.written.push_back(Written::Memory);
-
-                            // reset position
-                            state.hexdump_scroll.reset();
-                        }
-                    }
-                    (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyHexdump) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        let hexdump = &state.hexdump;
-                        if let Some(hexdump) = hexdump.as_ref() {
-                            let len = hexdump.1.len() / HEXDUMP_WIDTH;
-                            state.hexdump_scroll.down(1, len);
-                        }
-                    }
-                    (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyHexdump) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.hexdump_scroll.up(1);
-                    }
-                    (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyHexdump) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        let hexdump = &state.hexdump;
-                        if let Some(hexdump) = hexdump.as_ref() {
-                            let len = hexdump.1.len() / HEXDUMP_WIDTH;
-                            state.hexdump_scroll.down(50, len);
-                        }
-                    }
-                    (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyHexdump) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.hexdump_scroll.up(50);
-                    }
-                    (_, KeyCode::Tab, _) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        completion(app, &mut state)?;
-                    }
-                    (_, KeyCode::Enter, _) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        key_enter(app, &mut state)?;
-                    }
-                    (_, KeyCode::Down, _) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        key_down(&mut state);
-                    }
-                    (_, KeyCode::Up, _) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        key_up(&mut state);
-                    }
-                    (InputMode::Editing, _, _) => {
-                        let mut state = state_share.state.lock().unwrap();
-                        state.completions.clear();
-                        state.input.handle_event(&Event::Key(key));
-                    }
-                    _ => (),
                 }
+                (InputMode::Normal, KeyCode::Char('T'), Mode::OnlyHexdump) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    if let Some(find_heap) = state.find_first_stack() {
+                        let s = data_read_memory_bytes(find_heap.start_address, 0, find_heap.size);
+                        state.next_write.push(s);
+                        state.written.push_back(Written::Memory);
+
+                        // reset position
+                        state.hexdump_scroll.reset();
+                    }
+                }
+                (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyHexdump) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let hexdump = &state.hexdump;
+                    if let Some(hexdump) = hexdump.as_ref() {
+                        let len = hexdump.1.len() / HEXDUMP_WIDTH;
+                        state.hexdump_scroll.down(1, len);
+                    }
+                }
+                (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyHexdump) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.hexdump_scroll.up(1);
+                }
+                (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyHexdump) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let hexdump = &state.hexdump;
+                    if let Some(hexdump) = hexdump.as_ref() {
+                        let len = hexdump.1.len() / HEXDUMP_WIDTH;
+                        state.hexdump_scroll.down(50, len);
+                    }
+                }
+                (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyHexdump) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.hexdump_scroll.up(50);
+                }
+                (_, KeyCode::Tab, _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    completion(app, &mut state)?;
+                }
+                (_, KeyCode::Enter, _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    key_enter(app, &mut state)?;
+                }
+                (_, KeyCode::Down, _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    key_down(&mut state);
+                }
+                (_, KeyCode::Up, _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    key_up(&mut state);
+                }
+                (InputMode::Editing, _, _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.completions.clear();
+                    state.input.handle_event(&Event::Key(key));
+                }
+                _ => (),
             }
         }
     }
@@ -1006,25 +1003,25 @@ fn replace_internal_variables(state: &mut State, line: &mut String) {
 
 fn replace_mapping(state: &mut State, text: &mut String, mt: MappingType) {
     let ret = find_mapping(text, &mt);
-    if let Some((path, prefix, start_idx, end_idx)) = ret {
-        if let Some(ref memory_map) = state.memory_map {
-            let resolve =
-                memory_map.iter().filter(|a| a.path == Some(path.to_owned())).nth(prefix as usize);
-            let addr = match mt {
-                MappingType::Start => resolve.map(|a| a.start_address),
-                MappingType::End => resolve.map(|a| a.end_address),
-                MappingType::Len => resolve.map(|a| a.size),
-            };
-            if let Some(addr) = addr {
-                text.replace_range(start_idx..end_idx, &format!("{:#08x?}", addr));
-            }
+    if let Some((path, prefix, start_idx, end_idx)) = ret
+        && let Some(ref memory_map) = state.memory_map
+    {
+        let resolve =
+            memory_map.iter().filter(|a| a.path == Some(path.to_owned())).nth(prefix as usize);
+        let addr = match mt {
+            MappingType::Start => resolve.map(|a| a.start_address),
+            MappingType::End => resolve.map(|a| a.end_address),
+            MappingType::Len => resolve.map(|a| a.size),
+        };
+        if let Some(addr) = addr {
+            text.replace_range(start_idx..end_idx, &format!("{addr:#08x?}"));
         }
     }
 }
 
-fn find_mapping(text: &mut String, mt: &MappingType) -> Option<(String, u32, usize, usize)> {
+fn find_mapping(text: &mut str, mt: &MappingType) -> Option<(String, u32, usize, usize)> {
     let start = mt.env_start();
-    let ret = if let Some(start_idx) = text.find(start) {
+    if let Some(start_idx) = text.find(start) {
         let prefix_len = start.len();
         let end_idx =
             text[start_idx..].find(' ').unwrap_or_else(|| text.len() - start_idx) + start_idx;
@@ -1041,22 +1038,20 @@ fn find_mapping(text: &mut String, mt: &MappingType) -> Option<(String, u32, usi
             (None, content.to_string())
         };
 
-        let prefix = u32::from_str_radix(&prefix.unwrap_or("0".to_string()), 10).unwrap();
+        let prefix = prefix.unwrap_or("0".to_string()).parse::<u32>().unwrap();
 
         Some((path, prefix, start_idx, end_idx))
     } else {
         None
-    };
-    ret
+    }
 }
 
 fn update_from_previous_input(state: &mut State) {
-    if state.sent_input.buffer.len() >= state.sent_input.offset {
-        if let Some(msg) =
+    if state.sent_input.buffer.len() >= state.sent_input.offset
+        && let Some(msg) =
             state.sent_input.buffer.get(state.sent_input.buffer.len() - state.sent_input.offset)
-        {
-            state.input = Input::new(msg.clone())
-        }
+    {
+        state.input = Input::new(msg.clone())
     }
 }
 

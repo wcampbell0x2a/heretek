@@ -18,7 +18,8 @@ pub fn recv_exec_result_value(state: &mut State, value: &String) {
     } else {
         // program is stopped, get the current pc
         let pc: Vec<&str> = value.split_whitespace().collect();
-        let pc = pc[0].strip_prefix("0x").unwrap();
-        state.current_pc = u64::from_str_radix(pc, 16).unwrap();
+        if let Some(pc) = pc[0].strip_prefix("0x") {
+            state.current_pc = u64::from_str_radix(pc, 16).unwrap();
+        }
     }
 }

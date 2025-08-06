@@ -5,6 +5,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- Set disassembly-flavor to intel [#164](https://github.com/wcampbell0x2a/heretek/pull/164)
+- Auto detect arch ptr size [#153](https://github.com/wcampbell0x2a/heretek/pull/153)
+- Remove panic on empty memory mapping [#149](https://github.com/wcampbell0x2a/heretek/pull/149)
+- Nicely bail on errors [#146](https://github.com/wcampbell0x2a/heretek/pull/146)
+- Improve `--cmds` help message [#154](https://github.com/wcampbell0x2a/heretek/pull/154)
+- Major code refactor [#142](https://github.com/wcampbell0x2a/heretek/pull/142)
 
 ## [0.5.1] - 2025-04-14
 - Support reading memory map from gdb >= 16.2 [#141](https://github.com/wcampbell0x2a/heretek/pull/141)

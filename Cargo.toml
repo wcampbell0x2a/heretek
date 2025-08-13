@@ -9,7 +9,9 @@ categories = ["development-tools"]
 keywords = ["gdb", "tui", "debugging", "embedded", "gdbserver"]
 
 [dependencies]
+ansi-to-tui = "7.0.0"
 anyhow = "1.0.98"
+bat = "0.25.0"
 chrono = "0.4.38"
 clap = { version = "4.5.21", features = ["derive"] }
 crossterm = "0.28.1"

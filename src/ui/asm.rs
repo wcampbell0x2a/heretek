@@ -1,3 +1,5 @@
+use ansi_to_tui::IntoText;
+use bat::PrettyPrinter;
 use ratatui::layout::Constraint;
 use ratatui::prelude::Stylize;
 use ratatui::widgets::block::Title;
@@ -43,10 +45,23 @@ pub fn draw_asm(state: &mut State, f: &mut Frame, asm: Rect) {
             if pc_index == index {
                 Cell::from(a.inst.to_string()).fg(GREEN)
             } else {
-                Cell::from(a.inst.to_string()).white()
+                let mut bytes = String::new();
+                PrettyPrinter::new()
+                    .input_from_bytes(a.inst.as_bytes())
+                    .language("ARM Assembly")
+                    .print_with_writer(Some(&mut bytes))
+                    .unwrap();
+                Cell::from(bytes.into_text().unwrap()).white()
+                // Cell::from(a.inst.to_string()).white()
             }
         } else {
-            Cell::from(a.inst.to_string()).dark_gray()
+            let mut bytes = String::new();
+            PrettyPrinter::new()
+                .input_from_bytes(a.inst.as_bytes())
+                .language("ARM Assembly")
+                .print_with_writer(Some(&mut bytes))
+                .unwrap();
+            Cell::from(bytes.into_text().unwrap())
         };
         row.push(inst_cell);
 

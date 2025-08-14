@@ -69,6 +69,12 @@ fn async_record_stopped(state: &mut State, kv: &HashMap<String, String>) {
     if let Some(val) = kv.get("thread-id") {
         state.async_result.push_str(&format!(", thread-id={val}"));
     }
+    // query the size of the arch
+    if state.ptr_size == PtrSize::Auto {
+        // sizeof ptr in arch
+        state.next_write.push("-data-evaluate-expression \"sizeof(long)\"".to_string());
+        state.written.push_back(Written::SizeOfVoidStar);
+    }
 
     // get the memory mapping. We do this first b/c most of the deref logic needs
     // these locations
@@ -84,13 +90,6 @@ fn async_record_stopped(state: &mut State, kv: &HashMap<String, String>) {
     state.next_write.push("-data-list-changed-registers".to_string());
     // bt
     state.next_write.push("-stack-list-frames".to_string());
-
-    // query the size of the arch
-    if state.ptr_size == PtrSize::Auto {
-        // sizeof ptr in arch
-        state.next_write.push("-data-evaluate-expression \"sizeof(long)\"".to_string());
-        state.written.push_back(Written::SizeOfVoidStar);
-    }
 }
 
 fn read_memory(memory: &String) -> (HashMap<String, String>, String) {

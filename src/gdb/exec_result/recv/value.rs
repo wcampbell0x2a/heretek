@@ -6,11 +6,11 @@ pub fn recv_exec_result_value(state: &mut State, value: &String) {
         match value.as_str() {
             "8" => {
                 state.ptr_size = PtrSize::Size64;
-                log::trace!("Setting to 32 bit mode");
+                log::trace!("Setting to 64 bit mode");
             }
             "4" => {
                 state.ptr_size = PtrSize::Size32;
-                log::trace!("Setting to 64 bit mode");
+                log::trace!("Setting to 32 bit mode");
             }
             _ => (),
         };

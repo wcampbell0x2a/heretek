@@ -26,14 +26,19 @@ pub fn recv_exec_result_memory(state: &mut State, memory: &String) {
                 if let Some(reg) = register {
                     if reg.number == base_reg {
                         let (val, len) = if thirty {
-                            let mut val = u32::from_str_radix(&data["contents"], 16).unwrap();
-                            if state.endian.unwrap() == Endian::Big {
-                                val = val.to_le();
+                            let outer = if let Ok(val) = u32::from_str_radix(&data["contents"], 16)
+                            {
+                                if state.endian.unwrap() == Endian::Big {
+                                    val.to_le()
+                                } else {
+                                    val.to_be()
+                                }
                             } else {
-                                val = val.to_be();
-                            }
+                                error!("Requested to many bytes for 32 bit processor");
+                                return;
+                            };
 
-                            (val as u64, 4)
+                            (outer as u64, 4)
                         } else {
                             let mut val = u64::from_str_radix(&data["contents"], 16).unwrap();
                             if state.endian.unwrap() == Endian::Big {

@@ -132,6 +132,13 @@ pub fn ui(f: &mut Frame, state: &mut State) {
 
     match mode {
         Mode::All => {
+            if state.registers.is_empty() {
+                let vertical = Layout::vertical([10 + 10 + 1 + 11]);
+                let [register] = vertical.areas(top);
+
+                draw_registers(state, f, register);
+                return;
+            }
             let register_size = Min(10);
             let stack_size = Length(10 + 1);
             // 5 previous, 5 now + after

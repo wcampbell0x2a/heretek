@@ -39,14 +39,18 @@ pub fn draw_asm(state: &mut State, f: &mut Frame, asm: Rect) {
             row.push(Cell::from(""));
         }
 
-        let inst_cell = if let Some(pc_index) = pc_index {
-            if pc_index == index {
-                Cell::from(a.inst.to_string()).fg(GREEN)
-            } else {
-                Cell::from(a.inst.to_string()).white()
-            }
+        // Replace \t (needed for a riscv32 gdb)
+        let inst = if a.inst.contains("\\t") {
+            let parts: Vec<&str> = a.inst.splitn(2, "\\t").collect();
+            format!("{:<8}{}", parts[0], parts[1])
         } else {
-            Cell::from(a.inst.to_string()).dark_gray()
+            a.inst.to_string()
+        };
+
+        let inst_cell = if let Some(pc_index) = pc_index {
+            if pc_index == index { Cell::from(inst).fg(GREEN) } else { Cell::from(inst).white() }
+        } else {
+            Cell::from(inst).dark_gray()
         };
         row.push(inst_cell);
 

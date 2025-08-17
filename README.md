@@ -13,7 +13,7 @@ GDB TUI Dashboard inspired by `gef`, designed to seamlessly connect to remote ta
 * See [features](./docs/features.md) for `heretek` demos.
 * See [commands](./docs/commands.md) for internal `heretek` commands.
 
-![screenshot](images/screenshot.png)
+![screenshot](images/readme.gif)
 
 ## Installation
 Either build from published source in crates.io.

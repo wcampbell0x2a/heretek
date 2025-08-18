@@ -205,6 +205,18 @@ impl Scroll {
 }
 
 #[derive(Clone, Debug)]
+struct Config {
+    // Deref and show string values
+    deref_show_string: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self { deref_show_string: true }
+    }
+}
+
+#[derive(Clone, Debug)]
 struct State {
     /// Messages to write to gdb mi
     next_write: Vec<String>,
@@ -253,10 +265,11 @@ struct State {
     status: String,
     bt: Vec<Bt>,
     completions: Vec<String>,
+    config: Config,
 }
 
 impl State {
-    pub fn new(args: Args) -> State {
+    pub fn new(args: Args, config: Config) -> State {
         State {
             next_write: vec![],
             written: VecDeque::new(),
@@ -286,6 +299,7 @@ impl State {
             status: String::new(),
             bt: vec![],
             completions: vec![],
+            config,
         }
     }
 }
@@ -425,7 +439,8 @@ fn main() -> anyhow::Result<()> {
     }
     // Start rx thread
     let (gdb_stdout, mut app) = App::new_stream(args.clone());
-    let state = State::new(args.clone());
+    let config = Config::default();
+    let state = State::new(args.clone(), config);
     let mut state_share = StateShare { state: Arc::new(Mutex::new(state)) };
 
     // Setup terminal
@@ -1067,9 +1082,15 @@ mod tests {
     use ratatui::{Terminal, backend::TestBackend};
     use test_assets_ureq::{TestAssetDef, dl_test_files_backoff};
 
-    fn run_a_bit(args: Args) -> (App, StateShare, Terminal<TestBackend>) {
+    fn run_a_bit(
+        args: Args,
+        mode: Mode,
+        size: Option<(u16, u16)>,
+    ) -> (App, StateShare, Terminal<TestBackend>) {
         let (gdb_stdout, mut app) = App::new_stream(args.clone());
-        let state = State::new(args.clone());
+        let config = Config { deref_show_string: false, ..Config::default() };
+        let mut state = State::new(args.clone(), config);
+        state.mode = mode;
         let state_share = StateShare { state: Arc::new(Mutex::new(state)) };
         spawn_gdb_interact(&state_share, gdb_stdout);
 
@@ -1083,7 +1104,11 @@ mod tests {
                 }
             }
         }
-        let mut terminal = Terminal::new(TestBackend::new(160, 50)).unwrap();
+        let mut terminal = if let Some((x, y)) = size {
+            Terminal::new(TestBackend::new(x, y)).unwrap()
+        } else {
+            Terminal::new(TestBackend::new(160, 50)).unwrap()
+        };
         let start_time = Instant::now();
         let duration = Duration::from_secs(10);
 
@@ -1147,7 +1172,7 @@ mod tests {
         let mut args = Args::default();
         args.cmds = Some(PathBuf::from("test-sources/repeated_ptr.source"));
 
-        let (_, state, terminal) = run_a_bit(args);
+        let (_, state, terminal) = run_a_bit(args, Mode::All, None);
         let _output = terminal.backend();
         let registers = state.state.lock().unwrap().registers.clone();
         let stack = state.state.lock().unwrap().stack.clone();
@@ -1162,6 +1187,37 @@ mod tests {
         assert!(stack[3].1.repeated_pattern);
         assert!(stack[4].1.repeated_pattern);
         assert!(stack[5].1.repeated_pattern);
+    }
+
+    #[test]
+    fn test_segfault() {
+        // ```
+        // int main() {
+        //     int *p = (int*)0xdeadbeef;
+        //     *p = 42;
+        //     return 0;
+        // }
+        // ```
+        const FILE_NAME: &str = "segfault";
+        const TEST_PATH: &str = "test-assets/segfault/";
+        let file_path = format!("{TEST_PATH}/{FILE_NAME}");
+        let asset_defs = [TestAssetDef {
+            filename: FILE_NAME.to_string(),
+            hash: "61611926b49c78c45d3988dfca1a612c0eb78f68b2cc4ae07ac8d7080f4c2e77".to_string(),
+            url: "https://wcampbell.dev/heretek/segfault/segfault".to_string(),
+        }];
+
+        dl_test_files_backoff(&asset_defs, TEST_PATH, true, Duration::from_secs(1)).unwrap();
+        let c_path = CString::new(file_path.to_string()).expect("CString::new failed");
+        let mode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
+        unsafe { chmod(c_path.as_ptr(), mode) };
+
+        let mut args = Args::default();
+        args.cmds = Some(PathBuf::from("test-sources/segfault.source"));
+
+        let (_, state, terminal) = run_a_bit(args, Mode::All, Some((160, 40)));
+        let output = terminal.backend();
+        assert_snapshot!(output);
     }
 
     #[test]
@@ -1209,7 +1265,7 @@ mod tests {
         let mut args = Args::default();
         args.cmds = Some(PathBuf::from("test-sources/test.source"));
 
-        let (_, state, terminal) = run_a_bit(args);
+        let (_, state, terminal) = run_a_bit(args, Mode::All, None);
         let output = terminal.backend();
 
         // Now, we need to rewrite all the addresses that change for the registers and stack

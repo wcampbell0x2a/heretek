@@ -181,18 +181,19 @@ fn update_stack(data: HashMap<String, String>, state: &mut State, begin: String)
             }
         }
 
-        // all string? Request the next
-        if val > 0xff {
-            let bytes = val.to_le_bytes();
-            if bytes
-                .iter()
-                .all(|a| a.is_ascii_alphabetic() || a.is_ascii_graphic() || a.is_ascii_whitespace())
-            {
-                let addr = data["begin"].strip_prefix("0x").unwrap().to_string();
-                let addr = u64::from_str_radix(&addr, 16).unwrap();
-                state.next_write.push(data_read_memory_bytes(addr + len, 0, len));
-                state.written.push_back(Written::Stack(Some(begin)));
-                return;
+        if state.config.deref_show_string {
+            //all string? Request the next
+            if val > 0xff {
+                let bytes = val.to_le_bytes();
+                if bytes.iter().all(|a| {
+                    a.is_ascii_alphabetic() || a.is_ascii_graphic() || a.is_ascii_whitespace()
+                }) {
+                    let addr = data["begin"].strip_prefix("0x").unwrap().to_string();
+                    let addr = u64::from_str_radix(&addr, 16).unwrap();
+                    state.next_write.push(data_read_memory_bytes(addr + len, 0, len));
+                    state.written.push_back(Written::Stack(Some(begin)));
+                    return;
+                }
             }
         }
 

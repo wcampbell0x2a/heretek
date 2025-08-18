@@ -206,25 +206,38 @@ pub fn add_deref_to_span(
     width: usize,
 ) {
     for (i, v) in deref.map.iter().enumerate() {
-        // check if ascii
-        if *v > 0xff {
-            let bytes = (*v).to_le_bytes();
-            if bytes
-                .iter()
-                .all(|a| a.is_ascii_alphabetic() || a.is_ascii_graphic() || a.is_ascii_whitespace())
-            {
-                // if we detect it's ascii, the rest is ascii
-                let mut full_s = String::new();
-                for r in deref.map.iter().skip(i) {
-                    let bytes = (*r).to_le_bytes();
-                    if let Ok(s) = std::str::from_utf8(&bytes) {
-                        full_s.push_str(s);
+        if state.config.deref_show_string {
+            // check if ascii
+            if *v > 0xff {
+                let bytes = (*v).to_le_bytes();
+                if bytes.iter().all(|a| {
+                    a.is_ascii_alphabetic() || a.is_ascii_graphic() || a.is_ascii_whitespace()
+                }) {
+                    // if we detect it's ascii, the rest is ascii
+                    let mut full_s = String::new();
+                    for r in deref.map.iter().skip(i) {
+                        let bytes = (*r).to_le_bytes();
+                        if let Ok(s) = std::str::from_utf8(&bytes) {
+                            full_s.push_str(s);
+                        }
                     }
+                    let cell =
+                        Span::from(format!("→ \"{full_s}\"")).style(Style::new().fg(STRING_COLOR));
+                    spans.push(cell);
+                    return;
                 }
-                let cell =
-                    Span::from(format!("→ \"{full_s}\"")).style(Style::new().fg(STRING_COLOR));
-                spans.push(cell);
-                return;
+            }
+        } else {
+            if *v > 0xff {
+                let bytes = (*v).to_le_bytes();
+                if bytes.iter().all(|a| {
+                    a.is_ascii_alphabetic() || a.is_ascii_graphic() || a.is_ascii_whitespace()
+                }) {
+                    let cell =
+                        Span::from(format!("→ <string>")).style(Style::new().fg(STRING_COLOR));
+                    spans.push(cell);
+                    return;
+                }
             }
         }
 

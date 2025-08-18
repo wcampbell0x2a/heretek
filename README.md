@@ -12,6 +12,7 @@ GDB TUI Dashboard inspired by `gef`, designed to seamlessly connect to remote ta
 
 * See [features](./docs/features.md) for `heretek` demos.
 * See [commands](./docs/commands.md) for internal `heretek` commands.
+* See [env-vars](./docs/env-vars.md) for `heretek` env vars.
 
 ![screenshot](images/readme.gif)
 

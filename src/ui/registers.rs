@@ -21,7 +21,8 @@ pub fn draw_registers(state: &mut State, f: &mut Frame, register: Rect) {
     let mut longest_register_name = 0;
     let mut longest_extra_val = 0;
 
-    if state.registers.is_empty() {
+    // show heretek ansi
+    if state.current_pc == 0 && state.registers.is_empty() {
         let text = ANSI_BYTES.into_text().unwrap();
         let paragraph = Paragraph::new(text).block(block);
         f.render_widget(paragraph, register);

@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
+use cogitator::Ptmalloc;
 use deku::ctx::Endian;
 use log::{debug, error};
+use std::io::Cursor;
 
 use crate::deref::Deref;
 use crate::gdb::read_memory;
@@ -132,6 +134,25 @@ pub fn recv_exec_result_memory(state: &mut State, memory: &String) {
             debug!("memory: ({:02x?}, {:02x?}", begin, data);
             let hex = hex::decode(&data["contents"]).unwrap();
             state.hexdump = Some((u64::from_str_radix(&begin, 16).unwrap(), hex));
+        }
+        Written::HeapParser => {
+            let (data, begin) = read_memory(memory);
+            debug!("heap parser: ({:02x?}, {:02x?}", begin, data);
+            let hex = hex::decode(&data["contents"]).unwrap();
+            let base_address = u64::from_str_radix(&begin, 16).unwrap();
+
+            // Parse the heap data using Ptmalloc
+            let mut ptmalloc = Ptmalloc::new(8); // 64-bit
+            match ptmalloc.load_heap_data(Cursor::new(&hex)) {
+                Ok(()) => {
+                    state.heap_chunks = ptmalloc.walk_heap(base_address);
+                    debug!("parsed {} heap chunks", state.heap_chunks.len());
+                }
+                Err(e) => {
+                    error!("failed to parse heap: {:?}", e);
+                    state.heap_chunks = Vec::new();
+                }
+            }
         }
         _ => {
             error!("unexpected Written: {last_written:?}");

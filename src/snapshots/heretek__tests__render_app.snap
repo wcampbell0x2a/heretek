@@ -1,10 +1,10 @@
 ---
 source: src/main.rs
+assertion_line: 1401
 expression: output
-snapshot_kind: text
 ---
 "────────────────────────────────────────────────────────────────────────|heretek-v0.6.0|──────────────────────────────── | Heap | Stack | Code | String | Asm | "
-" F1 Main | F2 Registers | F3 Stack | F4 Instructions | F5 Output | F6 Mapping | F7 Hexdump                                                                      "
+" F1 Main | F2 Registers | F3 Stack | F4 Instructions | F5 Output | F6 Mapping | F7 Hexdump | F8 Heap                                                            "
 "Registers──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────▲"
 "  rax     → 0x401825           → main+0 (push   rbp)                                                                                                           █"
 "  rbx     → 0x1                                                                                                                                                ║"

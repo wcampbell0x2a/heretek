@@ -68,6 +68,17 @@ pub fn draw_title_area(state: &mut State, f: &mut Frame, title_area: Rect) {
     };
 
     let mode = &state.mode;
+    let selected_tab = match mode {
+        crate::Mode::All => 0,
+        crate::Mode::OnlyRegister => 1,
+        crate::Mode::OnlyStack => 2,
+        crate::Mode::OnlyInstructions => 3,
+        crate::Mode::OnlyOutput => 4,
+        crate::Mode::OnlyMapping => 5,
+        crate::Mode::OnlyHexdump => 6,
+        crate::Mode::OnlyHeapParser => 7,
+        crate::Mode::OnlyHexdumpPopup => 6, // Same as hexdump
+    };
     let tab = Tabs::new(vec![
         "F1 Main",
         "F2 Registers",
@@ -76,11 +87,12 @@ pub fn draw_title_area(state: &mut State, f: &mut Frame, title_area: Rect) {
         "F5 Output",
         "F6 Mapping",
         "F7 Hexdump",
+        "F8 Heap",
     ])
     .block(Block::new().title_alignment(Alignment::Center))
     .style(Style::default())
     .highlight_style(Style::default().fg(GREEN).add_modifier(Modifier::BOLD))
-    .select(*mode as usize)
+    .select(selected_tab)
     .divider("|");
 
     f.render_widget(tab, second);

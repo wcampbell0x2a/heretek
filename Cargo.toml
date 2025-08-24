@@ -8,7 +8,14 @@ repository = "https://github.com/wcampbell0x2a/heretek"
 categories = ["development-tools"]
 keywords = ["gdb", "tui", "debugging", "embedded", "gdbserver"]
 
+[workspace]
+members = [
+    "crates/cogitator"
+]
+
 [dependencies]
+cogitator = { version = "^0.1.0", path = "crates/cogitator"}
+
 ansi-to-tui = "7.0.0"
 anyhow = "1.0.98"
 chrono = "0.4.38"

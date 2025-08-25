@@ -7,10 +7,47 @@ use ratatui::{
 };
 
 use crate::{PtrSize, State};
+use cogitator::MallocChunk;
 
 use super::{BLUE, DARK_GRAY, GREEN, ORANGE, SCROLL_CONTROL_TEXT, YELLOW};
 
 pub const HEXDUMP_WIDTH: usize = 16;
+
+/// Find heap chunk information for a given memory address
+fn find_heap_chunk_info(heap_chunks: &[MallocChunk], address: u64) -> Option<&MallocChunk> {
+    heap_chunks.iter().find(|chunk| {
+        let chunk_start = chunk.address;
+        let chunk_end = chunk.address + (chunk.size & !0x7); // Remove flags like size_without_flags()
+        address >= chunk_start && address < chunk_end
+    })
+}
+
+/// Format heap chunk information for display
+fn format_heap_info(chunk: &MallocChunk, address: u64) -> (String, ratatui::style::Color) {
+    let chunk_offset = address - chunk.address;
+    // Remove flags like size_without_flags()
+    let size = chunk.size & !0x7;
+    // prev_inuse bit is inverted - 0 means free
+    let is_free = (chunk.size & 0x1) == 0;
+
+    let info = if chunk_offset == 0 {
+        // At chunk header
+        if is_free { format!("F:{:x}", size) } else { format!("A:{:x}", size) }
+    } else {
+        // Inside chunk
+        if is_free { format!("F+{:x}", chunk_offset) } else { format!("A+{:x}", chunk_offset) }
+    };
+
+    let color = if is_free {
+        YELLOW
+    } else if chunk_offset == 0 {
+        GREEN
+    } else {
+        BLUE
+    };
+
+    (info, color)
+}
 
 /// Convert bytes in hexdump, `skip` that many lines, `take` that many lines
 fn to_hexdump_str<'a>(
@@ -69,8 +106,20 @@ fn to_hexdump_str<'a>(
             }
         }
 
+        // Calculate the memory address for this line
+        let line_address = pos + ((skip + offset) * HEXDUMP_WIDTH) as u64;
+
+        // Check if this address corresponds to a heap chunk
+        let heap_info_span =
+            if let Some(chunk) = find_heap_chunk_info(&state.heap_chunks, line_address) {
+                let (info_text, info_color) = format_heap_info(chunk, line_address);
+                Span::styled(format!("{:>10} ", info_text), Style::default().fg(info_color))
+            } else {
+                Span::raw(format!("{:>10} ", "")) // Empty space to maintain alignment
+            };
+
         let line = Line::from_iter(
-            vec![Span::raw(format!("{:08x}: ", (skip + offset) * HEXDUMP_WIDTH)), Span::raw("")]
+            vec![Span::raw(format!("{:08x}: ", line_address)), heap_info_span]
                 .into_iter()
                 .chain(hex_spans)
                 .chain(ref_spans),

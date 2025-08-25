@@ -31,6 +31,7 @@ use tui_input::backend::crossterm::EventHandler;
 
 use mi::{Asm, MemoryMapping, data_read_memory_bytes};
 use ui::hexdump::HEXDUMP_WIDTH;
+use cogitator::MallocChunk;
 
 mod deref;
 mod gdb;
@@ -134,6 +135,7 @@ enum Mode {
     OnlyMapping,
     OnlyHexdump,
     OnlyHexdumpPopup,
+    OnlyHeapParser,
 }
 
 impl Mode {
@@ -145,7 +147,8 @@ impl Mode {
             Mode::OnlyInstructions => Mode::OnlyOutput,
             Mode::OnlyOutput => Mode::OnlyMapping,
             Mode::OnlyMapping => Mode::OnlyHexdump,
-            Mode::OnlyHexdump => Mode::All,
+            Mode::OnlyHexdump => Mode::OnlyHeapParser,
+            Mode::OnlyHeapParser => Mode::All,
             Mode::OnlyHexdumpPopup => Mode::OnlyHexdumpPopup,
         }
     }
@@ -247,6 +250,9 @@ struct State {
     hexdump: Option<(u64, Vec<u8>)>,
     hexdump_scroll: Scroll,
     hexdump_popup: Input,
+    /// Heap parser
+    heap_chunks: Vec<MallocChunk>,
+    heap_parser_scroll: Scroll,
     /// Right side of status in TUI
     async_result: String,
     /// Left side of status in TUI
@@ -282,6 +288,8 @@ impl State {
             hexdump: None,
             hexdump_scroll: Scroll::default(),
             hexdump_popup: Input::default(),
+            heap_chunks: Vec::new(),
+            heap_parser_scroll: Scroll::default(),
             async_result: String::new(),
             status: String::new(),
             bt: vec![],
@@ -401,6 +409,8 @@ enum Written {
     Stack(Option<String>),
     /// Requested Memory Read (for hexdump)
     Memory,
+    /// Requested Memory Read (for heap parsing)
+    HeapParser,
     /// Requested Asm At $pc
     AsmAtPc,
     /// Requested symbol at addr for register (from deref)
@@ -610,6 +620,10 @@ fn run_app<B: Backend>(
                     let mut state = state_share.state.lock().unwrap();
                     state.mode = Mode::OnlyHexdump;
                 }
+                (_, KeyCode::F(8), _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = Mode::OnlyHeapParser;
+                }
                 (InputMode::Editing, KeyCode::Esc, _) => {
                     let mut state = state_share.state.lock().unwrap();
                     state.input_mode = InputMode::Normal;
@@ -731,12 +745,17 @@ fn run_app<B: Backend>(
                 (InputMode::Normal, KeyCode::Char('H'), Mode::OnlyHexdump) => {
                     let mut state = state_share.state.lock().unwrap();
                     if let Some(find_heap) = state.find_first_heap() {
+                        // Send two requests - one for hexdump and one for heap parsing
                         let s = data_read_memory_bytes(find_heap.start_address, 0, find_heap.size);
-                        state.next_write.push(s);
+                        state.next_write.push(s.clone());
                         state.written.push_back(Written::Memory);
+                        
+                        state.next_write.push(s);
+                        state.written.push_back(Written::HeapParser);
 
                         // reset position
                         state.hexdump_scroll.reset();
+                        state.heap_parser_scroll.reset();
                     }
                 }
                 (InputMode::Normal, KeyCode::Char('T'), Mode::OnlyHexdump) => {
@@ -773,6 +792,45 @@ fn run_app<B: Backend>(
                 (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyHexdump) => {
                     let mut state = state_share.state.lock().unwrap();
                     state.hexdump_scroll.up(50);
+                }
+                // heap parser
+                (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyHeapParser) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.heap_parser_scroll.reset();
+                }
+                (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyHeapParser) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let len = state.heap_chunks.len();
+                    state.heap_parser_scroll.end(len);
+                }
+                (InputMode::Normal, KeyCode::Char('P'), Mode::OnlyHeapParser) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    if let Some(find_heap) = state.find_first_heap() {
+                        let s = data_read_memory_bytes(find_heap.start_address, 0, find_heap.size);
+                        state.next_write.push(s);
+                        state.written.push_back(Written::HeapParser);
+
+                        // reset position
+                        state.heap_parser_scroll.reset();
+                    }
+                }
+                (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyHeapParser) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let len = state.heap_chunks.len();
+                    state.heap_parser_scroll.down(1, len);
+                }
+                (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyHeapParser) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.heap_parser_scroll.up(1);
+                }
+                (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyHeapParser) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let len = state.heap_chunks.len();
+                    state.heap_parser_scroll.down(50, len);
+                }
+                (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyHeapParser) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.heap_parser_scroll.up(50);
                 }
                 (_, KeyCode::Tab, _) => {
                     let mut state = state_share.state.lock().unwrap();

@@ -253,6 +253,10 @@ struct State {
     status: String,
     bt: Vec<Bt>,
     completions: Vec<String>,
+    /// Current source file and line info
+    current_source_file: Option<String>,
+    current_source_line: Option<u32>,
+    source_lines: Vec<String>,
 }
 
 impl State {
@@ -286,6 +290,9 @@ impl State {
             status: String::new(),
             bt: vec![],
             completions: vec![],
+            current_source_file: None,
+            current_source_line: None,
+            source_lines: Vec::new(),
         }
     }
 }

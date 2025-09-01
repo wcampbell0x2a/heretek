@@ -12,6 +12,7 @@ use ratatui::style::Style;
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 use registers::draw_registers;
+use source::draw_source;
 use stack::draw_stack;
 use title::draw_title_area;
 
@@ -25,6 +26,7 @@ pub mod input;
 pub mod mapping;
 pub mod output;
 pub mod registers;
+pub mod source;
 pub mod stack;
 pub mod title;
 
@@ -139,16 +141,30 @@ pub fn ui(f: &mut Frame, state: &mut State) {
                 draw_registers(state, f, register);
                 return;
             }
+
             let register_size = Min(10);
             let stack_size = Length(10 + 1);
             // 5 previous, 5 now + after
             let asm_size = Length(11);
-            let vertical = Layout::vertical([register_size, stack_size, asm_size]);
-            let [register, stack, asm] = vertical.areas(top);
 
-            draw_registers(state, f, register);
-            draw_stack(state, f, stack);
-            draw_asm(state, f, asm);
+            // Only show source if we have source information
+            if !state.source_lines.is_empty() && state.current_source_line.is_some() {
+                let source_size = Fill(1);
+                let vertical = Layout::vertical([register_size, stack_size, asm_size, source_size]);
+                let [register, stack, asm, source] = vertical.areas(top);
+
+                draw_registers(state, f, register);
+                draw_stack(state, f, stack);
+                draw_asm(state, f, asm);
+                draw_source(state, f, source);
+            } else {
+                let vertical = Layout::vertical([register_size, stack_size, asm_size]);
+                let [register, stack, asm] = vertical.areas(top);
+
+                draw_registers(state, f, register);
+                draw_stack(state, f, stack);
+                draw_asm(state, f, asm);
+            }
         }
         Mode::OnlyRegister => {
             let vertical = Layout::vertical([Fill(1)]);

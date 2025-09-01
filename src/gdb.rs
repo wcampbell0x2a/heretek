@@ -8,7 +8,7 @@ use stream_output::stream_output;
 mod exec_result;
 use exec_result::exec_result;
 
-use log::{debug, trace};
+use log::{debug, trace, warn};
 
 use crate::mi::{MIResponse, data_read_sp_bytes, parse_key_value_pairs, parse_mi_response};
 use crate::{PtrSize, State, Written};
@@ -90,6 +90,47 @@ fn async_record_stopped(state: &mut State, kv: &HashMap<String, String>) {
     state.next_write.push("-data-list-changed-registers".to_string());
     // bt
     state.next_write.push("-stack-list-frames".to_string());
+
+    // Extract source location directly from the stopped event
+    if let (Some(fullname), Some(line)) = (kv.get("fullname"), kv.get("line")) {
+        debug!("Source location from stopped event: {}:{}", fullname, line);
+
+        if let Ok(line_num) = line.parse::<u32>() {
+            state.current_source_file = Some(fullname.clone());
+            state.current_source_line = Some(line_num);
+
+            // Try to read the source file and store lines
+            if let Ok(content) = std::fs::read_to_string(std::path::Path::new(fullname)) {
+                state.source_lines = content.lines().map(|s| s.to_string()).collect();
+                debug!("Read {} lines from source file", state.source_lines.len());
+            } else {
+                warn!("Could not read source file: {}", fullname);
+                state.source_lines.clear();
+            }
+        }
+    } else if let (Some(file), Some(line)) = (kv.get("file"), kv.get("line")) {
+        // Fallback to 'file' if 'fullname' is not available
+        debug!("Source location from stopped event (fallback): {}:{}", file, line);
+
+        if let Ok(line_num) = line.parse::<u32>() {
+            state.current_source_file = Some(file.clone());
+            state.current_source_line = Some(line_num);
+
+            // Try to read the source file and store lines
+            if let Ok(content) = std::fs::read_to_string(std::path::Path::new(file)) {
+                state.source_lines = content.lines().map(|s| s.to_string()).collect();
+                debug!("Read {} lines from source file", state.source_lines.len());
+            } else {
+                warn!("Could not read source file: {}", file);
+                state.source_lines.clear();
+            }
+        }
+    } else {
+        debug!("No source location information in stopped event");
+        state.current_source_file = None;
+        state.current_source_line = None;
+        state.source_lines.clear();
+    }
 }
 
 fn read_memory(memory: &String) -> (HashMap<String, String>, String) {

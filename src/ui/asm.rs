@@ -57,7 +57,7 @@ pub fn draw_asm(state: &mut State, f: &mut Frame, asm: Rect) {
         rows.push(Row::new(row));
     }
 
-    let tital = if let Some(function_name) = function_name {
+    let title = if let Some(function_name) = function_name {
         Title::from(format!("Instructions ({function_name})").fg(ORANGE))
     } else {
         Title::from("Instructions".fg(ORANGE))
@@ -69,7 +69,7 @@ pub fn draw_asm(state: &mut State, f: &mut Frame, asm: Rect) {
             Constraint::Fill(1),
         ];
         let table = Table::new(rows, widths)
-            .block(Block::default().borders(Borders::TOP).title(tital))
+            .block(Block::default().borders(Borders::TOP).title(title))
             .row_highlight_style(Style::new().fg(GREEN))
             .highlight_symbol(">>");
         let start_offset = pc_index.saturating_sub(5);
@@ -77,7 +77,7 @@ pub fn draw_asm(state: &mut State, f: &mut Frame, asm: Rect) {
             TableState::default().with_offset(start_offset).with_selected(pc_index);
         f.render_stateful_widget(table, asm, &mut table_state);
     } else {
-        let block = Block::default().borders(Borders::TOP).title(tital);
+        let block = Block::default().borders(Borders::TOP).title(title);
         f.render_widget(block, asm);
     }
 }

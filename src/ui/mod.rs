@@ -1,6 +1,7 @@
 use asm::draw_asm;
 use bt::draw_bt;
 use hexdump::draw_hexdump;
+use heap_parser::draw_heap_parser;
 use input::draw_input;
 use mapping::draw_mapping;
 use output::draw_output;
@@ -21,6 +22,7 @@ use crate::{Mode, State};
 pub mod asm;
 pub mod bt;
 pub mod hexdump;
+pub mod heap_parser;
 pub mod input;
 pub mod mapping;
 pub mod output;
@@ -179,6 +181,11 @@ pub fn ui(f: &mut Frame, state: &mut State) {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
             draw_hexdump(state, f, all, true);
+        }
+        Mode::OnlyHeapParser => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            draw_heap_parser(state, f, all);
         }
         _ => (),
     }

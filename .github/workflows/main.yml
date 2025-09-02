@@ -57,7 +57,5 @@ jobs:
           toolchain: nightly
           target: x86_64-unknown-linux-musl
           components: rustfmt, clippy
-      - run: cargo install cargo-quickinstall
-      - run: cargo quickinstall cross
       - run: cargo fmt --all --check
       # - run: cross clippy --target x86_64-unknown-linux-gnu --workspace -- -D warnings

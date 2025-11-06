@@ -227,6 +227,7 @@ struct State {
     /// Memory map TUI
     memory_map: Option<Vec<MemoryMapping>>,
     memory_map_scroll: Scroll,
+    memory_map_selected: usize,
     /// Current $pc
     current_pc: u64, // TODO: replace with AtomicU64?
     /// All output from gdb
@@ -273,6 +274,7 @@ impl State {
             sent_input: LimitedBuffer::new(100),
             memory_map: None,
             memory_map_scroll: Scroll::default(),
+            memory_map_selected: 0,
             current_pc: 0,
             output: Vec::new(),
             output_scroll: Scroll::default(),
@@ -688,36 +690,75 @@ fn run_app<B: Backend>(
                 // memory mapping
                 (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyMapping) => {
                     let mut state = state_share.state.lock().unwrap();
-                    state.output_scroll.reset();
+                    state.memory_map_selected = 0;
+                    state.memory_map_scroll.reset();
                 }
                 (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyMapping) => {
                     let mut state = state_share.state.lock().unwrap();
                     if let Some(memory) = state.memory_map.as_ref() {
                         let len = memory.len();
-                        state.memory_map_scroll.end(len);
+                        if len > 0 {
+                            state.memory_map_selected = len - 1;
+                            state.memory_map_scroll.end(len);
+                        }
                     }
                 }
                 (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyMapping) => {
                     let mut state = state_share.state.lock().unwrap();
                     if let Some(memory) = state.memory_map.as_ref() {
-                        let len = memory.len() / HEXDUMP_WIDTH;
-                        state.memory_map_scroll.down(1, len);
+                        let len = memory.len();
+                        if state.memory_map_selected < len.saturating_sub(1) {
+                            state.memory_map_selected += 1;
+                            // Auto-scroll to keep selection visible
+                            state.memory_map_scroll.down(1, len);
+                        }
                     }
                 }
                 (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyMapping) => {
                     let mut state = state_share.state.lock().unwrap();
-                    state.memory_map_scroll.up(1);
+                    if state.memory_map_selected > 0 {
+                        state.memory_map_selected -= 1;
+                        // Auto-scroll to keep selection visible
+                        state.memory_map_scroll.up(1);
+                    }
                 }
                 (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyMapping) => {
                     let mut state = state_share.state.lock().unwrap();
                     if let Some(memory) = state.memory_map.as_ref() {
-                        let len = memory.len() / HEXDUMP_WIDTH;
-                        state.memory_map_scroll.down(50, len);
+                        let len = memory.len();
+                        let new_selected =
+                            (state.memory_map_selected + 50).min(len.saturating_sub(1));
+                        let delta = new_selected - state.memory_map_selected;
+                        state.memory_map_selected = new_selected;
+                        // Auto-scroll to keep selection visible
+                        state.memory_map_scroll.down(delta, len);
                     }
                 }
                 (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyMapping) => {
                     let mut state = state_share.state.lock().unwrap();
-                    state.memory_map_scroll.up(50);
+                    let new_selected = state.memory_map_selected.saturating_sub(50);
+                    let delta = state.memory_map_selected - new_selected;
+                    state.memory_map_selected = new_selected;
+                    // Auto-scroll to keep selection visible
+                    state.memory_map_scroll.up(delta);
+                }
+                (InputMode::Normal, KeyCode::Char('H'), Mode::OnlyMapping) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    if let Some(memory_map) = state.memory_map.as_ref() {
+                        if let Some(selected_mapping) = memory_map.get(state.memory_map_selected) {
+                            let s = data_read_memory_bytes(
+                                selected_mapping.start_address,
+                                0,
+                                selected_mapping.size,
+                            );
+                            state.next_write.push(s);
+                            state.written.push_back(Written::Memory);
+
+                            // Switch to hexdump mode and reset position
+                            state.mode = Mode::OnlyHexdump;
+                            state.hexdump_scroll.reset();
+                        }
+                    }
                 }
                 // hexdump
                 (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyHexdump) => {

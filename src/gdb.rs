@@ -15,6 +15,7 @@ use crate::{PtrSize, State, Written};
 
 pub fn gdb_interact(gdb_stdout: BufReader<Box<dyn Read + Send>>, state: Arc<Mutex<State>>) {
     let mut current_map = (None, String::new());
+    let mut current_symbols = String::new();
 
     for line in gdb_stdout.lines() {
         if let Ok(line) = line {
@@ -29,10 +30,10 @@ pub fn gdb_interact(gdb_stdout: BufReader<Box<dyn Read + Send>>, state: Arc<Mute
                     }
                 }
                 MIResponse::ExecResult(status, kv) => {
-                    exec_result(&mut state, status, &mut current_map, kv);
+                    exec_result(&mut state, status, &mut current_map, &mut current_symbols, kv);
                 }
                 MIResponse::StreamOutput(t, s) => {
-                    stream_output(t, s, &mut state, &mut current_map);
+                    stream_output(t, s, &mut state, &mut current_map, &mut current_symbols);
                 }
                 MIResponse::Unknown(s) => {
                     state.stream_output_prompt = s.to_string();

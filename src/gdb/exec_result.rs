@@ -22,13 +22,14 @@ pub fn exec_result(
     state: &mut State,
     status: &String,
     current_map: &mut (Option<Mapping>, String),
+    current_symbols: &mut String,
     kv: &HashMap<String, String>,
 ) {
     // Parse the status
     if status == "running" {
         exec_result_running(state);
     } else if status == "done" {
-        exec_result_done(state, kv, current_map);
+        exec_result_done(state, kv, current_map, current_symbols);
     } else if status == "error" {
         // assume this is from us, pop off an unexpected
         // if we can

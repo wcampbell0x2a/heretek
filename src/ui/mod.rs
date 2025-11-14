@@ -14,6 +14,7 @@ use ratatui::widgets::Paragraph;
 use registers::draw_registers;
 use source::draw_source;
 use stack::draw_stack;
+use symbols::draw_symbols;
 use title::draw_title_area;
 
 use crate::deref::Deref;
@@ -28,6 +29,7 @@ pub mod output;
 pub mod registers;
 pub mod source;
 pub mod stack;
+pub mod symbols;
 pub mod title;
 
 // Ayu bell colors
@@ -195,6 +197,11 @@ pub fn ui(f: &mut Frame, state: &mut State) {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
             draw_hexdump(state, f, all, true);
+        }
+        Mode::OnlySymbols => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            draw_symbols(state, f, all);
         }
         _ => (),
     }

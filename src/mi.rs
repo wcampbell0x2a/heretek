@@ -428,6 +428,48 @@ pub fn data_disassemble(start: usize, amt: usize) -> String {
     format!("-data-disassemble -s {start} -e {start}+{amt} -- 0")
 }
 
+pub fn info_functions() -> String {
+    r#"-interpreter-exec console "info functions""#.to_string()
+}
+
+pub fn disassemble_function(name: &str) -> String {
+    format!(r#"-interpreter-exec console "disassemble /r {}""#, name)
+}
+
+/// Parse output from "info functions" command
+/// Returns a list of symbols sorted alphabetically by name
+pub fn parse_symbol_list(input: &str) -> Vec<crate::Symbol> {
+    let mut symbols = Vec::new();
+
+    for line in input.lines() {
+        let trimmed = line.trim();
+
+        // Skip empty lines, headers, and file declarations
+        if trimmed.is_empty()
+            || trimmed.starts_with("All defined functions:")
+            || trimmed.starts_with("File ")
+            || trimmed.starts_with("Non-debugging symbols:")
+            || trimmed.starts_with("static ")
+        {
+            continue;
+        }
+
+        // Parse lines like "0x0000000000001234  function_name" or "0x1234  function_name"
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        if parts.len() >= 2 && parts[0].starts_with("0x") {
+            if let Ok(address) = u64::from_str_radix(&parts[0][2..], 16) {
+                let name = parts[1..].join(" ");
+                symbols.push(crate::Symbol { address, name });
+            }
+        }
+    }
+
+    // Sort alphabetically by name
+    symbols.sort_by(|a, b| a.name.cmp(&b.name));
+
+    symbols
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -534,5 +576,33 @@ mod tests {
             }
             _ => panic!("Failed to parse AsyncRecord"),
         }
+    }
+
+    #[test]
+    fn test_parse_symbol_list() {
+        let input = r#"All defined functions:
+
+File test.c:
+0x0000000000001234  main
+0x0000000000005678  foo
+0x00000000000090ab  bar
+
+Non-debugging symbols:
+0x0000000000001000  _start
+0x0000000000001020  _init"#;
+
+        let symbols = parse_symbol_list(input);
+
+        assert_eq!(symbols.len(), 5);
+        assert_eq!(symbols[0].name, "_init");
+        assert_eq!(symbols[0].address, 0x1020);
+        assert_eq!(symbols[1].name, "_start");
+        assert_eq!(symbols[1].address, 0x1000);
+        assert_eq!(symbols[2].name, "bar");
+        assert_eq!(symbols[2].address, 0x90ab);
+        assert_eq!(symbols[3].name, "foo");
+        assert_eq!(symbols[3].address, 0x5678);
+        assert_eq!(symbols[4].name, "main");
+        assert_eq!(symbols[4].address, 0x1234);
     }
 }

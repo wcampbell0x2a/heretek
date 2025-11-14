@@ -68,6 +68,12 @@ pub fn draw_title_area(state: &mut State, f: &mut Frame, title_area: Rect) {
     };
 
     let mode = &state.mode;
+    // Use previous_mode's index when in quit confirmation to maintain selection
+    let selected_index = if matches!(mode, crate::Mode::QuitConfirmation) {
+        state.previous_mode.ui_index()
+    } else {
+        mode.ui_index()
+    };
     let tab = Tabs::new(vec![
         "F1 Main",
         "F2 Registers",
@@ -81,7 +87,7 @@ pub fn draw_title_area(state: &mut State, f: &mut Frame, title_area: Rect) {
     .block(Block::new().title_alignment(Alignment::Center))
     .style(Style::default())
     .highlight_style(Style::default().fg(GREEN).add_modifier(Modifier::BOLD))
-    .select(mode.ui_index())
+    .select(selected_index)
     .divider("|");
 
     f.render_widget(tab, second);

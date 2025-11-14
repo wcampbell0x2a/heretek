@@ -135,6 +135,7 @@ enum Mode {
     OnlyHexdump,
     OnlyHexdumpPopup,
     OnlySymbols,
+    QuitConfirmation,
 }
 
 impl Mode {
@@ -149,6 +150,7 @@ impl Mode {
             Mode::OnlyHexdump => 6,
             Mode::OnlyHexdumpPopup => 6,
             Mode::OnlySymbols => 7,
+            Mode::QuitConfirmation => 0,
         }
     }
 
@@ -163,6 +165,7 @@ impl Mode {
             Mode::OnlyHexdump => Mode::OnlySymbols,
             Mode::OnlyHexdumpPopup => Mode::OnlyHexdumpPopup,
             Mode::OnlySymbols => Mode::All,
+            Mode::QuitConfirmation => Mode::QuitConfirmation,
         }
     }
 }
@@ -240,6 +243,8 @@ struct State {
     endian: Option<Endian>,
     /// Current mode
     mode: Mode,
+    /// Previous mode (for quit confirmation)
+    previous_mode: Mode,
     /// TUI input
     input: Input,
     /// Currnt input mode of tui
@@ -304,6 +309,7 @@ impl State {
             filepath: None,
             endian: None,
             mode: Mode::All,
+            previous_mode: Mode::All,
             input: Input::default(),
             input_mode: InputMode::Normal,
             sent_input: LimitedBuffer::new(100),
@@ -647,6 +653,14 @@ fn run_app<B: Backend>(
                     let mut state = state_share.state.lock().unwrap();
                     state.hexdump_popup.handle_event(&Event::Key(key));
                 }
+                // quit confirmation
+                (_, KeyCode::Enter, Mode::QuitConfirmation) => {
+                    return Ok(());
+                }
+                (_, KeyCode::Esc, Mode::QuitConfirmation) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = state.previous_mode;
+                }
                 // Input
                 (InputMode::Normal, KeyCode::Char('i'), _)
                     if {
@@ -657,8 +671,15 @@ fn run_app<B: Backend>(
                     let mut state = state_share.state.lock().unwrap();
                     state.input_mode = InputMode::Editing;
                 }
-                (InputMode::Normal, KeyCode::Char('q'), _) => {
-                    return Ok(());
+                (InputMode::Normal, KeyCode::Char('q'), _)
+                    if {
+                        let state = state_share.state.lock().unwrap();
+                        state.mode != Mode::QuitConfirmation
+                    } =>
+                {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.previous_mode = state.mode;
+                    state.mode = Mode::QuitConfirmation;
                 }
                 // Modes
                 (InputMode::Normal, KeyCode::Tab, _) => {

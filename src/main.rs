@@ -397,9 +397,10 @@ impl State {
     // Parse a "file filepath" command and save
     fn save_filepath(&mut self, val: &str) {
         let filepath: Vec<&str> = val.split_whitespace().collect();
-        let filepath = resolve_home(filepath[1]).unwrap();
-        // debug!("filepath: {filepath:?}");
-        self.filepath = Some(filepath);
+        if filepath.len() > 1 {
+            let filepath = resolve_home(filepath[1]).unwrap();
+            self.filepath = Some(filepath);
+        }
     }
 
     pub fn find_first_heap(&mut self) -> Option<MemoryMapping> {

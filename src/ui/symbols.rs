@@ -134,3 +134,187 @@ fn draw_search_input(state: &State, f: &mut Frame, area: Rect) {
     let cursor_pos = state.symbols_search_input.visual_cursor();
     f.set_cursor_position((area.x + 1 + (cursor_pos.saturating_sub(scroll)) as u16, area.y + 1));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Args, PtrSize, Symbol};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    fn create_test_state() -> State {
+        let args = Args {
+            gdb_path: None,
+            remote: None,
+            ptr_size: PtrSize::Size64,
+            cmds: None,
+            log_path: None,
+        };
+        State::new(args)
+    }
+
+    fn create_test_symbols() -> Vec<Symbol> {
+        vec![
+            Symbol { address: 0x401000, name: "main".to_string() },
+            Symbol { address: 0x401100, name: "foo".to_string() },
+            Symbol { address: 0x401200, name: "bar".to_string() },
+        ]
+    }
+
+    #[test]
+    fn test_draw_symbols_empty() {
+        let mut state = create_test_state();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_symbols(&mut state, f, area);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn test_draw_symbols_with_data() {
+        let mut state = create_test_state();
+        state.symbols = create_test_symbols();
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_symbols(&mut state, f, area);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn test_draw_symbols_viewing_asm() {
+        let mut state = create_test_state();
+        state.symbols = create_test_symbols();
+        state.symbols_viewing_asm = true;
+        state.symbol_asm = vec![crate::mi::Asm {
+            address: 0x401000,
+            inst: "push rbp".to_string(),
+            offset: 0,
+            func_name: Some("main".to_string()),
+        }];
+
+        let backend = TestBackend::new(120, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_symbols(&mut state, f, area);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn test_draw_symbols_search_active() {
+        let mut state = create_test_state();
+        state.symbols = create_test_symbols();
+        state.symbols_search_active = true;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_symbols(&mut state, f, area);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn test_draw_symbols_with_selection() {
+        let mut state = create_test_state();
+        state.symbols = create_test_symbols();
+        state.symbols_selected = 1;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_symbols(&mut state, f, area);
+            })
+            .unwrap();
+
+        assert_eq!(state.symbols_selected, 1);
+    }
+
+    #[test]
+    fn test_draw_symbols_with_scroll() {
+        let mut state = create_test_state();
+        // Create many symbols to require scrolling
+        state.symbols = (0..100)
+            .map(|i| Symbol { address: 0x400000 + (i * 0x10), name: format!("func_{}", i) })
+            .collect();
+        state.symbols_scroll.scroll = 10;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_symbols(&mut state, f, area);
+            })
+            .unwrap();
+
+        assert_eq!(state.symbols_scroll.scroll, 10);
+    }
+
+    #[test]
+    fn test_draw_symbols_asm_scroll() {
+        let mut state = create_test_state();
+        state.symbols = create_test_symbols();
+        state.symbols_viewing_asm = true;
+        // Create many asm instructions
+        state.symbol_asm = (0..100)
+            .map(|i| crate::mi::Asm {
+                address: 0x401000 + i,
+                inst: format!("instruction_{}", i),
+                offset: i,
+                func_name: Some("main".to_string()),
+            })
+            .collect();
+        state.symbol_asm_scroll.scroll = 5;
+
+        let backend = TestBackend::new(120, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_symbols(&mut state, f, area);
+            })
+            .unwrap();
+
+        assert_eq!(state.symbol_asm_scroll.scroll, 5);
+    }
+
+    #[test]
+    fn test_draw_symbols_with_filter() {
+        let mut state = create_test_state();
+        state.symbols = create_test_symbols();
+        state.symbols_search_input = tui_input::Input::new("ma".to_string());
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_symbols(&mut state, f, area);
+            })
+            .unwrap();
+    }
+}

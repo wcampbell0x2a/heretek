@@ -71,3 +71,154 @@ pub fn draw_source(state: &mut State, f: &mut Frame, area: Rect) {
 
     f.render_stateful_widget(table, area, &mut table_state);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Args, PtrSize};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    fn create_test_state() -> State {
+        let args = Args {
+            gdb_path: None,
+            remote: None,
+            ptr_size: PtrSize::Size64,
+            cmds: None,
+            log_path: None,
+        };
+        State::new(args)
+    }
+
+    #[test]
+    fn test_draw_source_no_file() {
+        let mut state = create_test_state();
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_source(&mut state, f, area);
+            })
+            .unwrap();
+
+        // Function should return early when no source file is set
+    }
+
+    #[test]
+    fn test_draw_source_with_file_no_lines() {
+        let mut state = create_test_state();
+        state.current_source_file = Some("test.c".to_string());
+        state.current_source_line = Some(10);
+        // Empty source_lines
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_source(&mut state, f, area);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn test_draw_source_with_file_and_lines() {
+        let mut state = create_test_state();
+        state.current_source_file = Some("test.c".to_string());
+        state.current_source_line = Some(5);
+        state.source_lines = vec![
+            "int main() {".to_string(),
+            "    int x = 0;".to_string(),
+            "    int y = 1;".to_string(),
+            "    int z = 2;".to_string(),
+            "    return x + y + z;".to_string(),
+            "}".to_string(),
+        ];
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_source(&mut state, f, area);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn test_draw_source_many_lines_centered() {
+        let mut state = create_test_state();
+        state.current_source_file = Some("test.c".to_string());
+        state.current_source_line = Some(50);
+        // Create 100 lines
+        state.source_lines = (1..=100).map(|i| format!("line {}", i)).collect();
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_source(&mut state, f, area);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn test_draw_source_first_line() {
+        let mut state = create_test_state();
+        state.current_source_file = Some("test.c".to_string());
+        state.current_source_line = Some(1);
+        state.source_lines = vec!["first line".to_string(), "second line".to_string()];
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_source(&mut state, f, area);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn test_draw_source_last_line() {
+        let mut state = create_test_state();
+        state.current_source_file = Some("/path/to/long/directory/test.c".to_string());
+        state.current_source_line = Some(10);
+        state.source_lines = (1..=10).map(|i| format!("line {}", i)).collect();
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_source(&mut state, f, area);
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn test_draw_source_no_line_number() {
+        let mut state = create_test_state();
+        state.current_source_file = Some("test.c".to_string());
+        state.current_source_line = None;
+        state.source_lines = vec!["line 1".to_string()];
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                draw_source(&mut state, f, area);
+            })
+            .unwrap();
+    }
+}

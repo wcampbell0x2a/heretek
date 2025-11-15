@@ -5,7 +5,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-- Hexdump memory mapping selection using `H` [#191](https://github.com/wcampbell0x2a/heretek/pull/191)
+
+## [0.7.0] - 2025-11-14
+- Hexdump memory mapping selection using `H` [#192](https://github.com/wcampbell0x2a/heretek/pull/192)
+- Add symbol selection screen and asm printing [#192](https://github.com/wcampbell0x2a/heretek/pull/192)
+- Add quit confirmation [#192](https://github.com/wcampbell0x2a/heretek/pull/192)
 
 ## [0.6.0] - 2025-09-01
 - Set disassembly-flavor to intel [#164](https://github.com/wcampbell0x2a/heretek/pull/164)

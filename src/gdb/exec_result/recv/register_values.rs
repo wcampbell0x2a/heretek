@@ -123,3 +123,159 @@ pub fn recv_exec_results_register_values(register_values: &String, state: &mut S
     state.next_write.push(data_disassemble_pc(instruction_length * 5, instruction_length * 15));
     state.written.push_back(Written::AsmAtPc);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Args, mi::MemoryMapping};
+    use rstest::rstest;
+    use std::path::PathBuf;
+
+    fn create_test_state(ptr_size: PtrSize) -> State {
+        let args = Args { gdb_path: None, remote: None, ptr_size, cmds: None, log_path: None };
+        let mut state = State::new(args);
+        state.register_names = vec!["rax".to_string(), "rbx".to_string()];
+        state
+    }
+
+    fn create_memory_map(filepath: &str) -> Vec<MemoryMapping> {
+        vec![
+            MemoryMapping {
+                start_address: 0x400000,
+                end_address: 0x500000,
+                size: 0x100000,
+                offset: 0,
+                permissions: Some("r-xp".to_string()),
+                path: Some(filepath.to_string()),
+            },
+            MemoryMapping {
+                start_address: 0x600000,
+                end_address: 0x700000,
+                size: 0x100000,
+                offset: 0,
+                permissions: Some("rw-p".to_string()),
+                path: Some("[heap]".to_string()),
+            },
+        ]
+    }
+
+    #[rstest]
+    #[case(PtrSize::Size64, "0x450000", true)]
+    #[case(PtrSize::Size64, "0x650000", false)]
+    #[case(PtrSize::Size32, "0x450000", true)]
+    #[case(PtrSize::Size32, "0x650000", false)]
+    fn test_register_values_code_vs_data(
+        #[case] ptr_size: PtrSize,
+        #[case] addr: &str,
+        #[case] is_code: bool,
+    ) {
+        let mut state = create_test_state(ptr_size);
+        state.filepath = Some(PathBuf::from("/usr/bin/test"));
+        state.memory_map = Some(create_memory_map("/usr/bin/test"));
+
+        let register_values = format!(r#"[{{number="0",value="{}"}}]"#, addr);
+
+        recv_exec_results_register_values(&register_values, &mut state);
+
+        if is_code {
+            assert!(state.next_write.iter().any(|w| w.contains("data-disassemble")));
+            assert!(state.written.iter().any(|w| matches!(w, Written::SymbolAtAddrRegister(_))));
+        } else {
+            assert!(state.next_write.iter().any(|w| w.contains("data-read-memory-bytes")));
+            assert!(state.written.iter().any(|w| matches!(w, Written::RegisterValue(_))));
+        }
+    }
+
+    #[rstest]
+    #[case(PtrSize::Size32, 4)]
+    #[case(PtrSize::Size64, 8)]
+    fn test_register_values_stack_size(#[case] ptr_size: PtrSize, #[case] expected_size: u8) {
+        let mut state = create_test_state(ptr_size);
+        let register_values = r#"[{number="0",value="0x1000"}]"#.to_string();
+
+        recv_exec_results_register_values(&register_values, &mut state);
+
+        let stack_writes: Vec<_> = state.next_write.iter().filter(|w| w.contains("$sp")).collect();
+
+        assert!(!stack_writes.is_empty());
+        assert!(stack_writes.iter().any(|w| w.contains(&format!(" {}", expected_size))));
+    }
+
+    #[test]
+    fn test_register_values_null_pointer() {
+        let mut state = create_test_state(PtrSize::Size64);
+        state.filepath = Some(PathBuf::from("/usr/bin/test"));
+
+        let register_values = r#"[{number="0",value="0x0"}]"#.to_string();
+
+        recv_exec_results_register_values(&register_values, &mut state);
+
+        let has_register_memory_request =
+            state.written.iter().any(|w| matches!(w, Written::RegisterValue((_, 0))));
+        assert!(!has_register_memory_request);
+        assert!(state.next_write.iter().any(|w| w.contains("$pc")));
+    }
+
+    #[test]
+    fn test_register_values_no_memory_map() {
+        let mut state = create_test_state(PtrSize::Size64);
+        state.filepath = Some(PathBuf::from("/usr/bin/test"));
+        state.memory_map = None;
+
+        let register_values = r#"[{number="0",value="0x450000"}]"#.to_string();
+
+        recv_exec_results_register_values(&register_values, &mut state);
+
+        assert!(!state.registers.is_empty());
+    }
+
+    #[rstest]
+    #[case(r#"[{number="0",value="<unavailable>"}]"#)]
+    #[case(r#"[{number="0",error="not available"}]"#)]
+    fn test_register_values_unavailable(#[case] register_values: &str) {
+        let mut state = create_test_state(PtrSize::Size64);
+
+        recv_exec_results_register_values(&register_values.to_string(), &mut state);
+
+        let has_register_memory_request = state
+            .written
+            .iter()
+            .any(|w| matches!(w, Written::RegisterValue(_) | Written::SymbolAtAddrRegister(_)));
+        assert!(!has_register_memory_request);
+        assert!(!state.next_write.is_empty());
+        assert!(!state.registers.is_empty());
+    }
+
+    #[test]
+    fn test_register_values_multiple_registers() {
+        let mut state = create_test_state(PtrSize::Size64);
+        state.filepath = Some(PathBuf::from("/usr/bin/test"));
+        state.memory_map = Some(create_memory_map("/usr/bin/test"));
+
+        let register_values =
+            r#"[{number="0",value="0x450000"},{number="1",value="0x460000"}]"#.to_string();
+
+        recv_exec_results_register_values(&register_values, &mut state);
+
+        assert_eq!(state.registers.len(), 2);
+        assert_eq!(state.registers[0].name, "rax");
+        assert_eq!(state.registers[1].name, "rbx");
+    }
+
+    #[test]
+    fn test_register_values_requests_pc_and_stack() {
+        let mut state = create_test_state(PtrSize::Size64);
+        let register_values = r#"[{number="0",value="0x1000"}]"#.to_string();
+
+        recv_exec_results_register_values(&register_values, &mut state);
+
+        assert!(
+            state
+                .next_write
+                .iter()
+                .any(|w| w.contains("data-evaluate-expression") && w.contains("$pc"))
+        );
+        assert!(state.next_write.iter().any(|w| w.contains("$sp")));
+        assert!(state.written.iter().any(|w| matches!(w, Written::AsmAtPc)));
+    }
+}

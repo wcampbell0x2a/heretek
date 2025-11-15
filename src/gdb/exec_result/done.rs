@@ -80,3 +80,119 @@ fn exec_result_done_symbols(state: &mut State, current_symbols: &mut String) {
         current_symbols.clear();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Args, PtrSize, Written};
+
+    fn create_test_state() -> State {
+        let args = Args {
+            gdb_path: None,
+            remote: None,
+            ptr_size: PtrSize::Size64,
+            cmds: None,
+            log_path: None,
+        };
+        State::new(args)
+    }
+
+    #[test]
+    fn test_exec_result_done_with_stack() {
+        let mut state = create_test_state();
+        let mut kv = HashMap::new();
+        kv.insert(
+            "stack".to_string(),
+            r#"[frame={level="0",addr="0x0000555555804a50",func="main",arch="i386:x86-64"},frame={level="1",addr="0x00007ffff7ca1488",func="??",from="/usr/lib/libc.so.6",arch="i386:x86-64"}]"#.to_string(),
+        );
+        let mut current_map = (None, String::new());
+        let mut current_symbols = String::new();
+
+        exec_result_done(&mut state, &kv, &mut current_map, &mut current_symbols);
+
+        assert_eq!(state.bt.len(), 2);
+        assert_eq!(state.bt[0].location, 0x0000555555804a50);
+        assert_eq!(state.bt[0].function, Some("main".to_string()));
+        assert_eq!(state.bt[1].location, 0x00007ffff7ca1488);
+        assert_eq!(state.bt[1].function, Some("??".to_string()));
+    }
+
+    #[test]
+    fn test_exec_result_done_with_matches() {
+        let mut state = create_test_state();
+        let mut kv = HashMap::new();
+        kv.insert("matches".to_string(), r#"["break","bt","backtrace"]"#.to_string());
+        let mut current_map = (None, String::new());
+        let mut current_symbols = String::new();
+
+        exec_result_done(&mut state, &kv, &mut current_map, &mut current_symbols);
+
+        assert_eq!(state.completions.len(), 3);
+        assert!(state.completions.contains(&"break".to_string()));
+        assert!(state.completions.contains(&"bt".to_string()));
+        assert!(state.completions.contains(&"backtrace".to_string()));
+    }
+
+    #[test]
+    fn test_exec_result_done_memory_map_old() {
+        let mut state = create_test_state();
+        let kv = HashMap::new();
+        let mut current_map = (
+            Some(Mapping::Old),
+            "Start Addr   End Addr       Size     Offset objfile\n0x400000    0x401000    0x1000        0x0 /path/to/binary\n".to_string(),
+        );
+        let mut current_symbols = String::new();
+
+        exec_result_done(&mut state, &kv, &mut current_map, &mut current_symbols);
+
+        assert!(state.memory_map.is_some());
+        assert_eq!(state.filepath, Some(PathBuf::from("/path/to/binary")));
+        assert_eq!(current_map.0, None);
+        assert_eq!(current_map.1, "");
+    }
+
+    #[test]
+    fn test_exec_result_done_memory_map_new() {
+        let mut state = create_test_state();
+        let kv = HashMap::new();
+        let mut current_map = (
+            Some(Mapping::New),
+            "Start Addr   End Addr       Size     Offset Perms  objfile\n0x400000    0x401000    0x1000        0x0  r-xp   /path/to/binary\n".to_string(),
+        );
+        let mut current_symbols = String::new();
+
+        exec_result_done(&mut state, &kv, &mut current_map, &mut current_symbols);
+
+        assert!(state.memory_map.is_some());
+        assert_eq!(state.filepath, Some(PathBuf::from("/path/to/binary")));
+        assert_eq!(current_map.0, None);
+        assert_eq!(current_map.1, "");
+    }
+
+    #[test]
+    fn test_exec_result_done_symbols() {
+        let mut state = create_test_state();
+        state.written.push_back(Written::SymbolList);
+        let kv = HashMap::new();
+        let mut current_map = (None, String::new());
+        let mut current_symbols = "0x00401000 main\n0x00402000 foo".to_string();
+
+        exec_result_done(&mut state, &kv, &mut current_map, &mut current_symbols);
+
+        assert_eq!(state.symbols.len(), 2);
+        assert_eq!(current_symbols, "");
+    }
+
+    #[test]
+    fn test_exec_result_done_symbols_empty() {
+        let mut state = create_test_state();
+        let kv = HashMap::new();
+        let mut current_map = (None, String::new());
+        let mut current_symbols = String::new();
+
+        exec_result_done(&mut state, &kv, &mut current_map, &mut current_symbols);
+
+        assert_eq!(state.symbols.len(), 0);
+        assert_eq!(current_symbols, "");
+    }
+}

@@ -1738,4 +1738,88 @@ mod tests {
             find_mapping(&mut line, &MappingType::Len)
         );
     }
+
+    #[test]
+    fn test_resolve_home() {
+        unsafe {
+            env::set_var("HOME", "/home/testuser");
+        }
+
+        let result = resolve_home("~/Documents/file.txt");
+        assert_eq!(result, Some(PathBuf::from("/home/testuser/Documents/file.txt")));
+
+        let result = resolve_home("/absolute/path");
+        assert_eq!(result, Some(PathBuf::from("/absolute/path")));
+
+        let result = resolve_home("relative/path");
+        assert_eq!(result, Some(PathBuf::from("relative/path")));
+    }
+
+    #[test]
+    fn test_resolve_paren_expressions() {
+        let mut val = "Value is (2 + 3)".to_string();
+        resolve_paren_expressions(&mut val);
+        assert_eq!(val, "Value is 5");
+
+        let mut val = "Calculation (10 * 2)".to_string();
+        resolve_paren_expressions(&mut val);
+        assert_eq!(val, "Calculation 20");
+
+        let mut val = "Multiple (1 + 1) and (2 * 3)".to_string();
+        resolve_paren_expressions(&mut val);
+        assert_eq!(val, "Multiple 2 and 6");
+
+        let mut val = "Invalid (abc) expression".to_string();
+        resolve_paren_expressions(&mut val);
+        assert_eq!(val, "Invalid abc expression");
+
+        let mut val = "No parentheses here".to_string();
+        resolve_paren_expressions(&mut val);
+        assert_eq!(val, "No parentheses here");
+    }
+
+    #[test]
+    fn test_limited_buffer_push() {
+        let mut buffer: LimitedBuffer<i32> = LimitedBuffer::new(3);
+
+        buffer.push(1);
+        buffer.push(2);
+        buffer.push(3);
+        assert_eq!(buffer.buffer.len(), 3);
+
+        // When full, oldest element is removed
+        buffer.push(4);
+        assert_eq!(buffer.buffer.len(), 3);
+        assert_eq!(*buffer.buffer.front().unwrap(), 2);
+        assert_eq!(*buffer.buffer.back().unwrap(), 4);
+    }
+
+    #[test]
+    fn test_limited_buffer_new() {
+        let buffer: LimitedBuffer<String> = LimitedBuffer::new(5);
+        assert_eq!(buffer.buffer.len(), 0);
+        assert_eq!(buffer.capacity, 5);
+        assert_eq!(buffer.offset, 0);
+    }
+
+    #[test]
+    fn test_limited_buffer_as_slice() {
+        let mut buffer: LimitedBuffer<i32> = LimitedBuffer::new(3);
+
+        buffer.push(1);
+        buffer.push(2);
+        let slice = buffer.as_slice();
+        assert_eq!(slice.len(), 2);
+
+        buffer.push(3);
+        let slice = buffer.as_slice();
+        assert_eq!(slice.len(), 3);
+    }
+
+    #[test]
+    fn test_mapping_type_env_start() {
+        assert_eq!(MappingType::Start.env_start(), "$HERETEK_MAPPING_START_");
+        assert_eq!(MappingType::End.env_start(), "$HERETEK_MAPPING_END_");
+        assert_eq!(MappingType::Len.env_start(), "$HERETEK_MAPPING_LEN_");
+    }
 }

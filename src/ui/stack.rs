@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use ratatui::prelude::Stylize;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph};

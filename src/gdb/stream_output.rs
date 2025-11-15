@@ -91,3 +91,190 @@ pub fn stream_output(
         state.stream_output_prompt = s.to_string();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Args, PtrSize};
+    use deku::ctx::Endian;
+    use rstest::rstest;
+    use std::path::PathBuf;
+
+    fn create_test_state() -> State {
+        let args = Args {
+            gdb_path: None,
+            remote: None,
+            ptr_size: PtrSize::Size64,
+            cmds: None,
+            log_path: None,
+        };
+        State::new(args)
+    }
+
+    #[rstest]
+    #[case("The target endianness is set automatically (currently little endian)", Endian::Little)]
+    #[case("The target endianness is set automatically (currently big endian)", Endian::Big)]
+    fn test_stream_output_endian(#[case] input: &str, #[case] expected_endian: Endian) {
+        let mut state = create_test_state();
+        let mut current_map = (None, String::new());
+        let mut current_symbols = String::new();
+
+        stream_output("~", input, &mut state, &mut current_map, &mut current_symbols);
+
+        assert_eq!(state.endian, Some(expected_endian));
+        assert_eq!(state.output.len(), 0);
+    }
+
+    #[rstest]
+    #[case("Reading symbols from /usr/bin/test...\n", "/usr/bin/test")]
+    #[case("Reading symbols from /home/user/my project/a.out...\n", "/home/user/my project/a.out")]
+    fn test_stream_output_reading_symbols(#[case] input: &str, #[case] expected_path: &str) {
+        let mut state = create_test_state();
+        let mut current_map = (None, String::new());
+        let mut current_symbols = String::new();
+
+        stream_output("~", input, &mut state, &mut current_map, &mut current_symbols);
+
+        assert_eq!(state.filepath, Some(PathBuf::from(expected_path)));
+    }
+
+    #[rstest]
+    #[case("process 1234\n")]
+    #[case("Mapped address spaces:\n")]
+    #[case("warning: unable to open /proc file '/proc/1/maps'\n")]
+    fn test_stream_output_skip_lines(#[case] input: &str) {
+        let mut state = create_test_state();
+        let mut current_map = (None, String::new());
+        let mut current_symbols = String::new();
+
+        stream_output("~", input, &mut state, &mut current_map, &mut current_symbols);
+
+        assert_eq!(state.output.len(), 0);
+    }
+
+    #[rstest]
+    #[case(
+        "Start Addr         End Addr           Size               Offset             Perms objfile",
+        Mapping::New
+    )]
+    #[case(
+        "Start Addr         End Addr           Size               Offset             Perms File",
+        Mapping::New
+    )]
+    #[case(
+        "Start Addr         End Addr           Size               Offset             objfile",
+        Mapping::Old
+    )]
+    fn test_stream_output_memory_map_format(
+        #[case] header: &str,
+        #[case] expected_mapping: Mapping,
+    ) {
+        let mut state = create_test_state();
+        let mut current_map = (None, String::new());
+        let mut current_symbols = String::new();
+
+        stream_output("~", header, &mut state, &mut current_map, &mut current_symbols);
+
+        assert_eq!(current_map.0, Some(expected_mapping));
+        assert!(current_map.1.contains(header));
+        assert_eq!(state.output.len(), 0);
+    }
+
+    #[test]
+    fn test_stream_output_symbol_list_capture() {
+        let mut state = create_test_state();
+        let mut current_map = (None, String::new());
+        let mut current_symbols = String::new();
+
+        state.written.push_back(crate::Written::SymbolList);
+
+        stream_output(
+            "~",
+            "0x0000000000001234  main\n",
+            &mut state,
+            &mut current_map,
+            &mut current_symbols,
+        );
+
+        assert!(current_symbols.contains("main"));
+        assert_eq!(state.output.len(), 0); // captured in current_symbols
+    }
+
+    #[test]
+    fn test_stream_output_normal_output() {
+        let mut state = create_test_state();
+        let mut current_map = (None, String::new());
+        let mut current_symbols = String::new();
+
+        stream_output(
+            "~",
+            "Some normal output\n",
+            &mut state,
+            &mut current_map,
+            &mut current_symbols,
+        );
+
+        assert_eq!(state.output.len(), 1);
+        assert_eq!(state.output[0], "Some normal output");
+    }
+
+    #[test]
+    fn test_stream_output_multiline() {
+        let mut state = create_test_state();
+        let mut current_map = (None, String::new());
+        let mut current_symbols = String::new();
+
+        stream_output(
+            "~",
+            "Line 1\nLine 2\nLine 3\n",
+            &mut state,
+            &mut current_map,
+            &mut current_symbols,
+        );
+
+        assert_eq!(state.output.len(), 3);
+        assert_eq!(state.output[0], "Line 1");
+        assert_eq!(state.output[1], "Line 2");
+        assert_eq!(state.output[2], "Line 3");
+    }
+
+    #[test]
+    fn test_stream_output_console_prompt() {
+        let mut state = create_test_state();
+        let mut current_map = (None, String::new());
+        let mut current_symbols = String::new();
+
+        stream_output("~", "(gdb)", &mut state, &mut current_map, &mut current_symbols);
+
+        assert_eq!(state.stream_output_prompt, "(gdb)");
+    }
+
+    #[test]
+    fn test_stream_output_empty_lines_removed() {
+        let mut state = create_test_state();
+        let mut current_map = (None, String::new());
+        let mut current_symbols = String::new();
+
+        stream_output("~", "\n\n\n", &mut state, &mut current_map, &mut current_symbols);
+
+        assert_eq!(state.output.len(), 0); // empty lines should not be added
+    }
+
+    #[test]
+    fn test_stream_output_does_not_overwrite_filepath() {
+        let mut state = create_test_state();
+        state.filepath = Some(PathBuf::from("/original/path"));
+        let mut current_map = (None, String::new());
+        let mut current_symbols = String::new();
+
+        stream_output(
+            "~",
+            "Reading symbols from /new/path...\n",
+            &mut state,
+            &mut current_map,
+            &mut current_symbols,
+        );
+
+        assert_eq!(state.filepath, Some(PathBuf::from("/original/path"))); // should not change
+    }
+}

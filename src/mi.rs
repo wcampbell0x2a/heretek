@@ -30,6 +30,7 @@ pub const MEMORY_MAP_START_STR_OLD: [&str; 7] =
 /// Common gdb memory map, to try and detect new additions to this return
 pub const MEMORY_MAP_BEGIN: [&str; 6] = ["Start", "Addr", "End", "Addr", "Size", "Offset"];
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mapping {
     New,
     Old,
@@ -477,7 +478,7 @@ mod tests {
     #[test]
     fn test_exec_result_register_values() {
         let input = r#"^done,register-values=[{number="0",value="0x0"},{number="1",value="0x1"}]"#;
-        if let MIResponse::ExecResult(status, key_values) = parse_mi_response(input) {
+        if let MIResponse::ExecResult(_status, key_values) = parse_mi_response(input) {
             let register_values = &key_values["register-values"];
             let registers = parse_register_values(register_values);
             assert_eq!(registers.len(), 2);
@@ -534,6 +535,21 @@ mod tests {
         } else {
             panic!("Expected Unknown response");
         }
+    }
+
+    #[test]
+    fn test_info_functions() {
+        let cmd = info_functions();
+        assert_eq!(cmd, r#"-interpreter-exec console "info functions""#);
+    }
+
+    #[test]
+    fn test_disassemble_function() {
+        let cmd = disassemble_function("main");
+        assert_eq!(cmd, r#"-interpreter-exec console "disassemble /r main""#);
+
+        let cmd = disassemble_function("foo_bar_123");
+        assert_eq!(cmd, r#"-interpreter-exec console "disassemble /r foo_bar_123""#);
     }
 
     #[test]
@@ -604,5 +620,128 @@ Non-debugging symbols:
         assert_eq!(symbols[3].address, 0x5678);
         assert_eq!(symbols[4].name, "main");
         assert_eq!(symbols[4].address, 0x1234);
+    }
+
+    #[test]
+    fn test_parse_asm_insns() {
+        // Real captured asm_insns response
+        let input = r#"^done,asm_insns=[{address="0x0000000000404888",func-name="printf",offset="8",inst="sub    rsp,0xd0"},{address="0x000000000040488f",func-name="printf",offset="15",inst="mov    QWORD PTR [rbp-0xa8],rsi"}]"#;
+
+        if let MIResponse::ExecResult(_status, kv) = parse_mi_response(input) {
+            let asm_insns = kv.get("asm_insns").unwrap();
+            let parsed = parse_asm_insns_values(asm_insns);
+            assert_eq!(parsed.len(), 2);
+            assert_eq!(parsed[0].address, 0x0000000000404888);
+            assert_eq!(parsed[0].inst, "sub    rsp,0xd0");
+            assert_eq!(parsed[0].func_name, Some("printf".to_string()));
+            assert_eq!(parsed[0].offset, 8);
+
+            assert_eq!(parsed[1].address, 0x000000000040488f);
+            assert_eq!(parsed[1].inst, "mov    QWORD PTR [rbp-0xa8],rsi");
+        } else {
+            panic!("Expected ExecResult");
+        }
+    }
+
+    #[test]
+    fn test_parse_asm_insns_no_func() {
+        // asm_insns without func-name
+        let input = r#"^done,asm_insns=[{address="0x0000000000479010",inst="rex.B"},{address="0x0000000000479011",inst="fs fs jb 0x47907a"}]"#;
+
+        if let MIResponse::ExecResult(_status, kv) = parse_mi_response(input) {
+            let asm_insns = kv.get("asm_insns").unwrap();
+            let parsed = parse_asm_insns_values(asm_insns);
+            assert_eq!(parsed.len(), 2);
+            assert_eq!(parsed[0].func_name, None);
+            assert_eq!(parsed[1].func_name, None);
+        } else {
+            panic!("Expected ExecResult");
+        }
+    }
+
+    #[test]
+    fn test_parse_register_values_complex() {
+        // Real captured register with complex value (XMM register)
+        let input = r#"[{number="40",value="{v8_bfloat16 = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0}, v4_float = {0x0, 0x0, 0x0, 0x0}, v2_double = {0x0, 0x0}}"}]"#;
+        let parsed = parse_register_values(input);
+
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].as_ref().unwrap().number, "40");
+        assert!(parsed[0].as_ref().unwrap().value.is_some());
+    }
+
+    #[test]
+    fn test_parse_memory_mappings_new_format() {
+        let input = r#"Start Addr         End Addr           Size               Offset             Perms File
+0x0000000000400000 0x0000000000401000 0x1000             0x0                r--p  /home/test/a.out
+0x0000000000401000 0x0000000000479000 0x78000            0x1000             r-xp  /home/test/a.out "#;
+
+        let mappings = parse_memory_mappings_new(input);
+        assert_eq!(mappings.len(), 2);
+
+        assert_eq!(mappings[0].start_address, 0x0000000000400000);
+        assert_eq!(mappings[0].end_address, 0x0000000000401000);
+        assert_eq!(mappings[0].size, 0x1000);
+        assert_eq!(mappings[0].offset, 0x0);
+        assert_eq!(mappings[0].permissions, Some("r--p".to_string()));
+        assert_eq!(mappings[0].path, Some("/home/test/a.out".to_string()));
+
+        assert_eq!(mappings[1].start_address, 0x0000000000401000);
+        assert_eq!(mappings[1].permissions, Some("r-xp".to_string()));
+    }
+
+    #[test]
+    fn test_data_disassemble_commands() {
+        let cmd = data_disassemble(0x401000, 10);
+        assert!(cmd.contains("4198400")); // 0x401000 in decimal
+        assert!(cmd.contains("10"));
+
+        let cmd = data_disassemble_pc(5, 10);
+        assert!(cmd.contains("$pc"));
+        assert!(cmd.contains("5"));
+        assert!(cmd.contains("10"));
+    }
+
+    #[test]
+    fn test_data_read_memory_bytes() {
+        let cmd = data_read_memory_bytes(0x7fffffffa000, 0, 16);
+        assert!(cmd.contains("0x7fffffffa000"));
+        assert!(cmd.contains("16"));
+    }
+
+    #[test]
+    fn test_data_read_sp_bytes() {
+        let cmd = data_read_sp_bytes(0x100, 8);
+        assert!(cmd.contains("$sp"));
+        assert!(cmd.contains("0x100"));
+        assert!(cmd.contains("8"));
+    }
+
+    #[test]
+    fn test_parse_key_value_pairs() {
+        let input = r#"reason="breakpoint-hit",disp="keep",bkptno="1""#;
+        let pairs = parse_key_value_pairs(input);
+
+        assert_eq!(pairs.get("reason"), Some(&"breakpoint-hit".to_string()));
+        assert_eq!(pairs.get("disp"), Some(&"keep".to_string()));
+        assert_eq!(pairs.get("bkptno"), Some(&"1".to_string()));
+    }
+
+    #[test]
+    fn test_match_inner_items() {
+        let input = r#"[{address="0x1234",inst="mov"},{address="0x5678",inst="add"}]"#;
+        let matches: Vec<_> = match_inner_items(input).map(|m| m[0].to_string()).collect();
+
+        assert_eq!(matches.len(), 2);
+        assert!(matches[0].contains("0x1234"));
+        assert!(matches[1].contains("0x5678"));
+    }
+
+    #[test]
+    fn test_normalize_value() {
+        assert_eq!(normalize_value("\"0x123\""), "0x123");
+        assert_eq!(normalize_value("0x123"), "0x123");
+        assert_eq!(normalize_value("  \"test\"  "), "test");
+        assert_eq!(normalize_value("plain"), "plain");
     }
 }

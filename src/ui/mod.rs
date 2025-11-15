@@ -140,7 +140,7 @@ pub fn ui(f: &mut Frame, state: &mut State) {
     // If only output, then no top and fill all with output
     if let Mode::OnlyOutput = mode {
         let output_size = Fill(1);
-        let completions_len = (!completions.is_empty()) as u16;
+        let completions_len = u16::from(!completions.is_empty());
         let vertical =
             Layout::vertical([Length(2), output_size, Length(3), Length(completions_len)]);
         let [title_area, output, input, completions_area] = vertical.areas(f.area());
@@ -162,7 +162,7 @@ pub fn ui(f: &mut Frame, state: &mut State) {
     let output_size = Length(SAVED_OUTPUT as u16);
 
     let top = if bt_len == 0 {
-        let completions_len = (!completions.is_empty()) as u16;
+        let completions_len = u16::from(!completions.is_empty());
         let vertical = Layout::vertical([
             Length(2),
             top_size,
@@ -184,7 +184,7 @@ pub fn ui(f: &mut Frame, state: &mut State) {
 
         top
     } else {
-        let completions_len = (!completions.is_empty()) as u16;
+        let completions_len = u16::from(!completions.is_empty());
         let vertical = Layout::vertical([
             Length(2),
             top_size,
@@ -224,11 +224,11 @@ pub fn ui(f: &mut Frame, state: &mut State) {
 pub fn apply_val_color(span: &mut Span, is_stack: bool, is_heap: bool, is_text: bool) {
     // TOOD: remove clone
     if is_stack {
-        *span = span.clone().style(Style::new().fg(STACK_COLOR))
+        *span = span.clone().style(Style::new().fg(STACK_COLOR));
     } else if is_heap {
-        *span = span.clone().style(Style::new().fg(HEAP_COLOR))
+        *span = span.clone().style(Style::new().fg(HEAP_COLOR));
     } else if is_text {
-        *span = span.clone().style(Style::new().fg(TEXT_COLOR))
+        *span = span.clone().style(Style::new().fg(TEXT_COLOR));
     }
 }
 

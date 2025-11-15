@@ -1,3 +1,19 @@
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::needless_pass_by_value)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::unreadable_literal)]
+#![allow(clippy::ptr_arg)]
+#![allow(clippy::assigning_clones)]
+#![allow(clippy::match_same_arms)]
+#![allow(clippy::manual_strip)]
+#![allow(clippy::format_push_string)]
+#![allow(clippy::unnecessary_wraps)]
+#![allow(clippy::trivially_copy_pass_by_ref)]
+#![allow(clippy::type_complexity)]
+#![allow(clippy::zombie_processes)]
+
 use std::collections::{BTreeMap, VecDeque};
 use std::fs::{self, File};
 use std::io;
@@ -478,7 +494,7 @@ enum Written {
     ///
     /// None - This is the first time this is requested
     /// Some - This has alrady been read, and this is a deref, trust
-    ///        the base_reg of .0
+    ///        the `base_reg` of .0
     Stack(Option<String>),
     /// Requested Memory Read (for hexdump)
     Memory,
@@ -500,7 +516,7 @@ fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     // initialize logging, to log_path if available
-    init_logging(&args.log_path)?;
+    init_logging(args.log_path.as_ref())?;
 
     // Check for valid cmd file
     if let Some(cmds) = &args.cmds
@@ -522,7 +538,7 @@ fn main() -> anyhow::Result<()> {
     if let Some(cmds) = args.cmds {
         let data = fs::read_to_string(cmds).unwrap();
         for cmd in data.lines() {
-            if !cmd.starts_with("#") {
+            if !cmd.starts_with('#') {
                 let mut state = state_share.state.lock().unwrap();
                 state.sent_input.push(cmd.to_string());
                 process_line(&mut app, &mut state, cmd);
@@ -539,13 +555,13 @@ fn main() -> anyhow::Result<()> {
     terminal.show_cursor()?;
 
     if let Err(err) = res {
-        anyhow::bail!("{:?}", err)
+        anyhow::bail!("{err:?}")
     }
 
     Ok(())
 }
 
-fn init_logging(log_path: &Option<String>) -> anyhow::Result<()> {
+fn init_logging(log_path: Option<&String>) -> anyhow::Result<()> {
     if let Some(log_path) = log_path {
         let log_file =
             Arc::new(Mutex::new(File::create(log_path).context("Could not create log file")?));
@@ -868,19 +884,19 @@ fn run_app<B: Backend>(
                 }
                 (InputMode::Normal, KeyCode::Char('H'), Mode::OnlyMapping) => {
                     let mut state = state_share.state.lock().unwrap();
-                    if let Some(memory_map) = state.memory_map.as_ref() {
-                        if let Some(selected_mapping) = memory_map.get(state.memory_map_selected) {
-                            let s = data_read_memory_bytes(
-                                selected_mapping.start_address,
-                                0,
-                                selected_mapping.size,
-                            );
-                            state.next_write.push(s);
-                            state.written.push_back(Written::Memory);
+                    if let Some(memory_map) = state.memory_map.as_ref()
+                        && let Some(selected_mapping) = memory_map.get(state.memory_map_selected)
+                    {
+                        let s = data_read_memory_bytes(
+                            selected_mapping.start_address,
+                            0,
+                            selected_mapping.size,
+                        );
+                        state.next_write.push(s);
+                        state.written.push_back(Written::Memory);
 
-                            state.mode = Mode::OnlyHexdump;
-                            state.hexdump_scroll.reset();
-                        }
+                        state.mode = Mode::OnlyHexdump;
+                        state.hexdump_scroll.reset();
                     }
                 }
                 // hexdump
@@ -946,8 +962,7 @@ fn run_app<B: Backend>(
                     state.hexdump_scroll.up(50);
                 }
                 // symbols - list navigation
-                (InputMode::Normal, KeyCode::Char('r'), Mode::OnlySymbols)
-                | (InputMode::Normal, KeyCode::Char('R'), Mode::OnlySymbols)
+                (InputMode::Normal, KeyCode::Char('r' | 'R'), Mode::OnlySymbols)
                     if {
                         let state = state_share.state.lock().unwrap();
                         !state.symbols_search_active
@@ -1167,18 +1182,20 @@ fn run_app<B: Backend>(
 }
 
 fn key_up(state: &mut State) {
-    if !state.sent_input.buffer.is_empty() {
+    if state.sent_input.buffer.is_empty() {
+        state.sent_input.offset = 0;
+    } else {
         if state.sent_input.offset < state.sent_input.buffer.len() {
             state.sent_input.offset += 1;
         }
         update_from_previous_input(state);
-    } else {
-        state.sent_input.offset = 0;
     }
 }
 
 fn key_down(state: &mut State) {
-    if !state.sent_input.buffer.is_empty() {
+    if state.sent_input.buffer.is_empty() {
+        state.sent_input.offset = 0;
+    } else {
         if state.sent_input.offset != 0 {
             state.sent_input.offset -= 1;
             if state.sent_input.offset == 0 {
@@ -1186,8 +1203,6 @@ fn key_down(state: &mut State) {
             }
         }
         update_from_previous_input(state);
-    } else {
-        state.sent_input.offset = 0;
     }
 }
 
@@ -1215,7 +1230,7 @@ fn key_enter(app: &mut App, state: &mut State) -> Result<(), io::Error> {
 
         let val = state.input.clone();
         let val = val.value();
-        process_line(app, state, val)
+        process_line(app, state, val);
     }
 
     Ok(())
@@ -1330,8 +1345,8 @@ fn process_line(app: &mut App, state: &mut State, val: &str) {
 }
 
 fn resolve_paren_expressions(val: &mut String) {
-    static RE_PAREN: once_cell::sync::Lazy<Regex> =
-        once_cell::sync::Lazy::new(|| Regex::new(r"\(([^()]+)\)").unwrap());
+    static RE_PAREN: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"\(([^()]+)\)").unwrap());
 
     *val = RE_PAREN
         .replace_all(&*val, |caps: &regex::Captures| {
@@ -1372,7 +1387,7 @@ fn replace_mapping(state: &mut State, text: &mut String, mt: MappingType) {
         && let Some(ref memory_map) = state.memory_map
     {
         let resolve =
-            memory_map.iter().filter(|a| a.path == Some(path.to_owned())).nth(prefix as usize);
+            memory_map.iter().filter(|a| a.path == Some(path.clone())).nth(prefix as usize);
         let addr = match mt {
             MappingType::Start => resolve.map(|a| a.start_address),
             MappingType::End => resolve.map(|a| a.end_address),
@@ -1416,7 +1431,7 @@ fn update_from_previous_input(state: &mut State) {
         && let Some(msg) =
             state.sent_input.buffer.get(state.sent_input.buffer.len() - state.sent_input.offset)
     {
-        state.input = Input::new(msg.clone())
+        state.input = Input::new(msg.clone());
     }
 }
 
@@ -1441,7 +1456,7 @@ mod tests {
         if let Some(cmds) = args.cmds {
             let data = fs::read_to_string(cmds).unwrap();
             for cmd in data.lines() {
-                if !cmd.starts_with("#") {
+                if !cmd.starts_with('#') {
                     let mut state = state_share.state.lock().unwrap();
                     state.sent_input.push(cmd.to_string());
                     process_line(&mut app, &mut state, cmd);
@@ -1452,7 +1467,7 @@ mod tests {
         let start_time = Instant::now();
         let duration = Duration::from_secs(10);
 
-        while Instant::now() - start_time < duration {
+        while start_time.elapsed() < duration {
             // Sleep, to make sure that the gdb thread can act
             thread::sleep(Duration::from_millis(100));
 
@@ -1505,7 +1520,7 @@ mod tests {
         }];
 
         dl_test_files_backoff(&asset_defs, TEST_PATH, true, Duration::from_secs(1)).unwrap();
-        let c_path = CString::new(file_path.to_string()).expect("CString::new failed");
+        let c_path = CString::new(file_path.clone()).expect("CString::new failed");
         let mode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
         unsafe { chmod(c_path.as_ptr(), mode) };
 
@@ -1567,7 +1582,7 @@ mod tests {
         }];
 
         dl_test_files_backoff(&asset_defs, TEST_PATH, true, Duration::from_secs(1)).unwrap();
-        let c_path = CString::new(file_path.to_string()).expect("CString::new failed");
+        let c_path = CString::new(file_path.clone()).expect("CString::new failed");
         let mode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
         unsafe { chmod(c_path.as_ptr(), mode) };
 
@@ -1586,7 +1601,7 @@ mod tests {
         let mut entries: Vec<_> = stack.clone().into_iter().collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
         let first_stack = entries[0].0;
-        let from = format!("0x{:02x}", first_stack);
+        let from = format!("0x{first_stack:02x}");
         let output = output.replace(&from, "<stack_0>");
 
         let from = format!("0x{:02x}", first_stack + 8);

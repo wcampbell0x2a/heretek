@@ -9,8 +9,8 @@ pub const INSTRUCTION_LEN: usize = 8;
 pub fn match_inner_items(haystack: &str) -> CaptureMatches<'_, '_> {
     // compile once and re-use
     // NOTE: this only parses nested 3 {} deep, more and this will fail!
-    static RE: once_cell::sync::Lazy<Regex> = once_cell::sync::Lazy::new(|| {
-        Regex::new(r#"\{(?:[^}{]|\{(?:[^}{]|\{(?:[^}{]|\{[^}{]*\})*\})*\})*\}"#).unwrap()
+    static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r"\{(?:[^}{]|\{(?:[^}{]|\{(?:[^}{]|\{[^}{]*\})*\})*\})*\}").unwrap()
     });
     RE.captures_iter(haystack)
 }
@@ -103,7 +103,7 @@ impl MemoryMapping {
                 path: Some(parts[5..].join(" ")), // Combine the rest as the path
             })
         } else {
-            return Err(format!("Invalid line format: {line}"));
+            Err(format!("Invalid line format: {line}"))
         }
     }
 
@@ -158,7 +158,7 @@ impl Register {
     }
 }
 
-/// Info from Exec Result "asm_insns"
+/// Info from Exec Result "`asm_insns`"
 #[derive(Debug, Clone)]
 pub struct Asm {
     pub address: u64,
@@ -248,7 +248,7 @@ pub fn join_registers(
         if let Some(register) = register
             && !register.number.is_empty()
         {
-            registers_arch.push((name.to_string(), Some(register.clone())));
+            registers_arch.push((name.clone(), Some(register.clone())));
         }
     }
     registers_arch
@@ -296,7 +296,7 @@ pub fn parse_register_values(input: &str) -> Vec<Option<Register>> {
             }
         }
         if fail {
-            registers.push(None)
+            registers.push(None);
         } else {
             registers.push(Some(register));
         }
@@ -337,7 +337,7 @@ pub fn parse_asm_insns_values(input: &str) -> Vec<Asm> {
                     }
                 }
                 "inst" => asm.inst = val,
-                "offset" => asm.offset = u64::from_str_radix(&val, 10).unwrap(),
+                "offset" => asm.offset = val.parse::<u64>().unwrap(),
                 "func-name" => asm.func_name = Some(val),
                 _ => {}
             }
@@ -353,6 +353,7 @@ pub fn parse_asm_insns_values(input: &str) -> Vec<Asm> {
 pub enum MIResponse {
     ExecResult(String, HashMap<String, String>),
     AsyncRecord(String, HashMap<String, String>),
+    #[allow(dead_code)]
     Notify(String, HashMap<String, String>),
     StreamOutput(String, String),
     Unknown(String),
@@ -433,8 +434,9 @@ pub fn info_functions() -> String {
     r#"-interpreter-exec console "info functions""#.to_string()
 }
 
+#[allow(dead_code)]
 pub fn disassemble_function(name: &str) -> String {
-    format!(r#"-interpreter-exec console "disassemble /r {}""#, name)
+    format!(r#"-interpreter-exec console "disassemble /r {name}""#)
 }
 
 /// Parse output from "info functions" command
@@ -457,11 +459,12 @@ pub fn parse_symbol_list(input: &str) -> Vec<crate::Symbol> {
 
         // Parse lines like "0x0000000000001234  function_name" or "0x1234  function_name"
         let parts: Vec<&str> = trimmed.split_whitespace().collect();
-        if parts.len() >= 2 && parts[0].starts_with("0x") {
-            if let Ok(address) = u64::from_str_radix(&parts[0][2..], 16) {
-                let name = parts[1..].join(" ");
-                symbols.push(crate::Symbol { address, name });
-            }
+        if parts.len() >= 2
+            && parts[0].starts_with("0x")
+            && let Ok(address) = u64::from_str_radix(&parts[0][2..], 16)
+        {
+            let name = parts[1..].join(" ");
+            symbols.push(crate::Symbol { address, name });
         }
     }
 
@@ -497,9 +500,12 @@ mod tests {
         let input = r#"*stopped,reason="breakpoint-hit",disp="keep",bkptno="1""#;
         if let MIResponse::AsyncRecord(reason, key_values) = parse_mi_response(input) {
             assert_eq!(reason, "stopped");
-            assert_eq!(key_values.get("reason").map(|s| s.as_str()), Some("breakpoint-hit"));
-            assert_eq!(key_values.get("disp").map(|s| s.as_str()), Some("keep"));
-            assert_eq!(key_values.get("bkptno").map(|s| s.as_str()), Some("1"));
+            assert_eq!(
+                key_values.get("reason").map(std::string::String::as_str),
+                Some("breakpoint-hit")
+            );
+            assert_eq!(key_values.get("disp").map(std::string::String::as_str), Some("keep"));
+            assert_eq!(key_values.get("bkptno").map(std::string::String::as_str), Some("1"));
         } else {
             panic!("Expected AsyncRecord response");
         }
@@ -510,7 +516,7 @@ mod tests {
         let input = r#"=thread-group-added,id="i1""#;
         if let MIResponse::Notify(event, key_values) = parse_mi_response(input) {
             assert_eq!(event, "thread-group-added");
-            assert_eq!(key_values.get("id").map(|s| s.as_str()), Some("i1"));
+            assert_eq!(key_values.get("id").map(std::string::String::as_str), Some("i1"));
         } else {
             panic!("Expected Notify response");
         }
@@ -529,7 +535,7 @@ mod tests {
 
     #[test]
     fn test_unknown_response() {
-        let input = r#"unsupported-command-output"#;
+        let input = r"unsupported-command-output";
         if let MIResponse::Unknown(response) = parse_mi_response(input) {
             assert_eq!(response, "unsupported-command-output");
         } else {
@@ -596,7 +602,7 @@ mod tests {
 
     #[test]
     fn test_parse_symbol_list() {
-        let input = r#"All defined functions:
+        let input = r"All defined functions:
 
 File test.c:
 0x0000000000001234  main
@@ -605,7 +611,7 @@ File test.c:
 
 Non-debugging symbols:
 0x0000000000001000  _start
-0x0000000000001020  _init"#;
+0x0000000000001020  _init";
 
         let symbols = parse_symbol_list(input);
 
@@ -672,9 +678,9 @@ Non-debugging symbols:
 
     #[test]
     fn test_parse_memory_mappings_new_format() {
-        let input = r#"Start Addr         End Addr           Size               Offset             Perms File
+        let input = r"Start Addr         End Addr           Size               Offset             Perms File
 0x0000000000400000 0x0000000000401000 0x1000             0x0                r--p  /home/test/a.out
-0x0000000000401000 0x0000000000479000 0x78000            0x1000             r-xp  /home/test/a.out "#;
+0x0000000000401000 0x0000000000479000 0x78000            0x1000             r-xp  /home/test/a.out ";
 
         let mappings = parse_memory_mappings_new(input);
         assert_eq!(mappings.len(), 2);
@@ -698,7 +704,7 @@ Non-debugging symbols:
 
         let cmd = data_disassemble_pc(5, 10);
         assert!(cmd.contains("$pc"));
-        assert!(cmd.contains("5"));
+        assert!(cmd.contains('5'));
         assert!(cmd.contains("10"));
     }
 
@@ -714,7 +720,7 @@ Non-debugging symbols:
         let cmd = data_read_sp_bytes(0x100, 8);
         assert!(cmd.contains("$sp"));
         assert!(cmd.contains("0x100"));
-        assert!(cmd.contains("8"));
+        assert!(cmd.contains('8'));
     }
 
     #[test]

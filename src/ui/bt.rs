@@ -10,10 +10,10 @@ use crate::State;
 pub fn draw_bt(state: &mut State, f: &mut Frame, bt_rect: Rect) {
     let block = Block::default().borders(Borders::TOP).title("Backtrace".fg(ORANGE));
     let mut lines = vec![];
-    for b in state.bt.iter() {
+    for b in &state.bt {
         let loc_span = Span::from(format!("  {:08x}", b.location,)).style(Style::new().fg(PURPLE));
 
-        let func_span = Span::from(b.function.clone().unwrap_or("".to_string()).to_string())
+        let func_span = Span::from(b.function.clone().unwrap_or(String::new()).clone())
             .style(Style::new().fg(ORANGE));
         let spans = vec![loc_span, Span::from(" → "), func_span];
         let line = Line::from(spans);

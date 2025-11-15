@@ -59,7 +59,7 @@ mod tests {
         assert_eq!(state.symbols.len(), 2);
         assert_eq!(state.symbols_selected, 0);
         assert_eq!(state.symbol_asm.len(), 0);
-        assert_eq!(state.symbols_viewing_asm, false);
+        assert!(!state.symbols_viewing_asm);
         assert_eq!(state.written.len(), 0);
     }
 

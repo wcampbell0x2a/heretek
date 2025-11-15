@@ -23,14 +23,10 @@ pub fn draw_input(title_area: Rect, state: &mut State, f: &mut Frame, input: Rec
             .block(
                 Block::default()
                     .borders(Borders::ALL)
+                    .title(vec!["|".fg(GRAY_FG), state.status.clone().fg(BLUE), "|".fg(GRAY_FG)])
                     .title(vec![
                         "|".fg(GRAY_FG),
-                        state.status.to_string().fg(BLUE),
-                        "|".fg(GRAY_FG),
-                    ])
-                    .title(vec![
-                        "|".fg(GRAY_FG),
-                        state.async_result.to_string().fg(ORANGE),
+                        state.async_result.clone().fg(ORANGE),
                         "|".fg(GRAY_FG),
                     ]),
             );
@@ -51,7 +47,7 @@ pub fn draw_input(title_area: Rect, state: &mut State, f: &mut Frame, input: Rec
                     + prompt_len as u16,
                 // Move one line down, from the border to the input line
                 input.y + 1,
-            ))
+            ));
         }
     }
 }

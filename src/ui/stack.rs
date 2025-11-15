@@ -14,7 +14,7 @@ pub fn draw_stack(state: &mut State, f: &mut Frame, stack: Rect) {
     let width: usize = if state.ptr_size == PtrSize::Size32 { 11 } else { 19 };
 
     let stacks = state.stack.clone();
-    for (addr, values) in stacks.iter() {
+    for (addr, values) in &stacks {
         let filepath = state.filepath.clone().unwrap_or_default();
         let filepath = filepath.to_string_lossy();
 

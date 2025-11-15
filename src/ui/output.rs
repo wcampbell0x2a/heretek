@@ -28,7 +28,7 @@ pub fn draw_output(state: &mut State, f: &mut Frame, output: Rect, full: bool) {
         .take(max as usize)
         .map(|m| {
             let m = m.replace('\t', "    ");
-            let content = vec![Line::from(Span::raw(m.to_string()))];
+            let content = vec![Line::from(Span::raw(m.clone()))];
             ListItem::new(content)
         })
         .collect();

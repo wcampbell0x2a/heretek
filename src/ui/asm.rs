@@ -44,7 +44,7 @@ pub fn draw_asm(state: &mut State, f: &mut Frame, asm: Rect) {
             let parts: Vec<&str> = a.inst.splitn(2, "\\t").collect();
             format!("{:<8}{}", parts[0], parts[1])
         } else {
-            a.inst.to_string()
+            a.inst.clone()
         };
 
         let inst_cell = if let Some(pc_index) = pc_index {

@@ -1,6 +1,6 @@
 use crate::{PtrSize, State, Written};
 
-/// MIResponse::ExecResult, key: "value"
+/// `MIResponse::ExecResult`, key: "value"
 pub fn recv_exec_result_value(state: &mut State, value: &String) {
     if let Some(Written::SizeOfVoidStar) = state.written.front() {
         match value.as_str() {
@@ -13,7 +13,7 @@ pub fn recv_exec_result_value(state: &mut State, value: &String) {
                 log::trace!("Setting to 32 bit mode");
             }
             _ => (),
-        };
+        }
         let _ = state.written.pop_front().unwrap();
     } else {
         // program is stopped, get the current pc

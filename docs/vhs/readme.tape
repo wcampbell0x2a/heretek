@@ -10,11 +10,11 @@ Enter
 Sleep 2s
 
 Type "i"
-Type "file test-assets/test_render_app/a.out"
+Type "file ./hello"
 Enter
 Sleep 2s
 
-Type "break main"
+Type "break hello"
 Enter
 Sleep 2s
 
@@ -24,13 +24,28 @@ Sleep 5s
 
 Type "si"
 Enter
-Sleep 5s
+Sleep 2s
 Type "si"
 Enter
-Sleep 5s
+Sleep 2s
 Type "si"
 Enter
-Sleep 5s
+Sleep 2s
+Type "si"
+Enter
+Sleep 2s
+Type "si"
+Enter
+Sleep 2s
+Type "si"
+Enter
+Sleep 2s
+Type "si"
+Enter
+Sleep 2s
+Type "si"
+Enter
+Sleep 2s
 
 Escape
 Tab
@@ -71,7 +86,9 @@ Tab
 # symbols
 Type "r"
 Sleep 2s
-Type "j"
+Type "J"
+Sleep 2s
+Type "J"
 Sleep 2s
 Type "j"
 Sleep 2s

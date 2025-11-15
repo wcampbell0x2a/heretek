@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use log::{debug, error, info};
 
 use crate::State;
+use crate::Written;
 use crate::mi::{
     MEMORY_MAP_BEGIN, MEMORY_MAP_START_STR_NEW, MEMORY_MAP_START_STR_NEW_2,
     MEMORY_MAP_START_STR_OLD, Mapping,
@@ -32,8 +33,7 @@ pub fn stream_output(
     // StreamOutput("~", "Reading symbols from /home/wcampbell/a.out...\n")
     if state.filepath.is_none() {
         let symbols = "Reading symbols from ";
-        if s.starts_with(symbols) {
-            let filepath = &s[symbols.len()..];
+        if let Some(filepath) = s.strip_prefix(symbols) {
             let filepath = filepath.trim_end();
             if let Some(filepath) = filepath.strip_suffix("...") {
                 info!("new filepath: {filepath}");
@@ -58,9 +58,7 @@ pub fn stream_output(
     }
 
     let split: Vec<&str> = s.split_whitespace().collect();
-    if split == MEMORY_MAP_START_STR_NEW {
-        current_map.0 = Some(Mapping::New);
-    } else if split == MEMORY_MAP_START_STR_NEW_2 {
+    if split == MEMORY_MAP_START_STR_NEW || split == MEMORY_MAP_START_STR_NEW_2 {
         current_map.0 = Some(Mapping::New);
     } else if split == MEMORY_MAP_START_STR_OLD {
         current_map.0 = Some(Mapping::Old);
@@ -72,7 +70,6 @@ pub fn stream_output(
         return;
     }
 
-    use crate::Written;
     if let Some(Written::SymbolList) = state.written.front() {
         current_symbols.push_str(s);
         return;

@@ -31,7 +31,7 @@ pub fn draw_registers(state: &mut State, f: &mut Frame, register: Rect) {
 
     // find longest register name
     // TODO: cache this
-    for RegisterStorage { name, register, deref: _ } in state.registers.iter() {
+    for RegisterStorage { name, register, deref: _ } in &state.registers {
         if let Some(reg) = register {
             if !reg.is_set() {
                 continue;
@@ -73,7 +73,7 @@ pub fn draw_registers(state: &mut State, f: &mut Frame, register: Rect) {
                     width,
                 );
 
-                let hex_string = reg.value.as_ref().unwrap().to_string();
+                let hex_string = reg.value.as_ref().unwrap().clone();
                 let hex_width = hex_string.len();
                 let padding_width = width.saturating_sub(hex_width);
                 let mut span =

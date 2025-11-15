@@ -32,7 +32,7 @@ pub fn exec_result_done(
             for (key, val) in key_values {
                 if key == "addr" {
                     let val = val.strip_prefix("0x").unwrap();
-                    bt.location = u64::from_str_radix(val, 16).unwrap()
+                    bt.location = u64::from_str_radix(val, 16).unwrap();
                 } else if key == "func" {
                     bt.function = Some(val);
                 }
@@ -42,8 +42,8 @@ pub fn exec_result_done(
     } else if kv.contains_key("matches") {
         state.completions.clear();
         let matches = &kv["matches"];
-        let m_str = matches.strip_prefix(r#"["#).unwrap();
-        let m_str = m_str.strip_suffix(r#"]"#).unwrap();
+        let m_str = matches.strip_prefix(r"[").unwrap();
+        let m_str = m_str.strip_suffix(r"]").unwrap();
         let data = parse_key_value_pairs(m_str);
 
         for (k, _) in data {
@@ -68,7 +68,7 @@ fn exec_result_done_memory_map(state: &mut State, current_map: &mut (Option<Mapp
         // filepath in the mapping is the main text file
         if state.filepath.is_none() {
             state.filepath = Some(PathBuf::from(
-                state.memory_map.as_ref().unwrap()[0].path.clone().unwrap_or("".to_owned()),
+                state.memory_map.as_ref().unwrap()[0].path.clone().unwrap_or_default(),
             ));
         }
     }

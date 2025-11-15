@@ -2,8 +2,7 @@ use ratatui::layout::Constraint::Length;
 use ratatui::layout::{Alignment, Layout};
 use ratatui::prelude::Stylize;
 use ratatui::style::Modifier;
-use ratatui::text::Span;
-use ratatui::widgets::block::Title;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Tabs};
 use ratatui::{Frame, layout::Rect, style::Style};
 
@@ -17,8 +16,8 @@ pub fn draw_title_area(state: &mut State, f: &mut Frame, title_area: Rect) {
     f.render_widget(
         Block::new()
             .borders(Borders::TOP)
-            .title(
-                Title::from(vec![
+            .title_top(
+                Line::from(vec![
                     "|".fg(GRAY_FG),
                     env!("CARGO_PKG_NAME").bold(),
                     "-".fg(GRAY_FG),
@@ -26,10 +25,10 @@ pub fn draw_title_area(state: &mut State, f: &mut Frame, title_area: Rect) {
                     env!("CARGO_PKG_VERSION").into(),
                     "|".fg(GRAY_FG),
                 ])
-                .alignment(Alignment::Center),
+                .centered(),
             )
-            .title(
-                Title::from(vec![
+            .title_top(
+                Line::from(vec![
                     Span::raw(" | "),
                     Span::styled(
                         "Heap",
@@ -57,7 +56,7 @@ pub fn draw_title_area(state: &mut State, f: &mut Frame, title_area: Rect) {
                     ),
                     Span::raw(" | "),
                 ])
-                .alignment(Alignment::Right),
+                .right_aligned(),
             ),
         first,
     );

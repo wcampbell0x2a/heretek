@@ -41,16 +41,16 @@ impl Deref {
         for pattern_length in 2..=self.map.len() / 2 {
             for start in 0..(self.map.len() - pattern_length) {
                 let first_section: &Vec<u64> =
-                    &self.map.range(start..start + pattern_length).cloned().collect();
-                debug!("1: {:02x?}", first_section);
+                    &self.map.range(start..start + pattern_length).copied().collect();
+                debug!("1: {first_section:02x?}");
 
-                for second_start in start + 1..(self.map.len() - pattern_length + 1) {
+                for second_start in (start + 1)..=(self.map.len() - pattern_length) {
                     let second_section: &Vec<u64> = &self
                         .map
                         .range(second_start..second_start + pattern_length)
-                        .cloned()
+                        .copied()
                         .collect();
-                    debug!("2: {:02x?}", second_section);
+                    debug!("2: {second_section:02x?}");
                     if first_section == second_section {
                         debug!("found matching");
                         return true;

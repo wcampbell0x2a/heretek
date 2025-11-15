@@ -17,29 +17,27 @@ pub fn gdb_interact(gdb_stdout: BufReader<Box<dyn Read + Send>>, state: Arc<Mute
     let mut current_map = (None, String::new());
     let mut current_symbols = String::new();
 
-    for line in gdb_stdout.lines() {
-        if let Ok(line) = line {
-            trace!("{:?}", line);
-            let mut state = state.lock().unwrap();
-            let response = parse_mi_response(&line);
-            trace!("response {:?}", response);
-            match &response {
-                MIResponse::AsyncRecord(reason, kv) => {
-                    if reason == "stopped" {
-                        async_record_stopped(&mut state, kv);
-                    }
+    for line in gdb_stdout.lines().map_while(Result::ok) {
+        trace!("{line:?}");
+        let mut state = state.lock().unwrap();
+        let response = parse_mi_response(&line);
+        trace!("response {response:?}");
+        match &response {
+            MIResponse::AsyncRecord(reason, kv) => {
+                if reason == "stopped" {
+                    async_record_stopped(&mut state, kv);
                 }
-                MIResponse::ExecResult(status, kv) => {
-                    exec_result(&mut state, status, &mut current_map, &mut current_symbols, kv);
-                }
-                MIResponse::StreamOutput(t, s) => {
-                    stream_output(t, s, &mut state, &mut current_map, &mut current_symbols);
-                }
-                MIResponse::Unknown(s) => {
-                    state.stream_output_prompt = s.to_string();
-                }
-                _ => (),
             }
+            MIResponse::ExecResult(status, kv) => {
+                exec_result(&mut state, status, &mut current_map, &mut current_symbols, kv);
+            }
+            MIResponse::StreamOutput(t, s) => {
+                stream_output(t, s, &mut state, &mut current_map, &mut current_symbols);
+            }
+            MIResponse::Unknown(s) => {
+                state.stream_output_prompt = s.clone();
+            }
+            MIResponse::Notify(..) => (),
         }
     }
 }
@@ -94,7 +92,7 @@ fn async_record_stopped(state: &mut State, kv: &HashMap<String, String>) {
 
     // Extract source location directly from the stopped event
     if let (Some(fullname), Some(line)) = (kv.get("fullname"), kv.get("line")) {
-        debug!("Source location from stopped event: {}:{}", fullname, line);
+        debug!("Source location from stopped event: {fullname}:{line}");
 
         if let Ok(line_num) = line.parse::<u32>() {
             state.current_source_file = Some(fullname.clone());
@@ -102,16 +100,17 @@ fn async_record_stopped(state: &mut State, kv: &HashMap<String, String>) {
 
             // Try to read the source file and store lines
             if let Ok(content) = std::fs::read_to_string(std::path::Path::new(fullname)) {
-                state.source_lines = content.lines().map(|s| s.to_string()).collect();
+                state.source_lines =
+                    content.lines().map(std::string::ToString::to_string).collect();
                 debug!("Read {} lines from source file", state.source_lines.len());
             } else {
-                warn!("Could not read source file: {}", fullname);
+                warn!("Could not read source file: {fullname}");
                 state.source_lines.clear();
             }
         }
     } else if let (Some(file), Some(line)) = (kv.get("file"), kv.get("line")) {
         // Fallback to 'file' if 'fullname' is not available
-        debug!("Source location from stopped event (fallback): {}:{}", file, line);
+        debug!("Source location from stopped event (fallback): {file}:{line}");
 
         if let Ok(line_num) = line.parse::<u32>() {
             state.current_source_file = Some(file.clone());
@@ -119,10 +118,11 @@ fn async_record_stopped(state: &mut State, kv: &HashMap<String, String>) {
 
             // Try to read the source file and store lines
             if let Ok(content) = std::fs::read_to_string(std::path::Path::new(file)) {
-                state.source_lines = content.lines().map(|s| s.to_string()).collect();
+                state.source_lines =
+                    content.lines().map(std::string::ToString::to_string).collect();
                 debug!("Read {} lines from source file", state.source_lines.len());
             } else {
-                warn!("Could not read source file: {}", file);
+                warn!("Could not read source file: {file}");
                 state.source_lines.clear();
             }
         }
@@ -135,10 +135,10 @@ fn async_record_stopped(state: &mut State, kv: &HashMap<String, String>) {
 }
 
 fn read_memory(memory: &String) -> (HashMap<String, String>, String) {
-    let mem_str = memory.strip_prefix(r#"[{"#).unwrap();
-    let mem_str = mem_str.strip_suffix(r#"}]"#).unwrap();
+    let mem_str = memory.strip_prefix(r"[{").unwrap();
+    let mem_str = mem_str.strip_suffix(r"}]").unwrap();
     let data = parse_key_value_pairs(mem_str);
-    let begin = data["begin"].to_string();
+    let begin = data["begin"].clone();
     let begin = begin.strip_prefix("0x").unwrap().to_string();
     (data, begin)
 }
@@ -155,6 +155,6 @@ fn dump_sp_bytes(state: &mut State, size: u64, amt: u64) {
 /// Unlock GDB stdin and write
 pub fn write_mi(gdb_stdin_arc: &Arc<Mutex<dyn Write + Send>>, w: &str) {
     let mut stdin = gdb_stdin_arc.lock().unwrap();
-    debug!("writing {}", w);
-    writeln!(stdin, "{}", w).expect("Failed to send command");
+    debug!("writing {w}");
+    writeln!(stdin, "{w}").expect("Failed to send command");
 }

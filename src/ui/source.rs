@@ -14,7 +14,7 @@ pub fn draw_source(state: &mut State, f: &mut Frame, area: Rect) {
         if let (Some(file), Some(line)) = (&state.current_source_file, state.current_source_line) {
             let filename =
                 std::path::Path::new(file).file_name().and_then(|n| n.to_str()).unwrap_or(file);
-            Title::from(format!("Source ({}:{})", filename, line).fg(ORANGE))
+            Title::from(format!("Source ({filename}:{line})").fg(ORANGE))
         } else {
             return;
         };
@@ -43,12 +43,12 @@ pub fn draw_source(state: &mut State, f: &mut Frame, area: Rect) {
         state.source_lines.iter().enumerate().skip(start_line).take(end_line - start_line)
     {
         let line_num = idx + 1;
-        let line_num_cell = Cell::from(format!("{:4}", line_num));
+        let line_num_cell = Cell::from(format!("{line_num:4}"));
 
         let content_cell = if line_num == current_line {
-            Cell::from(format!(" {}", line_content)).style(Style::default().fg(GREEN).bold())
+            Cell::from(format!(" {line_content}")).style(Style::default().fg(GREEN).bold())
         } else {
-            Cell::from(format!(" {}", line_content)).white()
+            Cell::from(format!(" {line_content}")).white()
         };
 
         let marker_cell = if line_num == current_line {
@@ -155,7 +155,7 @@ mod tests {
         state.current_source_file = Some("test.c".to_string());
         state.current_source_line = Some(50);
         // Create 100 lines
-        state.source_lines = (1..=100).map(|i| format!("line {}", i)).collect();
+        state.source_lines = (1..=100).map(|i| format!("line {i}")).collect();
 
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -191,7 +191,7 @@ mod tests {
         let mut state = create_test_state();
         state.current_source_file = Some("/path/to/long/directory/test.c".to_string());
         state.current_source_line = Some(10);
-        state.source_lines = (1..=10).map(|i| format!("line {}", i)).collect();
+        state.source_lines = (1..=10).map(|i| format!("line {i}")).collect();
 
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();

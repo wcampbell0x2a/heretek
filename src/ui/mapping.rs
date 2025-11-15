@@ -23,8 +23,8 @@ pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
                 format!("0x{:08x}", m.end_address),
                 format!("0x{:08x}", m.size),
                 format!("0x{:08x}", m.offset),
-                m.permissions.clone().unwrap_or("".to_string()),
-                m.path.clone().unwrap_or("".to_string()),
+                m.permissions.clone().unwrap_or(String::new()),
+                m.path.clone().unwrap_or(String::new()),
             ]);
             // Highlight the selected row
             if index == state.memory_map_selected {
@@ -194,7 +194,7 @@ mod tests {
                 size: 0x1000,
                 offset: 0x0,
                 permissions: Some("r-xp".to_string()),
-                path: Some(format!("/path/to/lib{}.so", i)),
+                path: Some(format!("/path/to/lib{i}.so")),
             })
             .collect();
         state.memory_map = Some(mappings);

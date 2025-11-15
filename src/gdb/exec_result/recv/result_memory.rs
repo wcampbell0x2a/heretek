@@ -22,93 +22,85 @@ pub fn recv_exec_result_memory(state: &mut State, memory: &String) {
             let thirty = state.ptr_size == PtrSize::Size32;
 
             let (data, _) = read_memory(memory);
-            for RegisterStorage { name: _, register, deref } in state.registers.iter_mut() {
-                if let Some(reg) = register {
-                    if reg.number == base_reg {
-                        let (val, len) = if thirty {
-                            let outer = if let Ok(val) = u32::from_str_radix(&data["contents"], 16)
-                            {
-                                if state.endian.unwrap() == Endian::Big {
-                                    val.to_le()
-                                } else {
-                                    val.to_be()
-                                }
-                            } else {
-                                error!("Requested to many bytes for 32 bit processor");
-                                return;
-                            };
-
-                            (outer as u64, 4)
-                        } else {
-                            let mut val = u64::from_str_radix(&data["contents"], 16).unwrap();
+            for RegisterStorage { name: _, register, deref } in &mut state.registers {
+                if let Some(reg) = register
+                    && reg.number == base_reg
+                {
+                    let (val, len) = if thirty {
+                        let outer = if let Ok(val) = u32::from_str_radix(&data["contents"], 16) {
                             if state.endian.unwrap() == Endian::Big {
-                                val = val.to_le();
+                                val.to_le()
                             } else {
-                                val = val.to_be();
+                                val.to_be()
                             }
-
-                            (val, 8)
+                        } else {
+                            error!("Requested to many bytes for 32 bit processor");
+                            return;
                         };
-                        if deref.try_push(val) {
-                            // If this is a code location, go ahead and try
-                            // to request the asm at that spot
-                            let mut is_code = false;
-                            if let Some(mm) = &state.memory_map {
-                                for r in mm {
-                                    let is_path = r.is_path(
-                                        state.filepath.as_ref().unwrap().to_str().unwrap(),
-                                    );
-                                    if r.contains(val) && (is_path || r.is_exec()) {
-                                        // send a search for a symbol!
-                                        // TODO: 32-bit?
-                                        state
-                                            .next_write
-                                            .push(data_disassemble(val as usize, INSTRUCTION_LEN));
-                                        state.written.push_back(Written::SymbolAtAddrRegister((
-                                            reg.number.clone(),
-                                            val,
-                                        )));
-                                        is_code = true;
-                                        break;
-                                    }
-                                }
-                            }
 
-                            // all string? Request the next
-                            if val > 0xff {
-                                let bytes = val.to_le_bytes();
-                                if bytes.iter().all(|a| {
-                                    a.is_ascii_alphabetic()
-                                        || a.is_ascii_graphic()
-                                        || a.is_ascii_whitespace()
-                                }) {
-                                    let addr =
-                                        data["begin"].strip_prefix("0x").unwrap().to_string();
-                                    let addr = u64::from_str_radix(&addr, 16).unwrap();
-                                    state.next_write.push(data_read_memory_bytes(
-                                        addr + len,
-                                        0,
-                                        len,
-                                    ));
-                                    state.written.push_back(Written::RegisterValue((
+                        (u64::from(outer), 4)
+                    } else {
+                        let mut val = u64::from_str_radix(&data["contents"], 16).unwrap();
+                        if state.endian.unwrap() == Endian::Big {
+                            val = val.to_le();
+                        } else {
+                            val = val.to_be();
+                        }
+
+                        (val, 8)
+                    };
+                    if deref.try_push(val) {
+                        // If this is a code location, go ahead and try
+                        // to request the asm at that spot
+                        let mut is_code = false;
+                        if let Some(mm) = &state.memory_map {
+                            for r in mm {
+                                let is_path =
+                                    r.is_path(state.filepath.as_ref().unwrap().to_str().unwrap());
+                                if r.contains(val) && (is_path || r.is_exec()) {
+                                    // send a search for a symbol!
+                                    // TODO: 32-bit?
+                                    state
+                                        .next_write
+                                        .push(data_disassemble(val as usize, INSTRUCTION_LEN));
+                                    state.written.push_back(Written::SymbolAtAddrRegister((
                                         reg.number.clone(),
                                         val,
                                     )));
-                                    return;
+                                    is_code = true;
+                                    break;
                                 }
                             }
+                        }
 
-                            if !is_code && val != 0 {
-                                // TODO: endian
-                                debug!("register deref: trying to read: {:02x}", val);
-                                state.next_write.push(data_read_memory_bytes(val, 0, len));
+                        // all string? Request the next
+                        if val > 0xff {
+                            let bytes = val.to_le_bytes();
+                            if bytes.iter().all(|a| {
+                                a.is_ascii_alphabetic()
+                                    || a.is_ascii_graphic()
+                                    || a.is_ascii_whitespace()
+                            }) {
+                                let addr = data["begin"].strip_prefix("0x").unwrap().to_string();
+                                let addr = u64::from_str_radix(&addr, 16).unwrap();
+                                state.next_write.push(data_read_memory_bytes(addr + len, 0, len));
                                 state
                                     .written
                                     .push_back(Written::RegisterValue((reg.number.clone(), val)));
+                                return;
                             }
                         }
-                        break;
+
+                        if !is_code && val != 0 {
+                            // TODO: endian
+                            debug!("register deref: trying to read: {val:02x}");
+                            state.next_write.push(data_read_memory_bytes(val, 0, len));
+                            state
+                                .written
+                                .push_back(Written::RegisterValue((reg.number.clone(), val)));
+                        }
                     }
+                    break;
                 }
             }
         }
@@ -117,19 +109,19 @@ pub fn recv_exec_result_memory(state: &mut State, memory: &String) {
         // addr we read
         Written::Stack(Some(begin)) => {
             let (data, _) = read_memory(memory);
-            debug!("stack: {:02x?}", data);
+            debug!("stack: {data:02x?}");
 
             update_stack(data, state, begin);
         }
         Written::Stack(None) => {
             let (data, begin) = read_memory(memory);
-            debug!("stack: {:02x?}", data);
+            debug!("stack: {data:02x?}");
 
             update_stack(data, state, begin);
         }
         Written::Memory => {
             let (data, begin) = read_memory(memory);
-            debug!("memory: ({:02x?}, {:02x?}", begin, data);
+            debug!("memory: ({begin:02x?}, {data:02x?}");
             let hex = hex::decode(&data["contents"]).unwrap();
             state.hexdump = Some((u64::from_str_radix(&begin, 16).unwrap(), hex));
         }
@@ -148,7 +140,7 @@ fn update_stack(data: HashMap<String, String>, state: &mut State, begin: String)
             val = val.to_be();
         }
 
-        (val as u64, 4)
+        (u64::from(val), 4)
     } else {
         let mut val = u64::from_str_radix(&data["contents"], 16).unwrap();
         if state.endian.unwrap() == Endian::Big {

@@ -24,14 +24,14 @@ fn to_hexdump_str<'a>(
     for (offset, chunk) in buffer.chunks(16).skip(skip).take(take).enumerate() {
         let mut hex_spans = Vec::new();
         // bytes
-        for byte in chunk.iter() {
+        for byte in chunk {
             let color = color(*byte);
             hex_spans.push(Span::styled(format!("{byte:02x} "), Style::default().fg(color)));
         }
 
         // ascii
         hex_spans.push(Span::raw("| "));
-        for byte in chunk.iter() {
+        for byte in chunk {
             let ascii_char = if byte.is_ascii_graphic() { *byte as char } else { '.' };
             let color = color(*byte);
             hex_spans.push(Span::styled(ascii_char.to_string(), Style::default().fg(color)));
@@ -48,7 +48,7 @@ fn to_hexdump_str<'a>(
         //deref_bytes_to_registers(&endian, chunk, thirty, &mut ref_spans, &registers);
 
         let windows = if thirty { 4 } else { 8 };
-        for r in state.registers.iter() {
+        for r in &state.registers {
             if let Some(reg) = &r.register {
                 if !reg.is_set() {
                     continue;
@@ -69,12 +69,12 @@ fn to_hexdump_str<'a>(
             }
         }
 
-        let line = Line::from_iter(
+        let line =
             vec![Span::raw(format!("{:08x}: ", (skip + offset) * HEXDUMP_WIDTH)), Span::raw("")]
                 .into_iter()
                 .chain(hex_spans)
-                .chain(ref_spans),
-        );
+                .chain(ref_spans)
+                .collect::<Line>();
 
         lines.push(line);
     }
@@ -112,7 +112,7 @@ fn block(pos: &str) -> Block<'_> {
 
 pub fn draw_hexdump(state: &mut State, f: &mut Frame, hexdump: Rect, show_popup: bool) {
     let hexdump_active = state.hexdump.is_some();
-    let mut pos = "".to_string();
+    let mut pos = String::new();
 
     if hexdump_active {
         let r = state.hexdump.clone().unwrap();

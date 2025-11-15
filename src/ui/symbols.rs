@@ -94,7 +94,7 @@ fn draw_symbol_asm(state: &mut State, f: &mut Frame, area: Rect) {
 
     let mut rows = vec![Row::new(["Address", "Instruction"]).style(Style::new().fg(BLUE))];
 
-    for asm in state.symbol_asm.iter() {
+    for asm in &state.symbol_asm {
         let row = Row::new([format!("0x{:016x}", asm.address), asm.inst.clone()]);
         rows.push(row);
     }
@@ -255,7 +255,7 @@ mod tests {
         let mut state = create_test_state();
         // Create many symbols to require scrolling
         state.symbols = (0..100)
-            .map(|i| Symbol { address: 0x400000 + (i * 0x10), name: format!("func_{}", i) })
+            .map(|i| Symbol { address: 0x400000 + (i * 0x10), name: format!("func_{i}") })
             .collect();
         state.symbols_scroll.scroll = 10;
 
@@ -281,7 +281,7 @@ mod tests {
         state.symbol_asm = (0..100)
             .map(|i| crate::mi::Asm {
                 address: 0x401000 + i,
-                inst: format!("instruction_{}", i),
+                inst: format!("instruction_{i}"),
                 offset: i,
                 func_name: Some("main".to_string()),
             })

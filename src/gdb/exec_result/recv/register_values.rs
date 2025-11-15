@@ -18,79 +18,75 @@ pub fn recv_exec_results_register_values(register_values: &String, state: &mut S
     // parse the response and save it
     let registers_local = parse_register_values(register_values);
     for r in registers_local.iter().flatten() {
-        if r.is_set() {
-            if let Some(val) = &r.value {
-                if state.ptr_size == PtrSize::Size32 {
-                    // TODO: this should be able to expect
-                    if let Ok(val_u32) = u32::from_str_radix(&val[2..], 16) {
-                        // NOTE: This is already in the right endian
-                        // avoid trying to read null :^)
-                        if val_u32 != 0 {
-                            // If this is a code location, go ahead and try
-                            // to request the asm at that spot
-                            let mut asked_for_code = false;
-                            if let Some(memory_map) = state.memory_map.as_ref() {
-                                for b in memory_map {
-                                    let is_path = b.is_path(
-                                        state.filepath.as_ref().unwrap().to_str().unwrap(),
-                                    );
-                                    if b.contains(u64::from(val_u32)) && (is_path || b.is_exec()) {
-                                        state.next_write.push(data_disassemble(
-                                            val_u32 as usize,
-                                            INSTRUCTION_LEN,
-                                        ));
-                                        state.written.push_back(Written::SymbolAtAddrRegister((
-                                            r.number.clone(),
-                                            u64::from(val_u32),
-                                        )));
-                                        asked_for_code = true;
-                                    }
+        if r.is_set()
+            && let Some(val) = &r.value
+        {
+            if state.ptr_size == PtrSize::Size32 {
+                // TODO: this should be able to expect
+                if let Ok(val_u32) = u32::from_str_radix(&val[2..], 16) {
+                    // NOTE: This is already in the right endian
+                    // avoid trying to read null :^)
+                    if val_u32 != 0 {
+                        // If this is a code location, go ahead and try
+                        // to request the asm at that spot
+                        let mut asked_for_code = false;
+                        if let Some(memory_map) = state.memory_map.as_ref() {
+                            for b in memory_map {
+                                let is_path =
+                                    b.is_path(state.filepath.as_ref().unwrap().to_str().unwrap());
+                                if b.contains(u64::from(val_u32)) && (is_path || b.is_exec()) {
+                                    state
+                                        .next_write
+                                        .push(data_disassemble(val_u32 as usize, INSTRUCTION_LEN));
+                                    state.written.push_back(Written::SymbolAtAddrRegister((
+                                        r.number.clone(),
+                                        u64::from(val_u32),
+                                    )));
+                                    asked_for_code = true;
                                 }
-                            }
-                            if !asked_for_code {
-                                // just a value
-                                state.next_write.push(data_read_memory_bytes(val_u32 as u64, 0, 4));
-                                state.written.push_back(Written::RegisterValue((
-                                    r.number.clone(),
-                                    val_u32 as u64,
-                                )));
                             }
                         }
+                        if !asked_for_code {
+                            // just a value
+                            state.next_write.push(data_read_memory_bytes(u64::from(val_u32), 0, 4));
+                            state.written.push_back(Written::RegisterValue((
+                                r.number.clone(),
+                                u64::from(val_u32),
+                            )));
+                        }
                     }
-                } else {
-                    // TODO: this should be able to expect
-                    if let Ok(val_u64) = u64::from_str_radix(&val[2..], 16) {
-                        // NOTE: This is already in the right endian
-                        // avoid trying to read null :^)
-                        if val_u64 != 0 {
-                            // If this is a code location, go ahead and try
-                            // to request the asm at that spot
-                            let mut asked_for_code = false;
-                            if let Some(memory_map) = state.memory_map.as_ref() {
-                                for b in memory_map {
-                                    let is_path = b.is_path(
-                                        state.filepath.as_ref().unwrap().to_str().unwrap(),
-                                    );
-                                    if b.contains(val_u64) && (is_path || b.is_exec()) {
-                                        state.next_write.push(data_disassemble(
-                                            val_u64 as usize,
-                                            INSTRUCTION_LEN,
-                                        ));
-                                        state.written.push_back(Written::SymbolAtAddrRegister((
-                                            r.number.clone(),
-                                            val_u64,
-                                        )));
-                                        asked_for_code = true;
-                                    }
+                }
+            } else {
+                // TODO: this should be able to expect
+                if let Ok(val_u64) = u64::from_str_radix(&val[2..], 16) {
+                    // NOTE: This is already in the right endian
+                    // avoid trying to read null :^)
+                    if val_u64 != 0 {
+                        // If this is a code location, go ahead and try
+                        // to request the asm at that spot
+                        let mut asked_for_code = false;
+                        if let Some(memory_map) = state.memory_map.as_ref() {
+                            for b in memory_map {
+                                let is_path =
+                                    b.is_path(state.filepath.as_ref().unwrap().to_str().unwrap());
+                                if b.contains(val_u64) && (is_path || b.is_exec()) {
+                                    state
+                                        .next_write
+                                        .push(data_disassemble(val_u64 as usize, INSTRUCTION_LEN));
+                                    state.written.push_back(Written::SymbolAtAddrRegister((
+                                        r.number.clone(),
+                                        val_u64,
+                                    )));
+                                    asked_for_code = true;
                                 }
                             }
-                            if !asked_for_code {
-                                // just a value
-                                state.next_write.push(data_read_memory_bytes(val_u64, 0, 8));
-                                state
-                                    .written
-                                    .push_back(Written::RegisterValue((r.number.clone(), val_u64)));
-                            }
+                        }
+                        if !asked_for_code {
+                            // just a value
+                            state.next_write.push(data_read_memory_bytes(val_u64, 0, 8));
+                            state
+                                .written
+                                .push_back(Written::RegisterValue((r.number.clone(), val_u64)));
                         }
                     }
                 }
@@ -173,7 +169,7 @@ mod tests {
         state.filepath = Some(PathBuf::from("/usr/bin/test"));
         state.memory_map = Some(create_memory_map("/usr/bin/test"));
 
-        let register_values = format!(r#"[{{number="0",value="{}"}}]"#, addr);
+        let register_values = format!(r#"[{{number="0",value="{addr}"}}]"#);
 
         recv_exec_results_register_values(&register_values, &mut state);
 
@@ -198,7 +194,7 @@ mod tests {
         let stack_writes: Vec<_> = state.next_write.iter().filter(|w| w.contains("$sp")).collect();
 
         assert!(!stack_writes.is_empty());
-        assert!(stack_writes.iter().any(|w| w.contains(&format!(" {}", expected_size))));
+        assert!(stack_writes.iter().any(|w| w.contains(&format!(" {expected_size}"))));
     }
 
     #[test]

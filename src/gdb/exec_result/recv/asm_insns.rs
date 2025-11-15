@@ -2,7 +2,7 @@ use crate::mi::parse_asm_insns_values;
 use crate::register::RegisterStorage;
 use crate::{State, Written};
 
-/// `MIResponse::ExecResult`, key: "asm_insns"
+/// `MIResponse::ExecResult`, key: "`asm_insns`"
 pub fn recv_exec_result_asm_insns(state: &mut State, asm: &String) {
     if state.written.is_empty() {
         return;
@@ -16,21 +16,21 @@ pub fn recv_exec_result_asm_insns(state: &mut State, asm: &String) {
         state.symbol_asm = parse_asm_insns_values(asm).clone();
     }
     if let Written::SymbolAtAddrRegister((base_reg, _n)) = &last_written {
-        for RegisterStorage { name: _, register, deref } in state.registers.iter_mut() {
-            if let Some(reg) = register {
-                if reg.number == *base_reg {
-                    let new_asms = parse_asm_insns_values(asm);
-                    if !new_asms.is_empty() {
-                        if let Some(func_name) = &new_asms[0].func_name {
-                            deref.final_assembly = format!(
-                                "{}+{} ({})",
-                                func_name.to_owned(),
-                                new_asms[0].offset,
-                                new_asms[0].inst
-                            );
-                        } else {
-                            deref.final_assembly = new_asms[0].inst.to_owned();
-                        }
+        for RegisterStorage { name: _, register, deref } in &mut state.registers {
+            if let Some(reg) = register
+                && reg.number == *base_reg
+            {
+                let new_asms = parse_asm_insns_values(asm);
+                if !new_asms.is_empty() {
+                    if let Some(func_name) = &new_asms[0].func_name {
+                        deref.final_assembly = format!(
+                            "{}+{} ({})",
+                            func_name.to_owned(),
+                            new_asms[0].offset,
+                            new_asms[0].inst
+                        );
+                    } else {
+                        deref.final_assembly = new_asms[0].inst.clone();
                     }
                 }
             }
@@ -50,7 +50,7 @@ pub fn recv_exec_result_asm_insns(state: &mut State, asm: &String) {
                         new_asms[0].inst
                     );
                 } else {
-                    deref.final_assembly = new_asms[0].inst.to_owned();
+                    deref.final_assembly = new_asms[0].inst.clone();
                 }
             }
         }
@@ -133,7 +133,7 @@ mod tests {
 
         let reg = Register {
             number: reg_num.to_string(),
-            value: Some(format!("0x{:x}", addr)),
+            value: Some(format!("0x{addr:x}")),
             v2_int128: None,
             v8_int32: None,
             v4_int64: None,
@@ -167,7 +167,7 @@ mod tests {
         let mut state = create_test_state();
 
         state.stack.insert(stack_addr, Deref::new());
-        state.written.push_back(Written::SymbolAtAddrStack(format!("{:x}", stack_addr)));
+        state.written.push_back(Written::SymbolAtAddrStack(format!("{stack_addr:x}")));
 
         recv_exec_result_asm_insns(&mut state, &asm_input.to_string());
 
@@ -195,7 +195,7 @@ mod tests {
 
         state.written.push_back(Written::SymbolAtAddrRegister(("2".to_string(), 0x401000)));
 
-        let asm = r#"[]"#.to_string();
+        let asm = r"[]".to_string();
 
         recv_exec_result_asm_insns(&mut state, &asm);
 

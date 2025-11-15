@@ -124,7 +124,7 @@ enum PtrSize {
     Auto,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 enum Mode {
     All,
     OnlyRegister,
@@ -134,9 +134,26 @@ enum Mode {
     OnlyMapping,
     OnlyHexdump,
     OnlyHexdumpPopup,
+    OnlySymbols,
+    QuitConfirmation,
 }
 
 impl Mode {
+    pub fn ui_index(&self) -> usize {
+        match self {
+            Mode::All => 0,
+            Mode::OnlyRegister => 1,
+            Mode::OnlyStack => 2,
+            Mode::OnlyInstructions => 3,
+            Mode::OnlyOutput => 4,
+            Mode::OnlyMapping => 5,
+            Mode::OnlyHexdump => 6,
+            Mode::OnlyHexdumpPopup => 6,
+            Mode::OnlySymbols => 7,
+            Mode::QuitConfirmation => 0,
+        }
+    }
+
     pub fn next(&self) -> Self {
         match self {
             Mode::All => Mode::OnlyRegister,
@@ -145,8 +162,10 @@ impl Mode {
             Mode::OnlyInstructions => Mode::OnlyOutput,
             Mode::OnlyOutput => Mode::OnlyMapping,
             Mode::OnlyMapping => Mode::OnlyHexdump,
-            Mode::OnlyHexdump => Mode::All,
+            Mode::OnlyHexdump => Mode::OnlySymbols,
             Mode::OnlyHexdumpPopup => Mode::OnlyHexdumpPopup,
+            Mode::OnlySymbols => Mode::All,
+            Mode::QuitConfirmation => Mode::QuitConfirmation,
         }
     }
 }
@@ -155,6 +174,12 @@ impl Mode {
 struct Bt {
     location: u64,
     function: Option<String>,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct Symbol {
+    pub address: u64,
+    pub name: String,
 }
 
 // TODO: this could be split up, some of these fields
@@ -218,6 +243,8 @@ struct State {
     endian: Option<Endian>,
     /// Current mode
     mode: Mode,
+    /// Previous mode (for quit confirmation)
+    previous_mode: Mode,
     /// TUI input
     input: Input,
     /// Currnt input mode of tui
@@ -227,6 +254,8 @@ struct State {
     /// Memory map TUI
     memory_map: Option<Vec<MemoryMapping>>,
     memory_map_scroll: Scroll,
+    memory_map_selected: usize,
+    memory_map_viewport_height: u16,
     /// Current $pc
     current_pc: u64, // TODO: replace with AtomicU64?
     /// All output from gdb
@@ -257,6 +286,18 @@ struct State {
     current_source_file: Option<String>,
     current_source_line: Option<u32>,
     source_lines: Vec<String>,
+    /// Symbol browser
+    symbols: Vec<Symbol>,
+    symbols_scroll: Scroll,
+    symbols_selected: usize,
+    symbols_viewport_height: u16,
+    symbol_asm: Vec<Asm>,
+    symbol_asm_scroll: Scroll,
+    /// Whether we're viewing assembly for a selected symbol
+    symbols_viewing_asm: bool,
+    /// Symbol search
+    symbols_search_active: bool,
+    symbols_search_input: Input,
 }
 
 impl State {
@@ -268,11 +309,14 @@ impl State {
             filepath: None,
             endian: None,
             mode: Mode::All,
+            previous_mode: Mode::All,
             input: Input::default(),
             input_mode: InputMode::Normal,
             sent_input: LimitedBuffer::new(100),
             memory_map: None,
             memory_map_scroll: Scroll::default(),
+            memory_map_selected: 0,
+            memory_map_viewport_height: 0,
             current_pc: 0,
             output: Vec::new(),
             output_scroll: Scroll::default(),
@@ -293,6 +337,15 @@ impl State {
             current_source_file: None,
             current_source_line: None,
             source_lines: Vec::new(),
+            symbols: Vec::new(),
+            symbols_scroll: Scroll::default(),
+            symbols_selected: 0,
+            symbols_viewport_height: 0,
+            symbol_asm: Vec::new(),
+            symbol_asm_scroll: Scroll::default(),
+            symbols_viewing_asm: false,
+            symbols_search_active: false,
+            symbols_search_input: Input::default(),
         }
     }
 }
@@ -393,6 +446,26 @@ impl State {
         }
         (is_stack, is_heap, is_text)
     }
+
+    /// Get filtered symbols based on search input
+    pub fn get_filtered_symbols(&self) -> Vec<(usize, &Symbol)> {
+        // Filter based on search input, regardless of whether search mode is active
+        if self.symbols_search_input.value().is_empty() {
+            return self.symbols.iter().enumerate().collect();
+        }
+
+        let search_term = self.symbols_search_input.value().to_lowercase();
+        self.symbols
+            .iter()
+            .enumerate()
+            .filter(|(_, sym)| {
+                // Simple fuzzy matching: check if all characters in search appear in order
+                let name_lower = sym.name.to_lowercase();
+                let mut name_chars = name_lower.chars();
+                search_term.chars().all(|c| name_chars.any(|nc| nc == c))
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -416,6 +489,10 @@ enum Written {
     SymbolAtAddrStack(String),
     /// Requested size of arch ptr for `ptr_size`
     SizeOfVoidStar,
+    /// Requested list of all symbols
+    SymbolList,
+    /// Requested disassembly of a specific symbol by name
+    SymbolDisassembly(String),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -576,13 +653,33 @@ fn run_app<B: Backend>(
                     let mut state = state_share.state.lock().unwrap();
                     state.hexdump_popup.handle_event(&Event::Key(key));
                 }
+                // quit confirmation
+                (_, KeyCode::Enter, Mode::QuitConfirmation) => {
+                    return Ok(());
+                }
+                (_, KeyCode::Esc, Mode::QuitConfirmation) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = state.previous_mode;
+                }
                 // Input
-                (InputMode::Normal, KeyCode::Char('i'), _) => {
+                (InputMode::Normal, KeyCode::Char('i'), _)
+                    if {
+                        let state = state_share.state.lock().unwrap();
+                        !(state.mode == Mode::OnlySymbols && state.symbols_search_active)
+                    } =>
+                {
                     let mut state = state_share.state.lock().unwrap();
                     state.input_mode = InputMode::Editing;
                 }
-                (InputMode::Normal, KeyCode::Char('q'), _) => {
-                    return Ok(());
+                (InputMode::Normal, KeyCode::Char('q'), _)
+                    if {
+                        let state = state_share.state.lock().unwrap();
+                        state.mode != Mode::QuitConfirmation
+                    } =>
+                {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.previous_mode = state.mode;
+                    state.mode = Mode::QuitConfirmation;
                 }
                 // Modes
                 (InputMode::Normal, KeyCode::Tab, _) => {
@@ -616,6 +713,14 @@ fn run_app<B: Backend>(
                 (_, KeyCode::F(7), _) => {
                     let mut state = state_share.state.lock().unwrap();
                     state.mode = Mode::OnlyHexdump;
+                }
+                (_, KeyCode::F(8), _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = Mode::OnlySymbols;
+                    if state.symbols.is_empty() {
+                        state.next_write.push(mi::info_functions());
+                        state.written.push_back(Written::SymbolList);
+                    }
                 }
                 (InputMode::Editing, KeyCode::Esc, _) => {
                     let mut state = state_share.state.lock().unwrap();
@@ -688,36 +793,94 @@ fn run_app<B: Backend>(
                 // memory mapping
                 (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyMapping) => {
                     let mut state = state_share.state.lock().unwrap();
-                    state.output_scroll.reset();
+                    state.memory_map_selected = 0;
+                    state.memory_map_scroll.reset();
                 }
                 (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyMapping) => {
                     let mut state = state_share.state.lock().unwrap();
                     if let Some(memory) = state.memory_map.as_ref() {
                         let len = memory.len();
-                        state.memory_map_scroll.end(len);
+                        if len > 0 {
+                            state.memory_map_selected = len - 1;
+                            state.memory_map_scroll.end(len);
+                        }
                     }
                 }
                 (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyMapping) => {
                     let mut state = state_share.state.lock().unwrap();
                     if let Some(memory) = state.memory_map.as_ref() {
-                        let len = memory.len() / HEXDUMP_WIDTH;
-                        state.memory_map_scroll.down(1, len);
+                        let len = memory.len();
+                        if state.memory_map_selected < len.saturating_sub(1) {
+                            state.memory_map_selected += 1;
+                            let selected_screen_pos = (state.memory_map_selected + 1)
+                                .saturating_sub(state.memory_map_scroll.scroll);
+                            if selected_screen_pos >= state.memory_map_viewport_height as usize {
+                                let target_scroll = state.memory_map_selected + 2
+                                    - state.memory_map_viewport_height as usize;
+                                state.memory_map_scroll.scroll = target_scroll;
+                                state.memory_map_scroll.state =
+                                    state.memory_map_scroll.state.position(target_scroll);
+                            }
+                        }
                     }
                 }
                 (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyMapping) => {
                     let mut state = state_share.state.lock().unwrap();
-                    state.memory_map_scroll.up(1);
+                    if state.memory_map_selected > 0 {
+                        state.memory_map_selected -= 1;
+                        if (state.memory_map_selected + 1) < state.memory_map_scroll.scroll {
+                            let target_scroll = state.memory_map_selected + 1;
+                            state.memory_map_scroll.scroll = target_scroll;
+                            state.memory_map_scroll.state =
+                                state.memory_map_scroll.state.position(target_scroll);
+                        }
+                    }
                 }
                 (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyMapping) => {
                     let mut state = state_share.state.lock().unwrap();
                     if let Some(memory) = state.memory_map.as_ref() {
-                        let len = memory.len() / HEXDUMP_WIDTH;
-                        state.memory_map_scroll.down(50, len);
+                        let len = memory.len();
+                        let new_selected =
+                            (state.memory_map_selected + 50).min(len.saturating_sub(1));
+                        state.memory_map_selected = new_selected;
+                        let selected_screen_pos = (state.memory_map_selected + 1)
+                            .saturating_sub(state.memory_map_scroll.scroll);
+                        if selected_screen_pos >= state.memory_map_viewport_height as usize {
+                            let target_scroll = state.memory_map_selected + 2
+                                - state.memory_map_viewport_height as usize;
+                            state.memory_map_scroll.scroll = target_scroll;
+                            state.memory_map_scroll.state =
+                                state.memory_map_scroll.state.position(target_scroll);
+                        }
                     }
                 }
                 (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyMapping) => {
                     let mut state = state_share.state.lock().unwrap();
-                    state.memory_map_scroll.up(50);
+                    let new_selected = state.memory_map_selected.saturating_sub(50);
+                    state.memory_map_selected = new_selected;
+                    if (state.memory_map_selected + 1) < state.memory_map_scroll.scroll {
+                        let target_scroll = state.memory_map_selected + 1;
+                        state.memory_map_scroll.scroll = target_scroll;
+                        state.memory_map_scroll.state =
+                            state.memory_map_scroll.state.position(target_scroll);
+                    }
+                }
+                (InputMode::Normal, KeyCode::Char('H'), Mode::OnlyMapping) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    if let Some(memory_map) = state.memory_map.as_ref() {
+                        if let Some(selected_mapping) = memory_map.get(state.memory_map_selected) {
+                            let s = data_read_memory_bytes(
+                                selected_mapping.start_address,
+                                0,
+                                selected_mapping.size,
+                            );
+                            state.next_write.push(s);
+                            state.written.push_back(Written::Memory);
+
+                            state.mode = Mode::OnlyHexdump;
+                            state.hexdump_scroll.reset();
+                        }
+                    }
                 }
                 // hexdump
                 (InputMode::Normal, KeyCode::Char('g'), Mode::OnlyHexdump) => {
@@ -781,6 +944,189 @@ fn run_app<B: Backend>(
                     let mut state = state_share.state.lock().unwrap();
                     state.hexdump_scroll.up(50);
                 }
+                // symbols - list navigation
+                (InputMode::Normal, KeyCode::Char('r'), Mode::OnlySymbols)
+                | (InputMode::Normal, KeyCode::Char('R'), Mode::OnlySymbols)
+                    if {
+                        let state = state_share.state.lock().unwrap();
+                        !state.symbols_search_active
+                    } =>
+                {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.next_write.push(mi::info_functions());
+                    state.written.push_back(Written::SymbolList);
+                }
+                (InputMode::Normal, KeyCode::Char('g'), Mode::OnlySymbols)
+                    if {
+                        let state = state_share.state.lock().unwrap();
+                        !state.symbols_search_active
+                    } =>
+                {
+                    let mut state = state_share.state.lock().unwrap();
+                    if state.symbols_viewing_asm {
+                        state.symbol_asm_scroll.reset();
+                    } else {
+                        state.symbols_selected = 0;
+                        state.symbols_scroll.reset();
+                    }
+                }
+                (InputMode::Normal, KeyCode::Char('G'), Mode::OnlySymbols)
+                    if {
+                        let state = state_share.state.lock().unwrap();
+                        !state.symbols_search_active
+                    } =>
+                {
+                    let mut state = state_share.state.lock().unwrap();
+                    if state.symbols_viewing_asm {
+                        let len = state.symbol_asm.len() + 1; // +1 for header
+                        state.symbol_asm_scroll.end(len);
+                    } else {
+                        let len = state.get_filtered_symbols().len();
+                        if len > 0 {
+                            state.symbols_selected = len - 1;
+                            state.symbols_scroll.end(len + 1); // +1 for header
+                        }
+                    }
+                }
+                (InputMode::Normal, KeyCode::Char('j'), Mode::OnlySymbols)
+                    if {
+                        let state = state_share.state.lock().unwrap();
+                        !state.symbols_search_active
+                    } =>
+                {
+                    let mut state = state_share.state.lock().unwrap();
+                    if state.symbols_viewing_asm {
+                        let len = state.symbol_asm.len() + 1;
+                        state.symbol_asm_scroll.down(1, len);
+                    } else {
+                        let len = state.get_filtered_symbols().len();
+                        if state.symbols_selected < len.saturating_sub(1) {
+                            state.symbols_selected += 1;
+                            let selected_screen_pos = (state.symbols_selected + 1)
+                                .saturating_sub(state.symbols_scroll.scroll);
+                            if selected_screen_pos >= state.symbols_viewport_height as usize {
+                                let target_scroll = state.symbols_selected + 2
+                                    - state.symbols_viewport_height as usize;
+                                state.symbols_scroll.scroll = target_scroll;
+                                state.symbols_scroll.state =
+                                    state.symbols_scroll.state.position(target_scroll);
+                            }
+                        }
+                    }
+                }
+                (InputMode::Normal, KeyCode::Char('k'), Mode::OnlySymbols)
+                    if {
+                        let state = state_share.state.lock().unwrap();
+                        !state.symbols_search_active
+                    } =>
+                {
+                    let mut state = state_share.state.lock().unwrap();
+                    if state.symbols_viewing_asm {
+                        state.symbol_asm_scroll.up(1);
+                    } else if state.symbols_selected > 0 {
+                        state.symbols_selected -= 1;
+                        if (state.symbols_selected + 1) < state.symbols_scroll.scroll {
+                            let target_scroll = state.symbols_selected + 1;
+                            state.symbols_scroll.scroll = target_scroll;
+                            state.symbols_scroll.state =
+                                state.symbols_scroll.state.position(target_scroll);
+                        }
+                    }
+                }
+                (InputMode::Normal, KeyCode::Char('J'), Mode::OnlySymbols)
+                    if {
+                        let state = state_share.state.lock().unwrap();
+                        !state.symbols_search_active
+                    } =>
+                {
+                    let mut state = state_share.state.lock().unwrap();
+                    if state.symbols_viewing_asm {
+                        let len = state.symbol_asm.len() + 1;
+                        state.symbol_asm_scroll.down(50, len);
+                    } else {
+                        let len = state.get_filtered_symbols().len();
+                        let new_selected = (state.symbols_selected + 50).min(len.saturating_sub(1));
+                        state.symbols_selected = new_selected;
+                        let selected_screen_pos = (state.symbols_selected + 1)
+                            .saturating_sub(state.symbols_scroll.scroll);
+                        if selected_screen_pos >= state.symbols_viewport_height as usize {
+                            let target_scroll =
+                                state.symbols_selected + 2 - state.symbols_viewport_height as usize;
+                            state.symbols_scroll.scroll = target_scroll;
+                            state.symbols_scroll.state =
+                                state.symbols_scroll.state.position(target_scroll);
+                        }
+                    }
+                }
+                (InputMode::Normal, KeyCode::Char('K'), Mode::OnlySymbols)
+                    if {
+                        let state = state_share.state.lock().unwrap();
+                        !state.symbols_search_active
+                    } =>
+                {
+                    let mut state = state_share.state.lock().unwrap();
+                    if state.symbols_viewing_asm {
+                        state.symbol_asm_scroll.up(50);
+                    } else {
+                        let new_selected = state.symbols_selected.saturating_sub(50);
+                        state.symbols_selected = new_selected;
+                        if (state.symbols_selected + 1) < state.symbols_scroll.scroll {
+                            let target_scroll = state.symbols_selected + 1;
+                            state.symbols_scroll.scroll = target_scroll;
+                            state.symbols_scroll.state =
+                                state.symbols_scroll.state.position(target_scroll);
+                        }
+                    }
+                }
+                (InputMode::Normal, KeyCode::Enter, Mode::OnlySymbols)
+                    if {
+                        let state = state_share.state.lock().unwrap();
+                        !state.symbols_search_active
+                    } =>
+                {
+                    let mut state = state_share.state.lock().unwrap();
+                    if !state.symbols_viewing_asm {
+                        let filtered = state.get_filtered_symbols();
+                        if let Some((_original_index, symbol)) =
+                            filtered.get(state.symbols_selected)
+                        {
+                            let symbol = (*symbol).clone();
+                            drop(filtered);
+
+                            let cmd = mi::data_disassemble(symbol.address as usize, 500);
+                            state.next_write.push(cmd);
+                            state.written.push_back(Written::SymbolDisassembly(symbol.name));
+                            state.symbol_asm_scroll.reset();
+                            state.symbols_viewing_asm = true;
+                        }
+                    }
+                }
+                (_, KeyCode::Esc, Mode::OnlySymbols) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    if state.symbols_search_active {
+                        state.symbols_search_active = false;
+                    } else if state.symbols_viewing_asm {
+                        state.symbols_viewing_asm = false;
+                    }
+                }
+                (InputMode::Normal, KeyCode::Enter, Mode::OnlySymbols)
+                    if {
+                        let state = state_share.state.lock().unwrap();
+                        state.symbols_search_active
+                    } =>
+                {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.symbols_search_active = false;
+                }
+                (InputMode::Normal, KeyCode::Char('/'), Mode::OnlySymbols) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    if !state.symbols_viewing_asm {
+                        state.symbols_search_input = Input::default();
+                        state.symbols_search_active = true;
+                        state.symbols_selected = 0;
+                        state.symbols_scroll.reset();
+                    }
+                }
                 (_, KeyCode::Tab, _) => {
                     let mut state = state_share.state.lock().unwrap();
                     completion(app, &mut state)?;
@@ -796,6 +1142,17 @@ fn run_app<B: Backend>(
                 (_, KeyCode::Up, _) => {
                     let mut state = state_share.state.lock().unwrap();
                     key_up(&mut state);
+                }
+                (InputMode::Normal, _, Mode::OnlySymbols)
+                    if {
+                        let state = state_share.state.lock().unwrap();
+                        state.symbols_search_active
+                    } =>
+                {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.symbols_search_input.handle_event(&Event::Key(key));
+                    state.symbols_selected = 0;
+                    state.symbols_scroll.reset();
                 }
                 (InputMode::Editing, _, _) => {
                     let mut state = state_share.state.lock().unwrap();

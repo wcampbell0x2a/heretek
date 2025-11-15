@@ -14,6 +14,7 @@ pub fn stream_output(
     s: &str,
     state: &mut State,
     current_map: &mut (Option<Mapping>, String),
+    current_symbols: &mut String,
 ) {
     if s.starts_with("The target endianness") {
         state.endian = if s.contains("little") {
@@ -68,6 +69,12 @@ pub fn stream_output(
     }
     if current_map.0.is_some() {
         current_map.1.push_str(s);
+        return;
+    }
+
+    use crate::Written;
+    if let Some(Written::SymbolList) = state.written.front() {
+        current_symbols.push_str(s);
         return;
     }
 

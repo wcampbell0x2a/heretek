@@ -8,7 +8,7 @@ use super::{BLUE, ORANGE, SCROLL_CONTROL_TEXT};
 use crate::State;
 
 pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
-    let title = format!("Memory Mapping {SCROLL_CONTROL_TEXT}");
+    let title = format!("Memory Mapping {SCROLL_CONTROL_TEXT}, Hexdump(H)");
 
     let mut rows = vec![];
     rows.push(
@@ -17,8 +17,8 @@ pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
     );
     let memory_map = state.memory_map.clone();
     if let Some(memory_map) = memory_map.as_ref() {
-        for m in memory_map {
-            let row = Row::new([
+        for (index, m) in memory_map.iter().enumerate() {
+            let mut row = Row::new([
                 format!("0x{:08x}", m.start_address),
                 format!("0x{:08x}", m.end_address),
                 format!("0x{:08x}", m.size),
@@ -26,6 +26,10 @@ pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
                 m.permissions.clone().unwrap_or("".to_string()),
                 m.path.clone().unwrap_or("".to_string()),
             ]);
+            // Highlight the selected row
+            if index == state.memory_map_selected {
+                row = row.style(Style::new().fg(ORANGE).bold());
+            }
             rows.push(row);
         }
     }
@@ -33,6 +37,8 @@ pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
     let max = mapping_rect.height;
     let skip = if len <= max as usize { 0 } else { state.memory_map_scroll.scroll };
 
+    // Store viewport height for use in key handlers
+    state.memory_map_viewport_height = max;
     state.memory_map_scroll.state = state.memory_map_scroll.state.content_length(len);
     let rows: Vec<Row> = rows.into_iter().skip(skip).take(max as usize).collect();
 

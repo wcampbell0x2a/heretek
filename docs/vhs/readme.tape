@@ -34,13 +34,49 @@ Sleep 5s
 
 Escape
 Tab
-Sleep 5s
+# registers
+Sleep 2s
 Tab
-Sleep 5s
+# stack
+Sleep 2s
 Tab
-Sleep 5s
+# instructions
+Sleep 2s
 Tab
-Sleep 5s
+# output
+Sleep 2s
 Tab
-Sleep 5s
-
+# mapping
+Sleep 2s
+Type "j"
+Sleep 1s
+Type "j"
+Sleep 1s
+Tab
+# hexdump
+Sleep 2s
+Type "T"
+Sleep 1s
+Type "G"
+Sleep 1s
+Type "K"
+Sleep 1s
+Type "k"
+Sleep 1s
+Type "k"
+Sleep 1s
+Type "k"
+Sleep 2s
+Tab
+# symbols
+Type "r"
+Sleep 2s
+Type "j"
+Sleep 2s
+Type "j"
+Sleep 2s
+Type "j"
+Sleep 2s
+Enter
+Type "d"
+Sleep 2s

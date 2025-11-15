@@ -7,6 +7,7 @@ use output::draw_output;
 use ratatui::Frame;
 use ratatui::layout::Constraint::{Fill, Length, Min};
 use ratatui::layout::Layout;
+use ratatui::prelude::Stylize;
 use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::text::Span;
@@ -14,6 +15,7 @@ use ratatui::widgets::Paragraph;
 use registers::draw_registers;
 use source::draw_source;
 use stack::draw_stack;
+use symbols::draw_symbols;
 use title::draw_title_area;
 
 use crate::deref::Deref;
@@ -28,6 +30,7 @@ pub mod output;
 pub mod registers;
 pub mod source;
 pub mod stack;
+pub mod symbols;
 pub mod title;
 
 // Ayu bell colors
@@ -53,6 +56,80 @@ const SAVED_OUTPUT: usize = 10;
 pub const SAVED_STACK: u16 = 14;
 
 pub const SCROLL_CONTROL_TEXT: &str = "(up(k), down(j), 50 up(K), 50 down(J), top(g), bottom(G))";
+
+fn draw_mode_content(state: &mut State, f: &mut Frame, top: ratatui::layout::Rect, mode: Mode) {
+    match mode {
+        Mode::All => {
+            if state.registers.is_empty() {
+                let vertical = Layout::vertical([10 + 10 + 1 + 11]);
+                let [register] = vertical.areas(top);
+
+                draw_registers(state, f, register);
+                return;
+            }
+
+            let register_size = Min(10);
+            let stack_size = Length(10 + 1);
+            // 5 previous, 5 now + after
+            let asm_size = Length(11);
+
+            // Only show source if we have source information
+            if !state.source_lines.is_empty() && state.current_source_line.is_some() {
+                let source_size = Fill(1);
+                let vertical = Layout::vertical([register_size, stack_size, asm_size, source_size]);
+                let [register, stack, asm, source] = vertical.areas(top);
+
+                draw_registers(state, f, register);
+                draw_stack(state, f, stack);
+                draw_asm(state, f, asm);
+                draw_source(state, f, source);
+            } else {
+                let vertical = Layout::vertical([register_size, stack_size, asm_size]);
+                let [register, stack, asm] = vertical.areas(top);
+
+                draw_registers(state, f, register);
+                draw_stack(state, f, stack);
+                draw_asm(state, f, asm);
+            }
+        }
+        Mode::OnlyRegister => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            draw_registers(state, f, all);
+        }
+        Mode::OnlyStack => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            draw_stack(state, f, all);
+        }
+        Mode::OnlyInstructions => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            draw_asm(state, f, all);
+        }
+        Mode::OnlyMapping => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            draw_mapping(state, f, all);
+        }
+        Mode::OnlyHexdump => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            draw_hexdump(state, f, all, false);
+        }
+        Mode::OnlyHexdumpPopup => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            draw_hexdump(state, f, all, true);
+        }
+        Mode::OnlySymbols => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            draw_symbols(state, f, all);
+        }
+        _ => (),
+    }
+}
 
 pub fn ui(f: &mut Frame, state: &mut State) {
     let (completions, bt_len, mode) = { (state.completions.clone(), state.bt.len(), state.mode) };
@@ -132,71 +209,14 @@ pub fn ui(f: &mut Frame, state: &mut State) {
         top
     };
 
-    match mode {
-        Mode::All => {
-            if state.registers.is_empty() {
-                let vertical = Layout::vertical([10 + 10 + 1 + 11]);
-                let [register] = vertical.areas(top);
+    let display_mode =
+        if matches!(mode, Mode::QuitConfirmation) { state.previous_mode } else { mode };
 
-                draw_registers(state, f, register);
-                return;
-            }
+    draw_mode_content(state, f, top, display_mode);
 
-            let register_size = Min(10);
-            let stack_size = Length(10 + 1);
-            // 5 previous, 5 now + after
-            let asm_size = Length(11);
-
-            // Only show source if we have source information
-            if !state.source_lines.is_empty() && state.current_source_line.is_some() {
-                let source_size = Fill(1);
-                let vertical = Layout::vertical([register_size, stack_size, asm_size, source_size]);
-                let [register, stack, asm, source] = vertical.areas(top);
-
-                draw_registers(state, f, register);
-                draw_stack(state, f, stack);
-                draw_asm(state, f, asm);
-                draw_source(state, f, source);
-            } else {
-                let vertical = Layout::vertical([register_size, stack_size, asm_size]);
-                let [register, stack, asm] = vertical.areas(top);
-
-                draw_registers(state, f, register);
-                draw_stack(state, f, stack);
-                draw_asm(state, f, asm);
-            }
-        }
-        Mode::OnlyRegister => {
-            let vertical = Layout::vertical([Fill(1)]);
-            let [all] = vertical.areas(top);
-            draw_registers(state, f, all);
-        }
-        Mode::OnlyStack => {
-            let vertical = Layout::vertical([Fill(1)]);
-            let [all] = vertical.areas(top);
-            draw_stack(state, f, all);
-        }
-        Mode::OnlyInstructions => {
-            let vertical = Layout::vertical([Fill(1)]);
-            let [all] = vertical.areas(top);
-            draw_asm(state, f, all);
-        }
-        Mode::OnlyMapping => {
-            let vertical = Layout::vertical([Fill(1)]);
-            let [all] = vertical.areas(top);
-            draw_mapping(state, f, all);
-        }
-        Mode::OnlyHexdump => {
-            let vertical = Layout::vertical([Fill(1)]);
-            let [all] = vertical.areas(top);
-            draw_hexdump(state, f, all, false);
-        }
-        Mode::OnlyHexdumpPopup => {
-            let vertical = Layout::vertical([Fill(1)]);
-            let [all] = vertical.areas(top);
-            draw_hexdump(state, f, all, true);
-        }
-        _ => (),
+    // Draw quit confirmation popup on top if in quit confirmation mode
+    if matches!(mode, Mode::QuitConfirmation) {
+        draw_quit_confirmation(f);
     }
 }
 
@@ -266,4 +286,29 @@ pub fn add_deref_to_span(
     if spans.len() > *longest_cells {
         *longest_cells = spans.len();
     }
+}
+
+fn quit_popup_area(area: ratatui::layout::Rect) -> ratatui::layout::Rect {
+    use ratatui::layout::{Constraint, Flex};
+    let vertical = Layout::vertical([Constraint::Length(3)]).flex(Flex::Center);
+    let horizontal = Layout::horizontal([Constraint::Percentage(60)]).flex(Flex::Center);
+    let [area] = vertical.areas(area);
+    let [area] = horizontal.areas(area);
+    area
+}
+
+fn draw_quit_confirmation(f: &mut Frame) {
+    use ratatui::widgets::{Block, Borders, Clear};
+    let area = quit_popup_area(f.area());
+    let message =
+        Paragraph::new("Are you sure you want to exit? (Enter to confirm, Esc to cancel)")
+            .style(Style::default())
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Quit Confirmation".fg(YELLOW))
+                    .border_style(Style::default().fg(ORANGE)),
+            );
+    f.render_widget(Clear, area);
+    f.render_widget(message, area);
 }

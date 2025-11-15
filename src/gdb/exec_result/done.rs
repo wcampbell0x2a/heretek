@@ -7,14 +7,18 @@ use crate::mi::{
 };
 use crate::{Bt, State};
 
+use super::recv::symbols::recv_exec_result_symbols;
+
 pub fn exec_result_done(
     state: &mut State,
     kv: &HashMap<String, String>,
     current_map: &mut (Option<Mapping>, String),
+    current_symbols: &mut String,
 ) {
     // at this point, current_map was written in completion from StreamOutput
     // NOTE: We might be able to reduce the amount of time this is called
     exec_result_done_memory_map(state, current_map);
+    exec_result_done_symbols(state, current_symbols);
 
     // result from -stack-list-frames
     // ^done,stack=[frame={level="0",addr="0x0000555555804a50",func="main",arch="i386:x86-64"},frame={level="1",addr="0x00007ffff7ca1488",func="??",from="/usr/lib/libc.so.6",arch="i386:x86-64"},frame={level="2",addr="0x00007ffff7ca154c",func="__libc_start_main",from="/usr/lib/libc.so.6",arch="i386:x86-64"},frame={level="3",addr="0x00005555557bdcc5",func="_start",arch="i386:x86-64"}]
@@ -67,5 +71,12 @@ fn exec_result_done_memory_map(state: &mut State, current_map: &mut (Option<Mapp
                 state.memory_map.as_ref().unwrap()[0].path.clone().unwrap_or("".to_owned()),
             ));
         }
+    }
+}
+
+fn exec_result_done_symbols(state: &mut State, current_symbols: &mut String) {
+    if !current_symbols.is_empty() {
+        recv_exec_result_symbols(state, current_symbols);
+        current_symbols.clear();
     }
 }

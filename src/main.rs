@@ -27,6 +27,7 @@ use std::{env, thread};
 
 use anyhow::Context;
 use clap::{Parser, ValueEnum};
+use clap_cargo::style::CLAP_STYLING;
 use crossterm::event::KeyModifiers;
 use deku::ctx::Endian;
 use deref::Deref;
@@ -96,7 +97,7 @@ impl<T> LimitedBuffer<T> {
 }
 
 #[derive(Parser, Debug, Clone, Default)]
-#[command(version, about, long_about = None)]
+#[command(version, about, long_about = None, styles = CLAP_STYLING)]
 struct Args {
     /// Override gdb executable path
     #[arg(long)]

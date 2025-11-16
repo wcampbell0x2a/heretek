@@ -13,6 +13,7 @@ ansi-to-tui = "7.0.0"
 anyhow = "1.0.98"
 chrono = "0.4.38"
 clap = { version = "4.5.21", features = ["derive"] }
+clap-cargo = "0.14.1"
 crossterm = "0.28.1"
 deku = { version = "0.18.1", default-features = false, features = ["alloc", "std"] }
 env_logger = "0.11.5"

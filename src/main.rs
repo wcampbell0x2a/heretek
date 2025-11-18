@@ -28,14 +28,13 @@ use std::{env, thread};
 use anyhow::Context;
 use clap::{Parser, ValueEnum};
 use clap_cargo::style::CLAP_STYLING;
-use crossterm::event::KeyModifiers;
 use deku::ctx::Endian;
 use deref::Deref;
 use env_logger::{Builder, Env};
 use gdb::write_mi;
 use log::{debug, error};
 use ratatui::crossterm::{
-    event::{self, DisableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
     terminal::{LeaveAlternateScreen, disable_raw_mode},
 };
@@ -628,7 +627,7 @@ fn run_app<B: Backend>(
                 // if else, we display them
             }
         }
-        if crossterm::event::poll(Duration::from_millis(10))?
+        if event::poll(Duration::from_millis(10))?
             && let Event::Key(key) = event::read()?
         {
             if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {

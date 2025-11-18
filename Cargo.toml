@@ -14,7 +14,6 @@ anyhow = "1.0.98"
 chrono = "0.4.38"
 clap = { version = "4.5.21", features = ["derive"] }
 clap-cargo = "0.18.0"
-crossterm = "0.29.0"
 deku = { version = "0.20.0", default-features = false, features = ["alloc", "std"] }
 env_logger = "0.11.5"
 evalexpr = "13.0.0"

@@ -151,6 +151,7 @@ enum Mode {
     OnlyHexdump,
     OnlyHexdumpPopup,
     OnlySymbols,
+    OnlySource,
     QuitConfirmation,
 }
 
@@ -166,6 +167,7 @@ impl Mode {
             Mode::OnlyHexdump => 6,
             Mode::OnlyHexdumpPopup => 6,
             Mode::OnlySymbols => 7,
+            Mode::OnlySource => 8,
             Mode::QuitConfirmation => 0,
         }
     }
@@ -180,7 +182,8 @@ impl Mode {
             Mode::OnlyMapping => Mode::OnlyHexdump,
             Mode::OnlyHexdump => Mode::OnlySymbols,
             Mode::OnlyHexdumpPopup => Mode::OnlyHexdumpPopup,
-            Mode::OnlySymbols => Mode::All,
+            Mode::OnlySymbols => Mode::OnlySource,
+            Mode::OnlySource => Mode::All,
             Mode::QuitConfirmation => Mode::QuitConfirmation,
         }
     }
@@ -302,6 +305,8 @@ struct State {
     current_source_file: Option<String>,
     current_source_line: Option<u32>,
     source_lines: Vec<String>,
+    /// Current source language detected by GDB
+    source_language: Option<String>,
     /// Symbol browser
     symbols: Vec<Symbol>,
     symbols_scroll: Scroll,
@@ -353,6 +358,7 @@ impl State {
             current_source_file: None,
             current_source_line: None,
             source_lines: Vec::new(),
+            source_language: None,
             symbols: Vec::new(),
             symbols_scroll: Scroll::default(),
             symbols_selected: 0,
@@ -738,6 +744,10 @@ fn run_app<B: Backend>(
                         state.next_write.push(mi::info_functions());
                         state.written.push_back(Written::SymbolList);
                     }
+                }
+                (_, KeyCode::F(9), _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = Mode::OnlySource;
                 }
                 (InputMode::Editing, KeyCode::Esc, _) => {
                     let mut state = state_share.state.lock().unwrap();

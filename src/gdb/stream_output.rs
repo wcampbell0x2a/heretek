@@ -29,6 +29,37 @@ pub fn stream_output(
         return;
     }
 
+    if s.starts_with("The current source language") {
+        let unescaped = s.replace(r#"\""#, "\"");
+
+        if let Some(is_idx) = unescaped.find(" is ") {
+            let after_is = &unescaped[is_idx + 4..];
+            if let Some(quote_start) = after_is.find('"') {
+                let after_quote = &after_is[quote_start + 1..];
+
+                let language = if let Some(currently_idx) = after_quote.find("currently ") {
+                    let lang_start = currently_idx + 10;
+                    let after_currently = &after_quote[lang_start..];
+                    let end_idx = after_currently
+                        .find('"')
+                        .or_else(|| after_currently.find('.'))
+                        .unwrap_or(after_currently.len());
+                    after_currently[..end_idx].trim()
+                } else {
+                    let end_idx = after_quote
+                        .find('"')
+                        .or_else(|| after_quote.find('.'))
+                        .unwrap_or(after_quote.len());
+                    after_quote[..end_idx].trim()
+                };
+
+                state.source_language = Some(language.to_string());
+                debug!("detected source language: {}", language);
+            }
+        }
+        return;
+    }
+
     // When using attach, assume the first symbols found are the text field
     // StreamOutput("~", "Reading symbols from /home/wcampbell/a.out...\n")
     if state.filepath.is_none() {
@@ -273,5 +304,25 @@ mod tests {
         );
 
         assert_eq!(state.filepath, Some(PathBuf::from("/original/path"))); // should not change
+    }
+
+    #[rstest]
+    #[case(r#"The current source language is \"auto; currently c\"."#, "c")]
+    #[case(r#"The current source language is \"auto; currently rust\"."#, "rust")]
+    #[case(r#"The current source language is \"auto; currently c++\"."#, "c++")]
+    #[case(r#"The current source language is \"c\"."#, "c")]
+    #[case(r#"The current source language is \"rust\"."#, "rust")]
+    #[case(r#"The current source language is \"c++\"."#, "c++")]
+    #[case(r#"The current source language is \"auto; currently c\".\n"#, "c")]
+    #[case(r#"The current source language is \"rust\".\n"#, "rust")]
+    fn test_stream_output_language_detection(#[case] input: &str, #[case] expected_lang: &str) {
+        let mut state = create_test_state();
+        let mut current_map = (None, String::new());
+        let mut current_symbols = String::new();
+
+        stream_output("~", input, &mut state, &mut current_map, &mut current_symbols);
+
+        assert_eq!(state.source_language, Some(expected_lang.to_string()));
+        assert_eq!(state.output.len(), 0); // should not be added to output
     }
 }

@@ -4,7 +4,7 @@ expression: output
 snapshot_kind: text
 ---
 "────────────────────────────────────────────────────────────────────────|heretek-v0.7.0|──────────────────────────────── | Heap | Stack | Code | String | Asm | "
-" F1 Main | F2 Registers | F3 Stack | F4 Instructions | F5 Output | F6 Mapping | F7 Hexdump | F8 Symbols                                                         "
+" F1 Main | F2 Registers | F3 Stack | F4 Instructions | F5 Output | F6 Mapping | F7 Hexdump | F8 Symbols | F9 Source                                             "
 "Registers──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────▲"
 "  rax     → 0x401825           → main+0 (push   rbp)                                                                                                           █"
 "  rbx     → 0x1                                                                                                                                                ║"

@@ -82,6 +82,8 @@ fn async_record_stopped(state: &mut State, kv: &HashMap<String, String>) {
     // Get endian
     state.next_write.push(r#"-interpreter-exec console "show endian""#.to_string());
     // TODO: We only need to do this once
+    // Get source language
+    state.next_write.push(r#"-interpreter-exec console "show language""#.to_string());
     state.next_write.push("-data-list-register-names".to_string());
     // When a breakpoint is hit, query for register values
     state.next_write.push("-data-list-register-values x".to_string());
@@ -95,6 +97,8 @@ fn async_record_stopped(state: &mut State, kv: &HashMap<String, String>) {
         debug!("Source location from stopped event: {fullname}:{line}");
 
         if let Ok(line_num) = line.parse::<u32>() {
+            let file_changed = state.current_source_file.as_ref() != Some(fullname);
+
             state.current_source_file = Some(fullname.clone());
             state.current_source_line = Some(line_num);
 
@@ -107,12 +111,18 @@ fn async_record_stopped(state: &mut State, kv: &HashMap<String, String>) {
                 warn!("Could not read source file: {fullname}");
                 state.source_lines.clear();
             }
+
+            if file_changed {
+                state.next_write.push(r#"-interpreter-exec console "show language""#.to_string());
+            }
         }
     } else if let (Some(file), Some(line)) = (kv.get("file"), kv.get("line")) {
         // Fallback to 'file' if 'fullname' is not available
         debug!("Source location from stopped event (fallback): {file}:{line}");
 
         if let Ok(line_num) = line.parse::<u32>() {
+            let file_changed = state.current_source_file.as_ref() != Some(file);
+
             state.current_source_file = Some(file.clone());
             state.current_source_line = Some(line_num);
 
@@ -124,6 +134,10 @@ fn async_record_stopped(state: &mut State, kv: &HashMap<String, String>) {
             } else {
                 warn!("Could not read source file: {file}");
                 state.source_lines.clear();
+            }
+
+            if file_changed {
+                state.next_write.push(r#"-interpreter-exec console "show language""#.to_string());
             }
         }
     } else {

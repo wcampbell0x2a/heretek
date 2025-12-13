@@ -127,6 +127,11 @@ fn draw_mode_content(state: &mut State, f: &mut Frame, top: ratatui::layout::Rec
             let [all] = vertical.areas(top);
             draw_symbols(state, f, all);
         }
+        Mode::OnlySource => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            draw_source(state, f, all);
+        }
         _ => (),
     }
 }

@@ -254,6 +254,8 @@ struct State {
     next_write: Vec<String>,
     /// Stack of what was written to gdb that is expected back in order to parse correctly
     written: VecDeque<Written>,
+    /// Waiting for execution to stop (after si, continue, step, run, etc.)
+    executing: bool,
     /// -32 bit mode
     ptr_size: PtrSize,
     /// Current filepath of .text
@@ -326,6 +328,7 @@ impl State {
         State {
             next_write: vec![],
             written: VecDeque::new(),
+            executing: false,
             ptr_size: args.ptr_size,
             filepath: None,
             endian: None,
@@ -633,7 +636,19 @@ fn run_app<B: Backend>(
                 // if else, we display them
             }
         }
-        if event::poll(Duration::from_millis(10))?
+        // Use fast polling when expecting GDB responses, slow polling when idle
+        let poll_timeout = {
+            let state = state_share.state.lock().unwrap();
+            if state.written.is_empty() && state.next_write.is_empty() && !state.executing {
+                // Idle: reduce CPU usage
+                Duration::from_millis(250)
+            } else {
+                // Active: fast updates
+                Duration::from_millis(10)
+            }
+        };
+
+        if event::poll(poll_timeout)?
             && let Event::Key(key) = event::read()?
         {
             if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -1273,6 +1288,7 @@ fn process_line(app: &mut App, state: &mut State, val: &str) {
         gdb::write_mi(&app.gdb_stdin, cmd);
         state.output.push(val);
 
+        state.executing = true;
         state.input.reset();
         return;
     } else if val.starts_with("at")
@@ -1284,6 +1300,7 @@ fn process_line(app: &mut App, state: &mut State, val: &str) {
         // Write original cmd
         gdb::write_mi(&app.gdb_stdin, &val);
         state.output.push(val);
+        state.executing = true;
         state.input.reset();
 
         let cmd = "-gdb-set disassembly-flavor intel";
@@ -1302,6 +1319,7 @@ fn process_line(app: &mut App, state: &mut State, val: &str) {
         gdb::write_mi(&app.gdb_stdin, cmd);
         state.output.push(val);
 
+        state.executing = true;
         state.input.reset();
         return;
     } else if val == "si" || val == "stepi" {
@@ -1309,6 +1327,7 @@ fn process_line(app: &mut App, state: &mut State, val: &str) {
         gdb::write_mi(&app.gdb_stdin, cmd);
         state.output.push(val);
 
+        state.executing = true;
         state.input.reset();
         return;
     } else if val == "step" {
@@ -1316,6 +1335,39 @@ fn process_line(app: &mut App, state: &mut State, val: &str) {
         gdb::write_mi(&app.gdb_stdin, cmd);
         state.output.push(val);
 
+        state.executing = true;
+        state.input.reset();
+        return;
+    } else if val == "ni" || val == "nexti" {
+        let cmd = "-exec-next-instruction";
+        gdb::write_mi(&app.gdb_stdin, cmd);
+        state.output.push(val);
+
+        state.executing = true;
+        state.input.reset();
+        return;
+    } else if val == "n" || val == "next" {
+        let cmd = "-exec-next";
+        gdb::write_mi(&app.gdb_stdin, cmd);
+        state.output.push(val);
+
+        state.executing = true;
+        state.input.reset();
+        return;
+    } else if val == "finish" || val == "fin" {
+        let cmd = "-exec-finish";
+        gdb::write_mi(&app.gdb_stdin, cmd);
+        state.output.push(val);
+
+        state.executing = true;
+        state.input.reset();
+        return;
+    } else if val.starts_with("until") || val.starts_with("u ") {
+        // For until, just pass through but mark as executing
+        gdb::write_mi(&app.gdb_stdin, &val);
+        state.output.push(val);
+
+        state.executing = true;
         state.input.reset();
         return;
     } else if val.starts_with("file") {

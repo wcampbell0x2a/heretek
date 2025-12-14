@@ -43,6 +43,9 @@ pub fn gdb_interact(gdb_stdout: BufReader<Box<dyn Read + Send>>, state: Arc<Mute
 }
 
 fn async_record_stopped(state: &mut State, kv: &HashMap<String, String>) {
+    // Execution has stopped, clear the executing flag for slower polling
+    state.executing = false;
+
     // in the case of a breakpoint, save the output
     // Either it's a breakpoint event, step, signal
     state.async_result.clear();

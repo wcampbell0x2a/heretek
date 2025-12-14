@@ -430,8 +430,19 @@ pub fn data_disassemble(start: usize, amt: usize) -> String {
     format!("-data-disassemble -s {start} -e {start}+{amt} -- 0")
 }
 
+#[allow(dead_code)]
+pub fn data_disassemble_function(name: &str) -> String {
+    // -data-disassemble with -n (function name) option
+    // Using mode 0 for disassembly only (no opcodes)
+    format!(r#"-data-disassemble -n "{name}" -- 0"#)
+}
+
 pub fn info_functions() -> String {
     r#"-interpreter-exec console "info functions""#.to_string()
+}
+
+pub fn info_address(symbol: &str) -> String {
+    format!(r#"-interpreter-exec console "info address {symbol}""#)
 }
 
 #[allow(dead_code)]
@@ -452,7 +463,6 @@ pub fn parse_symbol_list(input: &str) -> Vec<crate::Symbol> {
             || trimmed.starts_with("All defined functions:")
             || trimmed.starts_with("File ")
             || trimmed.starts_with("Non-debugging symbols:")
-            || trimmed.starts_with("static ")
         {
             continue;
         }
@@ -464,7 +474,26 @@ pub fn parse_symbol_list(input: &str) -> Vec<crate::Symbol> {
             && let Ok(address) = u64::from_str_radix(&parts[0][2..], 16)
         {
             let name = parts[1..].join(" ");
-            symbols.push(crate::Symbol { address, name });
+            symbols.push(crate::Symbol { address, name, needs_address_resolution: false });
+        } else if let Some(colon_pos) = trimmed.find(':')
+            && trimmed[..colon_pos].chars().all(|c| c.is_ascii_digit())
+        {
+            let after_colon = trimmed[colon_pos + 1..].trim();
+            if let Some(name) =
+                after_colon.strip_prefix("static fn ").or_else(|| after_colon.strip_prefix("fn "))
+            {
+                let name = name.trim_end_matches(';').trim().to_string();
+                if !name.is_empty() {
+                    // These symbols from "All defined functions:" don't have real addresses yet
+                    // Store line number as placeholder, will be resolved via info address
+                    let line_num = trimmed[..colon_pos].parse::<u64>().unwrap_or(0);
+                    symbols.push(crate::Symbol {
+                        address: line_num,
+                        name,
+                        needs_address_resolution: true,
+                    });
+                }
+            }
         }
     }
 
@@ -626,6 +655,44 @@ Non-debugging symbols:
         assert_eq!(symbols[3].address, 0x5678);
         assert_eq!(symbols[4].name, "main");
         assert_eq!(symbols[4].address, 0x1234);
+    }
+
+    #[test]
+    fn test_parse_symbol_list_rust_debug_format() {
+        let input = r"All defined functions:
+
+File /home/user/.rustup/toolchains/nightly/lib/rustlib/src/rust/library/core/src/fmt/mod.rs:
+815:    static fn core::fmt::Arguments::from_str(&str) -> core::fmt::Arguments;
+
+File /home/user/.rustup/toolchains/nightly/lib/rustlib/src/rust/library/core/src/ops/function.rs:
+250:    static fn core::ops::function::FnOnce::call_once<fn(), ()>(*mut fn (), ());
+250:    static fn core::ops::function::FnOnce::call_once<std::rt::lang_start::{closure_env#0}<()>, ()>(*mut std::rt::lang_start::{closure_env#0}<()>, ()) -> i32;
+
+File /home/user/.rustup/toolchains/nightly/lib/rustlib/src/rust/library/std/src/rt.rs:
+206:    static fn std::rt::lang_start::{closure#0}<()>() -> i32;
+199:    static fn std::rt::lang_start<()>(*mut fn (), isize, *mut *mut u8, u8) -> isize;
+
+Non-debugging symbols:
+0x0000000000001000  _start
+0x0000000000001020  _init";
+
+        let symbols = parse_symbol_list(input);
+
+        assert_eq!(symbols.len(), 7);
+
+        assert_eq!(symbols[0].name, "_init");
+        assert_eq!(symbols[0].address, 0x1020);
+        assert_eq!(symbols[1].name, "_start");
+        assert_eq!(symbols[1].address, 0x1000);
+
+        let rust_symbols: Vec<_> = symbols.iter().filter(|s| s.name.contains("::")).collect();
+        assert_eq!(rust_symbols.len(), 5);
+
+        assert!(symbols.iter().any(|s| s.name.starts_with("core::fmt::Arguments::from_str")));
+        assert!(
+            symbols.iter().any(|s| s.name.starts_with("core::ops::function::FnOnce::call_once"))
+        );
+        assert!(symbols.iter().any(|s| s.name.starts_with("std::rt::lang_start")));
     }
 
     #[test]

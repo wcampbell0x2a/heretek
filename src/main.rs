@@ -199,6 +199,8 @@ struct Bt {
 pub struct Symbol {
     pub address: u64,
     pub name: String,
+    /// True if this symbol's address is not yet resolved and needs `info address` lookup
+    pub needs_address_resolution: bool,
 }
 
 // TODO: this could be split up, some of these fields
@@ -316,6 +318,8 @@ struct State {
     symbols_viewport_height: u16,
     symbol_asm: Vec<Asm>,
     symbol_asm_scroll: Scroll,
+    /// Name of the symbol currently being viewed in ASM
+    symbol_asm_name: String,
     /// Whether we're viewing assembly for a selected symbol
     symbols_viewing_asm: bool,
     /// Symbol search
@@ -368,6 +372,7 @@ impl State {
             symbols_viewport_height: 0,
             symbol_asm: Vec::new(),
             symbol_asm_scroll: Scroll::default(),
+            symbol_asm_name: String::new(),
             symbols_viewing_asm: false,
             symbols_search_active: false,
             symbols_search_input: Input::default(),
@@ -519,6 +524,8 @@ enum Written {
     SymbolList,
     /// Requested disassembly of a specific symbol by name
     SymbolDisassembly(String),
+    /// Requested address lookup for symbol (to disassemble it next)
+    SymbolAddressLookup(String),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -1134,9 +1141,25 @@ fn run_app<B: Backend>(
                             let symbol = (*symbol).clone();
                             drop(filtered);
 
-                            let cmd = mi::data_disassemble(symbol.address as usize, 500);
-                            state.next_write.push(cmd);
-                            state.written.push_back(Written::SymbolDisassembly(symbol.name));
+                            // For symbols that need address resolution, query address first
+                            if symbol.needs_address_resolution {
+                                // Extract function name before generic parameters/arguments for GDB
+                                let name_for_gdb = if let Some(lt_pos) = symbol.name.find('<') {
+                                    symbol.name[..lt_pos].to_string()
+                                } else if let Some(paren_pos) = symbol.name.find('(') {
+                                    symbol.name[..paren_pos].to_string()
+                                } else {
+                                    symbol.name.clone()
+                                };
+                                let cmd = mi::info_address(&name_for_gdb);
+                                state.next_write.push(cmd);
+                                state.written.push_back(Written::SymbolAddressLookup(symbol.name));
+                            } else {
+                                // Use address directly for normal symbols
+                                let cmd = mi::data_disassemble(symbol.address as usize, 500);
+                                state.next_write.push(cmd);
+                                state.written.push_back(Written::SymbolDisassembly(symbol.name));
+                            }
                             state.symbol_asm_scroll.reset();
                             state.symbols_viewing_asm = true;
                         }

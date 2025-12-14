@@ -12,8 +12,9 @@ pub fn recv_exec_result_asm_insns(state: &mut State, asm: &String) {
     if let Written::AsmAtPc = last_written {
         state.asm = parse_asm_insns_values(asm).clone();
     }
-    if let Written::SymbolDisassembly(_name) = &last_written {
+    if let Written::SymbolDisassembly(name) = &last_written {
         state.symbol_asm = parse_asm_insns_values(asm).clone();
+        state.symbol_asm_name = name.clone();
     }
     if let Written::SymbolAtAddrRegister((base_reg, _n)) = &last_written {
         for RegisterStorage { name: _, register, deref } in &mut state.registers {

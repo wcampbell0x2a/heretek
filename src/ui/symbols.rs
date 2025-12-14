@@ -155,9 +155,9 @@ mod tests {
 
     fn create_test_symbols() -> Vec<Symbol> {
         vec![
-            Symbol { address: 0x401000, name: "main".to_string() },
-            Symbol { address: 0x401100, name: "foo".to_string() },
-            Symbol { address: 0x401200, name: "bar".to_string() },
+            Symbol { address: 0x401000, name: "main".to_string(), needs_address_resolution: false },
+            Symbol { address: 0x401100, name: "foo".to_string(), needs_address_resolution: false },
+            Symbol { address: 0x401200, name: "bar".to_string(), needs_address_resolution: false },
         ]
     }
 
@@ -255,7 +255,11 @@ mod tests {
         let mut state = create_test_state();
         // Create many symbols to require scrolling
         state.symbols = (0..100)
-            .map(|i| Symbol { address: 0x400000 + (i * 0x10), name: format!("func_{i}") })
+            .map(|i| Symbol {
+                address: 0x400000 + (i * 0x10),
+                name: format!("func_{i}"),
+                needs_address_resolution: false,
+            })
             .collect();
         state.symbols_scroll.scroll = 10;
 

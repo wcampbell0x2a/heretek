@@ -106,6 +106,24 @@ pub fn stream_output(
         return;
     }
 
+    if let Some(Written::SymbolAddressLookup(symbol_name)) = state.written.front() {
+        let symbol_name = symbol_name.clone();
+        if let Some(addr_start) = s.find(" at address ") {
+            let after_at = &s[addr_start + 12..];
+            let addr_end =
+                after_at.find('.').or_else(|| after_at.find(' ')).unwrap_or(after_at.len());
+            let addr_str = &after_at[..addr_end];
+            if let Some(hex_addr) = addr_str.strip_prefix("0x") {
+                if let Ok(address) = u64::from_str_radix(hex_addr, 16) {
+                    state.next_write.push(crate::mi::data_disassemble(address as usize, 500));
+                    state.written.pop_front();
+                    state.written.push_back(Written::SymbolDisassembly(symbol_name));
+                    return;
+                }
+            }
+        }
+    }
+
     let split: Vec<String> =
         s.split('\n').map(String::from).map(|a| a.trim_end().to_string()).collect();
     for s in split {

@@ -42,7 +42,10 @@ fn draw_symbol_list(state: &mut State, f: &mut Frame, area: Rect, viewing_asm: b
     } else if state.symbols_search_active {
         "Symbols - Search (Enter/Esc to finish)".to_string()
     } else if !state.symbols_search_input.value().is_empty() {
-        format!("Symbols - Filtered: \"{}\" (/ to reset)", state.symbols_search_input.value())
+        format!(
+            "Symbols - Filtered: \"{}\" {SCROLL_CONTROL_TEXT} ('/' to reset), Search(/), Refresh(r), Disasm(Enter)",
+            state.symbols_search_input.value()
+        )
     } else {
         format!("Symbols {SCROLL_CONTROL_TEXT}, Search(/), Refresh(r), Disasm(Enter)")
     };
@@ -84,12 +87,10 @@ fn draw_symbol_list(state: &mut State, f: &mut Frame, area: Rect, viewing_asm: b
 }
 
 fn draw_symbol_asm(state: &mut State, f: &mut Frame, area: Rect) {
-    let title = if state.symbols.is_empty() {
-        "Disassembly (no symbols loaded)".to_string()
-    } else if let Some(sym) = state.symbols.get(state.symbols_selected) {
-        format!("Disassembly: {} {SCROLL_CONTROL_TEXT}, Back(Esc)", sym.name)
+    let title = if state.symbol_asm_name.is_empty() {
+        format!("Disassembly {SCROLL_CONTROL_TEXT}, Back(Esc)")
     } else {
-        "Disassembly".to_string()
+        format!("Disassembly: {} {SCROLL_CONTROL_TEXT}, Back(Esc)", state.symbol_asm_name)
     };
 
     let mut rows = vec![Row::new(["Address", "Instruction"]).style(Style::new().fg(BLUE))];

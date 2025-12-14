@@ -395,6 +395,7 @@ impl App {
                         .args(["--interpreter=mi2", "--quiet", "-nx"])
                         .stdin(Stdio::piped())
                         .stdout(Stdio::piped())
+                        .stderr(Stdio::null())
                         .spawn()
                         .expect("Failed to start GDB");
 

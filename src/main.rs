@@ -151,6 +151,7 @@ enum Mode {
     OnlyHexdump,
     OnlyHexdumpPopup,
     OnlySymbols,
+    OnlySource,
     QuitConfirmation,
 }
 
@@ -166,6 +167,7 @@ impl Mode {
             Mode::OnlyHexdump => 6,
             Mode::OnlyHexdumpPopup => 6,
             Mode::OnlySymbols => 7,
+            Mode::OnlySource => 8,
             Mode::QuitConfirmation => 0,
         }
     }
@@ -180,7 +182,8 @@ impl Mode {
             Mode::OnlyMapping => Mode::OnlyHexdump,
             Mode::OnlyHexdump => Mode::OnlySymbols,
             Mode::OnlyHexdumpPopup => Mode::OnlyHexdumpPopup,
-            Mode::OnlySymbols => Mode::All,
+            Mode::OnlySymbols => Mode::OnlySource,
+            Mode::OnlySource => Mode::All,
             Mode::QuitConfirmation => Mode::QuitConfirmation,
         }
     }
@@ -196,6 +199,8 @@ struct Bt {
 pub struct Symbol {
     pub address: u64,
     pub name: String,
+    /// True if this symbol's address is not yet resolved and needs `info address` lookup
+    pub needs_address_resolution: bool,
 }
 
 // TODO: this could be split up, some of these fields
@@ -251,6 +256,8 @@ struct State {
     next_write: Vec<String>,
     /// Stack of what was written to gdb that is expected back in order to parse correctly
     written: VecDeque<Written>,
+    /// Waiting for execution to stop (after si, continue, step, run, etc.)
+    executing: bool,
     /// -32 bit mode
     ptr_size: PtrSize,
     /// Current filepath of .text
@@ -302,6 +309,8 @@ struct State {
     current_source_file: Option<String>,
     current_source_line: Option<u32>,
     source_lines: Vec<String>,
+    /// Current source language detected by GDB
+    source_language: Option<String>,
     /// Symbol browser
     symbols: Vec<Symbol>,
     symbols_scroll: Scroll,
@@ -309,6 +318,8 @@ struct State {
     symbols_viewport_height: u16,
     symbol_asm: Vec<Asm>,
     symbol_asm_scroll: Scroll,
+    /// Name of the symbol currently being viewed in ASM
+    symbol_asm_name: String,
     /// Whether we're viewing assembly for a selected symbol
     symbols_viewing_asm: bool,
     /// Symbol search
@@ -321,6 +332,7 @@ impl State {
         State {
             next_write: vec![],
             written: VecDeque::new(),
+            executing: false,
             ptr_size: args.ptr_size,
             filepath: None,
             endian: None,
@@ -353,12 +365,14 @@ impl State {
             current_source_file: None,
             current_source_line: None,
             source_lines: Vec::new(),
+            source_language: None,
             symbols: Vec::new(),
             symbols_scroll: Scroll::default(),
             symbols_selected: 0,
             symbols_viewport_height: 0,
             symbol_asm: Vec::new(),
             symbol_asm_scroll: Scroll::default(),
+            symbol_asm_name: String::new(),
             symbols_viewing_asm: false,
             symbols_search_active: false,
             symbols_search_input: Input::default(),
@@ -381,6 +395,7 @@ impl App {
                         .args(["--interpreter=mi2", "--quiet", "-nx"])
                         .stdin(Stdio::piped())
                         .stdout(Stdio::piped())
+                        .stderr(Stdio::null())
                         .spawn()
                         .expect("Failed to start GDB");
 
@@ -510,6 +525,8 @@ enum Written {
     SymbolList,
     /// Requested disassembly of a specific symbol by name
     SymbolDisassembly(String),
+    /// Requested address lookup for symbol (to disassemble it next)
+    SymbolAddressLookup(String),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -627,7 +644,19 @@ fn run_app<B: Backend>(
                 // if else, we display them
             }
         }
-        if event::poll(Duration::from_millis(10))?
+        // Use fast polling when expecting GDB responses, slow polling when idle
+        let poll_timeout = {
+            let state = state_share.state.lock().unwrap();
+            if state.written.is_empty() && state.next_write.is_empty() && !state.executing {
+                // Idle: reduce CPU usage
+                Duration::from_millis(250)
+            } else {
+                // Active: fast updates
+                Duration::from_millis(10)
+            }
+        };
+
+        if event::poll(poll_timeout)?
             && let Event::Key(key) = event::read()?
         {
             if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -738,6 +767,10 @@ fn run_app<B: Backend>(
                         state.next_write.push(mi::info_functions());
                         state.written.push_back(Written::SymbolList);
                     }
+                }
+                (_, KeyCode::F(9), _) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = Mode::OnlySource;
                 }
                 (InputMode::Editing, KeyCode::Esc, _) => {
                     let mut state = state_share.state.lock().unwrap();
@@ -1109,9 +1142,25 @@ fn run_app<B: Backend>(
                             let symbol = (*symbol).clone();
                             drop(filtered);
 
-                            let cmd = mi::data_disassemble(symbol.address as usize, 500);
-                            state.next_write.push(cmd);
-                            state.written.push_back(Written::SymbolDisassembly(symbol.name));
+                            // For symbols that need address resolution, query address first
+                            if symbol.needs_address_resolution {
+                                // Extract function name before generic parameters/arguments for GDB
+                                let name_for_gdb = if let Some(lt_pos) = symbol.name.find('<') {
+                                    symbol.name[..lt_pos].to_string()
+                                } else if let Some(paren_pos) = symbol.name.find('(') {
+                                    symbol.name[..paren_pos].to_string()
+                                } else {
+                                    symbol.name.clone()
+                                };
+                                let cmd = mi::info_address(&name_for_gdb);
+                                state.next_write.push(cmd);
+                                state.written.push_back(Written::SymbolAddressLookup(symbol.name));
+                            } else {
+                                // Use address directly for normal symbols
+                                let cmd = mi::data_disassemble(symbol.address as usize, 500);
+                                state.next_write.push(cmd);
+                                state.written.push_back(Written::SymbolDisassembly(symbol.name));
+                            }
                             state.symbol_asm_scroll.reset();
                             state.symbols_viewing_asm = true;
                         }
@@ -1263,6 +1312,7 @@ fn process_line(app: &mut App, state: &mut State, val: &str) {
         gdb::write_mi(&app.gdb_stdin, cmd);
         state.output.push(val);
 
+        state.executing = true;
         state.input.reset();
         return;
     } else if val.starts_with("at")
@@ -1274,6 +1324,7 @@ fn process_line(app: &mut App, state: &mut State, val: &str) {
         // Write original cmd
         gdb::write_mi(&app.gdb_stdin, &val);
         state.output.push(val);
+        state.executing = true;
         state.input.reset();
 
         let cmd = "-gdb-set disassembly-flavor intel";
@@ -1292,6 +1343,7 @@ fn process_line(app: &mut App, state: &mut State, val: &str) {
         gdb::write_mi(&app.gdb_stdin, cmd);
         state.output.push(val);
 
+        state.executing = true;
         state.input.reset();
         return;
     } else if val == "si" || val == "stepi" {
@@ -1299,6 +1351,7 @@ fn process_line(app: &mut App, state: &mut State, val: &str) {
         gdb::write_mi(&app.gdb_stdin, cmd);
         state.output.push(val);
 
+        state.executing = true;
         state.input.reset();
         return;
     } else if val == "step" {
@@ -1306,6 +1359,39 @@ fn process_line(app: &mut App, state: &mut State, val: &str) {
         gdb::write_mi(&app.gdb_stdin, cmd);
         state.output.push(val);
 
+        state.executing = true;
+        state.input.reset();
+        return;
+    } else if val == "ni" || val == "nexti" {
+        let cmd = "-exec-next-instruction";
+        gdb::write_mi(&app.gdb_stdin, cmd);
+        state.output.push(val);
+
+        state.executing = true;
+        state.input.reset();
+        return;
+    } else if val == "n" || val == "next" {
+        let cmd = "-exec-next";
+        gdb::write_mi(&app.gdb_stdin, cmd);
+        state.output.push(val);
+
+        state.executing = true;
+        state.input.reset();
+        return;
+    } else if val == "finish" || val == "fin" {
+        let cmd = "-exec-finish";
+        gdb::write_mi(&app.gdb_stdin, cmd);
+        state.output.push(val);
+
+        state.executing = true;
+        state.input.reset();
+        return;
+    } else if val.starts_with("until") || val.starts_with("u ") {
+        // For until, just pass through but mark as executing
+        gdb::write_mi(&app.gdb_stdin, &val);
+        state.output.push(val);
+
+        state.executing = true;
         state.input.reset();
         return;
     } else if val.starts_with("file") {

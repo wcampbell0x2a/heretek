@@ -82,6 +82,7 @@ pub fn draw_title_area(state: &mut State, f: &mut Frame, title_area: Rect) {
         "F6 Mapping",
         "F7 Hexdump",
         "F8 Symbols",
+        "F9 Source",
     ])
     .block(Block::new().title_alignment(Alignment::Center))
     .style(Style::default())

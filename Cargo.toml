@@ -1,6 +1,6 @@
 [package]
 name = "heretek"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
 description = "GDB TUI Dashboard for the understanding of vast knowledge"
 license = "MIT OR Apache-2.0"
@@ -23,6 +23,7 @@ once_cell = "1.20.2"
 ratatui = "0.29.0"
 regex = "1.11.1"
 tui-input = "0.14.0"
+arborium = { version = "2.1.1", features = ["lang-c", "lang-cpp", "lang-rust"] }
 
 [dev-dependencies]
 insta = "1.41.1"

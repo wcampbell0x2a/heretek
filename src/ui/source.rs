@@ -2,19 +2,24 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Rect};
 use ratatui::prelude::Stylize;
 use ratatui::style::Style;
+use ratatui::text::Line;
 use ratatui::widgets::block::Title;
 use ratatui::widgets::{Block, Borders, Cell, Row, Table, TableState};
+
+use arborium::AnsiHighlighter;
 
 use super::{GREEN, ORANGE};
 
 use crate::State;
 
 pub fn draw_source(state: &mut State, f: &mut Frame, area: Rect) {
+    let language = state.source_language.clone().unwrap_or_else(|| "c".to_string());
+
     let title =
         if let (Some(file), Some(line)) = (&state.current_source_file, state.current_source_line) {
             let filename =
                 std::path::Path::new(file).file_name().and_then(|n| n.to_str()).unwrap_or(file);
-            Title::from(format!("Source ({filename}:{line})").fg(ORANGE))
+            Title::from(format!("Source ({filename}:{line}) ({language})").fg(ORANGE))
         } else {
             return;
         };
@@ -38,27 +43,61 @@ pub fn draw_source(state: &mut State, f: &mut Frame, area: Rect) {
     };
     let end_line = (start_line + lines_to_show).min(total_lines);
 
-    let mut rows = vec![];
-    for (idx, line_content) in
-        state.source_lines.iter().enumerate().skip(start_line).take(end_line - start_line)
-    {
-        let line_num = idx + 1;
-        let line_num_cell = Cell::from(format!("{line_num:4}"));
+    let theme = arborium::theme::builtin::ayu_dark();
+    let mut highlighter = AnsiHighlighter::new(theme);
 
-        let content_cell = if line_num == current_line {
-            Cell::from(format!(" {line_content}")).style(Style::default().fg(GREEN).bold())
-        } else {
-            Cell::from(format!(" {line_content}")).white()
-        };
+    let lines_to_display: Vec<String> = state
+        .source_lines
+        .clone()
+        .into_iter()
+        .skip(start_line)
+        .take(end_line - start_line)
+        .collect();
 
-        let marker_cell = if line_num == current_line {
-            Cell::from(">").style(Style::default().fg(GREEN).bold())
-        } else {
-            Cell::from(" ")
-        };
+    let joined_lines = lines_to_display.join("\n");
 
-        rows.push(Row::new(vec![marker_cell, line_num_cell, content_cell]));
-    }
+    let ansi_text = highlighter
+        .highlight(&language, &joined_lines)
+        .unwrap_or_else(|_| joined_lines.to_string());
+
+    // Remove strikethrough ANSI codes as they're not useful for syntax highlighting
+    let ansi_text = ansi_text.replace("\x1b[9m", "");
+
+    let parsed_lines: Vec<Line> = match ansi_to_tui::IntoText::into_text(&ansi_text) {
+        Ok(text) => text.lines,
+        Err(_) => lines_to_display.iter().map(|s| Line::raw(s.to_string())).collect(),
+    };
+
+    let rows: Vec<Row> = lines_to_display
+        .iter()
+        .enumerate()
+        .map(|(i, line_content)| {
+            let line_num = start_line + i + 1;
+            let is_current = line_num == current_line;
+            let marker = if is_current {
+                Cell::from(">").style(Style::default().fg(GREEN))
+            } else {
+                Cell::from(" ")
+            };
+
+            let line_num_cell = Cell::from(format!("{:>4}", line_num)).style(if is_current {
+                Style::default().fg(GREEN)
+            } else {
+                Style::default()
+            });
+
+            // Use the pre-highlighted line if available
+            let mut line =
+                parsed_lines.get(i).cloned().unwrap_or_else(|| Line::raw(line_content.to_string()));
+
+            // Add padding at the start
+            line.spans.insert(0, " ".into());
+
+            let content_cell = Cell::from(line);
+
+            Row::new(vec![marker, line_num_cell, content_cell])
+        })
+        .collect();
 
     let widths = [Constraint::Length(1), Constraint::Length(4), Constraint::Fill(1)];
 

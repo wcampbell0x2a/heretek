@@ -31,19 +31,7 @@ Sleep 2s
 Type "si"
 Enter
 Sleep 2s
-Type "si"
-Enter
-Sleep 2s
-Type "si"
-Enter
-Sleep 2s
-Type "si"
-Enter
-Sleep 2s
-Type "si"
-Enter
-Sleep 2s
-Type "si"
+Type "finish"
 Enter
 Sleep 2s
 
@@ -96,4 +84,7 @@ Type "j"
 Sleep 2s
 Enter
 Type "d"
+Sleep 2s
+Tab
+# Source
 Sleep 2s

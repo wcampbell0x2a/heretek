@@ -3,7 +3,6 @@ use ratatui::layout::{Constraint, Rect};
 use ratatui::prelude::Stylize;
 use ratatui::style::Style;
 use ratatui::text::Line;
-use ratatui::widgets::block::Title;
 use ratatui::widgets::{Block, Borders, Cell, Row, Table, TableState};
 
 use arborium::AnsiHighlighter;
@@ -19,13 +18,13 @@ pub fn draw_source(state: &mut State, f: &mut Frame, area: Rect) {
         if let (Some(file), Some(line)) = (&state.current_source_file, state.current_source_line) {
             let filename =
                 std::path::Path::new(file).file_name().and_then(|n| n.to_str()).unwrap_or(file);
-            Title::from(format!("Source ({filename}:{line}) ({language})").fg(ORANGE))
+            Line::from(format!("Source ({filename}:{line}) ({language})").fg(ORANGE))
         } else {
             return;
         };
 
     if state.source_lines.is_empty() || state.current_source_line.is_none() {
-        let block = Block::default().borders(Borders::ALL).title(title);
+        let block = Block::bordered().title(title);
         f.render_widget(block, area);
         return;
     }

@@ -1,6 +1,6 @@
 use ratatui::layout::Constraint;
 use ratatui::prelude::Stylize;
-use ratatui::widgets::block::Title;
+use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Cell, Table, TableState};
 use ratatui::{Frame, layout::Rect, style::Style, widgets::Row};
 
@@ -58,9 +58,9 @@ pub fn draw_asm(state: &mut State, f: &mut Frame, asm: Rect) {
     }
 
     let title = if let Some(function_name) = function_name {
-        Title::from(format!("Instructions ({function_name})").fg(ORANGE))
+        Line::from(format!("Instructions ({function_name})").fg(ORANGE))
     } else {
-        Title::from("Instructions".fg(ORANGE))
+        Line::from("Instructions".fg(ORANGE))
     };
     if let Some(pc_index) = pc_index {
         let widths = [

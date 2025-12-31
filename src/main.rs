@@ -611,7 +611,10 @@ fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     app: &mut App,
     state_share: &mut StateShare,
-) -> io::Result<()> {
+) -> anyhow::Result<()>
+where
+    B::Error: Send + Sync + 'static,
+{
     loop {
         {
             let mut state = state_share.state.lock().unwrap();

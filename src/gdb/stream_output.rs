@@ -113,13 +113,13 @@ pub fn stream_output(
             let addr_end =
                 after_at.find('.').or_else(|| after_at.find(' ')).unwrap_or(after_at.len());
             let addr_str = &after_at[..addr_end];
-            if let Some(hex_addr) = addr_str.strip_prefix("0x") {
-                if let Ok(address) = u64::from_str_radix(hex_addr, 16) {
-                    state.next_write.push(crate::mi::data_disassemble(address as usize, 500));
-                    state.written.pop_front();
-                    state.written.push_back(Written::SymbolDisassembly(symbol_name));
-                    return;
-                }
+            if let Some(hex_addr) = addr_str.strip_prefix("0x")
+                && let Ok(address) = u64::from_str_radix(hex_addr, 16)
+            {
+                state.next_write.push(crate::mi::data_disassemble(address as usize, 500));
+                state.written.pop_front();
+                state.written.push_back(Written::SymbolDisassembly(symbol_name));
+                return;
             }
         }
     }

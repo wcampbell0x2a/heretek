@@ -33,14 +33,10 @@ pub fn draw_source(state: &mut State, f: &mut Frame, area: Rect) {
     let current_line = state.current_source_line.unwrap() as usize;
     let total_lines = state.source_lines.len();
 
-    // Calculate which lines to show (center the current line in the view)
+    // Calculate which lines to show based on scroll position
     // Account for borders and title
     let lines_to_show = (area.height as usize).saturating_sub(3);
-    let start_line = if current_line > lines_to_show / 2 {
-        (current_line.saturating_sub(lines_to_show / 2)).saturating_sub(1)
-    } else {
-        0
-    };
+    let start_line = state.source_scroll.scroll.min(total_lines.saturating_sub(1));
     let end_line = (start_line + lines_to_show).min(total_lines);
 
     let theme = arborium::theme::builtin::ayu_dark();

@@ -309,6 +309,7 @@ struct State {
     current_source_file: Option<String>,
     current_source_line: Option<u32>,
     source_lines: Vec<String>,
+    source_scroll: Scroll,
     /// Current source language detected by GDB
     source_language: Option<String>,
     /// Symbol browser
@@ -365,6 +366,7 @@ impl State {
             current_source_file: None,
             current_source_line: None,
             source_lines: Vec::new(),
+            source_scroll: Scroll::default(),
             source_language: None,
             symbols: Vec::new(),
             symbols_scroll: Scroll::default(),
@@ -1191,6 +1193,34 @@ fn run_app<B: Backend>(
                         state.symbols_selected = 0;
                         state.symbols_scroll.reset();
                     }
+                }
+                // source scrolling
+                (InputMode::Normal, KeyCode::Char('g'), Mode::OnlySource) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.source_scroll.reset();
+                }
+                (InputMode::Normal, KeyCode::Char('G'), Mode::OnlySource) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let len = state.source_lines.len();
+                    state.source_scroll.end(len);
+                }
+                (InputMode::Normal, KeyCode::Char('j'), Mode::OnlySource) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let len = state.source_lines.len();
+                    state.source_scroll.down(1, len);
+                }
+                (InputMode::Normal, KeyCode::Char('k'), Mode::OnlySource) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.source_scroll.up(1);
+                }
+                (InputMode::Normal, KeyCode::Char('J'), Mode::OnlySource) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let len = state.source_lines.len();
+                    state.source_scroll.down(50, len);
+                }
+                (InputMode::Normal, KeyCode::Char('K'), Mode::OnlySource) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.source_scroll.up(50);
                 }
                 (_, KeyCode::Tab, _) => {
                     let mut state = state_share.state.lock().unwrap();

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use ratatui::prelude::Stylize;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph};
@@ -14,6 +16,20 @@ pub fn draw_stack(state: &mut State, f: &mut Frame, stack: Rect) {
     let width: usize = if state.ptr_size == PtrSize::Size32 { 11 } else { 19 };
 
     let stacks = state.stack.clone();
+
+    // Build map of address -> register names
+    let mut addr_to_regs: HashMap<u64, Vec<String>> = HashMap::new();
+    for reg in &state.registers {
+        if let Some(ref register) = reg.register
+            && let Some(ref val_str) = register.value
+            && let Some(hex) = val_str.strip_prefix("0x")
+            && let Ok(val) = u64::from_str_radix(hex, 16)
+            && stacks.contains_key(&val)
+        {
+            addr_to_regs.entry(val).or_default().push(reg.name.clone());
+        }
+    }
+
     for (addr, values) in &stacks {
         let filepath = state.filepath.clone().unwrap_or_default();
         let filepath = filepath.to_string_lossy();
@@ -24,6 +40,10 @@ pub fn draw_stack(state: &mut State, f: &mut Frame, stack: Rect) {
         let span = Span::from(format!("  {hex_string}{:padding$}", "", padding = padding_width))
             .style(Style::new().fg(PURPLE));
         let mut spans = vec![span];
+        if let Some(reg_names) = addr_to_regs.get(addr) {
+            let annotation = format!(" ({})", reg_names.join(", "));
+            spans.push(Span::from(annotation).style(Style::new().fg(ORANGE)));
+        }
         add_deref_to_span(values, &mut spans, state, &filepath, &mut longest_cells, width);
         let line = Line::from(spans);
         lines.push(line);

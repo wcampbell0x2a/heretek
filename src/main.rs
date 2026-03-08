@@ -459,8 +459,8 @@ impl State {
         if val != 0 {
             // look through, add see if the value is part of the stack
             // trace!("{:02x?}", memory_map);
-            if self.memory_map.is_some() {
-                for r in self.memory_map.as_ref().unwrap() {
+            if let Some(memory_map) = &self.memory_map {
+                for r in memory_map {
                     if r.contains(val) {
                         if r.is_stack() {
                             is_stack = true;
@@ -613,7 +613,10 @@ fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     app: &mut App,
     state_share: &mut StateShare,
-) -> io::Result<()> {
+) -> anyhow::Result<()>
+where
+    B::Error: Send + Sync + 'static,
+{
     loop {
         {
             let mut state = state_share.state.lock().unwrap();

@@ -2,7 +2,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::prelude::Stylize;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Scrollbar, ScrollbarOrientation};
+use ratatui::widgets::{Block, List, ListItem, Scrollbar, ScrollbarOrientation};
 
 use super::{BLUE, SCROLL_CONTROL_TEXT};
 
@@ -33,8 +33,8 @@ pub fn draw_output(state: &mut State, f: &mut Frame, output: Rect, full: bool) {
         })
         .collect();
     let help = if full { SCROLL_CONTROL_TEXT } else { "" };
-    let output_block = List::new(outputs)
-        .block(Block::default().borders(Borders::ALL).title(format!("Output {help}").fg(BLUE)));
+    let output_block =
+        List::new(outputs).block(Block::bordered().title(format!("Output {help}").fg(BLUE)));
     f.render_widget(output_block, output);
 
     // only show scrollbar on full page

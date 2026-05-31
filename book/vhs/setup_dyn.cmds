@@ -1,0 +1,3 @@
+file book/vhs/demo_dyn
+break main
+run

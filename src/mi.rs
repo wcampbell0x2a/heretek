@@ -407,7 +407,63 @@ fn parse_stream_output(input: &str) -> MIResponse {
 }
 
 fn unescape_gdb_output(input: &str) -> Cow<'_, str> {
-    input.replace("\\n", "\n").replace("\\t", "\t").into()
+    if !input.contains('\\') {
+        return Cow::Borrowed(input);
+    }
+
+    let mut bytes: Vec<u8> = Vec::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            let mut buf = [0u8; 4];
+            bytes.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+            continue;
+        }
+
+        match chars.peek().copied() {
+            Some('n') => {
+                chars.next();
+                bytes.push(b'\n');
+            }
+            Some('t') => {
+                chars.next();
+                bytes.push(b'\t');
+            }
+            Some('r') => {
+                chars.next();
+                bytes.push(b'\r');
+            }
+            Some('"') => {
+                chars.next();
+                bytes.push(b'"');
+            }
+            Some('\\') => {
+                chars.next();
+                bytes.push(b'\\');
+            }
+            Some(d) if matches!(d, '0'..='7') => {
+                // Octal escape: collect up to 3 octal digits
+                let mut octal = String::with_capacity(3);
+                for _ in 0..3 {
+                    match chars.peek().copied() {
+                        Some(d) if matches!(d, '0'..='7') => {
+                            octal.push(d);
+                            chars.next();
+                        }
+                        _ => break,
+                    }
+                }
+                // Safe: octal digits always parse
+                bytes.push(u8::from_str_radix(&octal, 8).unwrap());
+            }
+            _ => {
+                bytes.push(b'\\');
+            }
+        }
+    }
+
+    Cow::Owned(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 pub fn read_pc_value() -> String {
@@ -479,10 +535,24 @@ pub fn parse_symbol_list(input: &str) -> Vec<crate::Symbol> {
             && trimmed[..colon_pos].chars().all(|c| c.is_ascii_digit())
         {
             let after_colon = trimmed[colon_pos + 1..].trim();
-            if let Some(name) =
+            let name = if let Some(name) =
                 after_colon.strip_prefix("static fn ").or_else(|| after_colon.strip_prefix("fn "))
             {
-                let name = name.trim_end_matches(';').trim().to_string();
+                // Rust: "static fn name::path(args);" or "fn name(args);"
+                Some(name.trim_end_matches(';').trim().to_string())
+            } else if let Some(paren_pos) = after_colon.find('(') {
+                // C: "return_type name(args);" - extract the identifier before '('
+                let before_paren = after_colon[..paren_pos].trim();
+                // Function name is the last whitespace-delimited token (after return type)
+                // e.g. "void helper" -> "helper", "int main" -> "main"
+                before_paren.rsplit_once(' ').or(Some(("", before_paren))).map(|(_, n)| {
+                    // Strip leading pointer markers like '*'
+                    n.trim_start_matches('*').to_string()
+                })
+            } else {
+                None
+            };
+            if let Some(name) = name {
                 if !name.is_empty() {
                     // These symbols from "All defined functions:" don't have real addresses yet
                     // Store line number as placeholder, will be resolved via info address
@@ -557,6 +627,20 @@ mod tests {
         if let MIResponse::StreamOutput(kind, content) = parse_mi_response(input) {
             assert_eq!(kind, "~");
             assert_eq!(content, "GNU gdb (GDB) 12.1\n");
+        } else {
+            panic!("Expected StreamOutput response");
+        }
+    }
+
+    #[test]
+    fn test_stream_output_octal_utf8() {
+        // GDB encodes the racing car emoji 🏎 as octal bytes in MI output
+        // \360\237\217\216 = U+1F3CE (🏎), \357\270\217 = U+FE0F (variation selector)
+        let input = r#"~"\360\237\217\216 Undefined command\n""#;
+        if let MIResponse::StreamOutput(kind, content) = parse_mi_response(input) {
+            assert_eq!(kind, "~");
+            assert!(content.contains("🏎"), "expected emoji, got: {content:?}");
+            assert!(content.contains("Undefined command"));
         } else {
             panic!("Expected StreamOutput response");
         }
@@ -693,6 +777,33 @@ Non-debugging symbols:
             symbols.iter().any(|s| s.name.starts_with("core::ops::function::FnOnce::call_once"))
         );
         assert!(symbols.iter().any(|s| s.name.starts_with("std::rt::lang_start")));
+    }
+
+    #[test]
+    fn test_parse_symbol_list_c_debug_format() {
+        let input = r"All defined functions:
+
+File /home/user/demo.c:
+5:	void helper(int);
+10:	int main(int, char **);
+
+Non-debugging symbols:
+0x0000000000001000  _start
+0x0000000000001020  _init";
+
+        let symbols = parse_symbol_list(input);
+
+        assert_eq!(symbols.len(), 4);
+        assert!(symbols.iter().any(|s| s.name == "helper"));
+        assert!(symbols.iter().any(|s| s.name == "main"));
+        assert!(symbols.iter().any(|s| s.name == "_start"));
+        assert!(symbols.iter().any(|s| s.name == "_init"));
+
+        // Verify the debug symbols have needs_address_resolution set
+        let helper = symbols.iter().find(|s| s.name == "helper").unwrap();
+        assert!(helper.needs_address_resolution);
+        let main = symbols.iter().find(|s| s.name == "main").unwrap();
+        assert!(main.needs_address_resolution);
     }
 
     #[test]

@@ -10,9 +10,7 @@ GDB TUI Dashboard inspired by `gef`, designed to seamlessly connect to remote ta
 * **Architecture agnostic**: `heretek` only uses information given by `gdb`, no extra code required!
 * **No gdbserver requirements**: Many vendors ship invalid `gdbserver` binaries, this works on remote targets with just `gdb`, `nc`, `cat`, and `mkfifo`. No more wrestling with invalid or missing `gdbserver` binaries.
 
-* See [features](./docs/features.md) for `heretek` demos.
-* See [commands](./docs/commands.md) for internal `heretek` commands.
-* See [env-vars](./docs/env-vars.md) for `heretek` env vars.
+* See the [book](https://wcampbell0x2a.github.io/heretek/) for features, commands, and configuration.
 
 ![screenshot](images/readme.gif)
 

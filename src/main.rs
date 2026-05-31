@@ -489,7 +489,8 @@ impl State {
         }
 
         let search_term = self.symbols_search_input.value().to_lowercase();
-        self.symbols
+        let mut results: Vec<(usize, &Symbol)> = self
+            .symbols
             .iter()
             .enumerate()
             .filter(|(_, sym)| {
@@ -498,7 +499,14 @@ impl State {
                 let mut name_chars = name_lower.chars();
                 search_term.chars().all(|c| name_chars.any(|nc| nc == c))
             })
-            .collect()
+            .collect();
+        // Sort exact matches to the top
+        results.sort_by(|(_, a), (_, b)| {
+            let a_exact = a.name.to_lowercase() == search_term;
+            let b_exact = b.name.to_lowercase() == search_term;
+            b_exact.cmp(&a_exact)
+        });
+        results
     }
 }
 

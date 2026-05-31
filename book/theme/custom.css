@@ -1,0 +1,7 @@
+:root {
+    --content-max-width: 1400px;
+}
+
+.content img {
+    max-width: 100%;
+}

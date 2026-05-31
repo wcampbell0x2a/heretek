@@ -1,2 +1,0 @@
-- `RUST_LOG`: Control log level.
-- `NO_COLOR`: Disable TUI colors.

@@ -27,7 +27,7 @@ arborium = { version = "2.1.1", features = ["lang-c", "lang-cpp", "lang-rust"] }
 
 [dev-dependencies]
 insta = "1.41.1"
-test-assets-ureq = "0.3.0"
+test-assets-ureq = "0.6.1"
 libc = "0.2.169"
 rstest = "0.26"
 

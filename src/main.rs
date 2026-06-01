@@ -1651,12 +1651,12 @@ mod tests {
         const TEST_PATH: &str = "test-assets/test_repeated_ptr/";
         let file_path = format!("{TEST_PATH}/{FILE_NAME}");
         let asset_defs = [TestAssetDef {
-            filename: FILE_NAME.to_string(),
+            filepath: FILE_NAME.to_string(),
             hash: "ccbde92a79b40bdd07c620b47c4f21af7ca447f93839807b243d225e05e9025d".to_string(),
             url: "https://wcampbell.dev/heretek/test_repeated_ptr/a.out".to_string(),
         }];
 
-        dl_test_files_backoff(&asset_defs, TEST_PATH, true, Duration::from_secs(1)).unwrap();
+        dl_test_files_backoff(&asset_defs, TEST_PATH, Duration::from_secs(1)).unwrap();
         let c_path = CString::new(file_path.clone()).expect("CString::new failed");
         let mode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
         unsafe { chmod(c_path.as_ptr(), mode) };
@@ -1713,12 +1713,12 @@ mod tests {
         const TEST_PATH: &str = "test-assets/test_render_app/";
         let file_path = format!("{TEST_PATH}/{FILE_NAME}");
         let asset_defs = [TestAssetDef {
-            filename: FILE_NAME.to_string(),
+            filepath: FILE_NAME.to_string(),
             hash: "ecda3a4b9eac62c1cae84184710238b2b4ae5c41e6fa94e1df4b1125b7bf0084".to_string(),
             url: "https://wcampbell.dev/heretek/test_render_app/a.out".to_string(),
         }];
 
-        dl_test_files_backoff(&asset_defs, TEST_PATH, true, Duration::from_secs(1)).unwrap();
+        dl_test_files_backoff(&asset_defs, TEST_PATH, Duration::from_secs(1)).unwrap();
         let c_path = CString::new(file_path.clone()).expect("CString::new failed");
         let mode = S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
         unsafe { chmod(c_path.as_ptr(), mode) };

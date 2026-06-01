@@ -1,6 +1,6 @@
 use ratatui::layout::Constraint;
 use ratatui::prelude::Stylize;
-use ratatui::widgets::{Block, Borders, Scrollbar, ScrollbarOrientation, Table};
+use ratatui::widgets::{Block, Scrollbar, ScrollbarOrientation, Table};
 use ratatui::{Frame, layout::Rect, style::Style, widgets::Row};
 
 use super::{BLUE, ORANGE, SCROLL_CONTROL_TEXT};
@@ -50,7 +50,7 @@ pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
         Constraint::Length(20),
         Constraint::Fill(1),
     ];
-    let block = Block::default().borders(Borders::ALL).title(title.fg(ORANGE));
+    let block = Block::bordered().title(title.fg(ORANGE));
     let table = Table::new(rows, widths).block(block);
     f.render_widget(table, mapping_rect);
     f.render_stateful_widget(

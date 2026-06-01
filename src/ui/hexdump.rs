@@ -1,6 +1,6 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Flex, Layout, Rect},
+    layout::{Constraint, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation},
@@ -97,15 +97,11 @@ pub fn color(byte: u8) -> Color {
 }
 
 fn popup_area(area: Rect, percent_x: u16) -> Rect {
-    let vertical = Layout::vertical([Constraint::Length(3)]).flex(Flex::Center);
-    let horizontal = Layout::horizontal([Constraint::Percentage(percent_x)]).flex(Flex::Center);
-    let [area] = vertical.areas(area);
-    let [area] = horizontal.areas(area);
-    area
+    area.centered(Constraint::Percentage(percent_x), Constraint::Length(3))
 }
 
 fn block(pos: &str) -> Block<'_> {
-    Block::default().borders(Borders::ALL).title(
+    Block::bordered().title(
         format!("Hexdump{pos} {SCROLL_CONTROL_TEXT}, Save(S), HEAP(H), STACK(T))").fg(ORANGE),
     )
 }

@@ -12,6 +12,7 @@ use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
+use ratatui_style_ayu::ayu_dark_heretek;
 use registers::draw_registers;
 use source::draw_source;
 use stack::draw_stack;
@@ -33,16 +34,16 @@ pub mod stack;
 pub mod symbols;
 pub mod title;
 
-// Ayu bell colors
-const BLUE: Color = Color::Rgb(0x59, 0xc2, 0xff);
-const PURPLE: Color = Color::Rgb(0xd2, 0xa6, 0xff);
-const ORANGE: Color = Color::Rgb(0xff, 0x8f, 0x40);
-const YELLOW: Color = Color::Rgb(0xe6, 0xb4, 0x50);
-const GREEN: Color = Color::Rgb(0xaa, 0xd9, 0x4c);
-const RED: Color = Color::Rgb(0xff, 0x33, 0x33);
-const DARK_GRAY: Color = Color::Rgb(0x20, 0x27, 0x34);
-const GRAY: Color = Color::Rgb(0x44, 0x44, 0x44);
-const GRAY_FG: Color = Color::Rgb(100, 100, 100);
+// Ayu dark theme colors
+const BLUE: Color = ayu_dark_heretek::BLUE;
+const PURPLE: Color = ayu_dark_heretek::PURPLE;
+const ORANGE: Color = ayu_dark_heretek::ORANGE;
+const YELLOW: Color = ayu_dark_heretek::YELLOW;
+const GREEN: Color = ayu_dark_heretek::GREEN;
+const RED: Color = ayu_dark_heretek::RED;
+const DARK_GRAY: Color = ayu_dark_heretek::BACKGROUND;
+const GRAY: Color = ayu_dark_heretek::SELECTION;
+const GRAY_FG: Color = ayu_dark_heretek::COMMENT;
 
 const HEAP_COLOR: Color = GREEN;
 const STACK_COLOR: Color = PURPLE;

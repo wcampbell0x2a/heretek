@@ -11,15 +11,22 @@ use crate::State;
 pub fn draw_output(state: &mut State, f: &mut Frame, output: Rect, full: bool) {
     let len = state.output.len();
     let max = output.height;
-    let skip = if full {
-        if len <= max as usize { 0 } else { state.output_scroll.scroll }
-    } else if len <= max as usize {
+    // auto-scroll to bottom when new output is added (tail -f behavior)
+    if full && len > state.output_prev_len {
+        state.output_scroll.end(len);
+        state.output_prev_len = len;
+    }
+
+    let skip = if len <= max as usize {
         0
+    } else if full {
+        state.output_scroll.scroll
     } else {
         len - max as usize + 2
     };
 
-    state.output_scroll.state = state.output_scroll.state.content_length(len);
+    state.output_scroll.viewport = max as usize;
+    state.output_scroll.set_content_length(len);
 
     let outputs: Vec<ListItem> = state
         .output

@@ -125,7 +125,8 @@ pub fn draw_hexdump(state: &mut State, f: &mut Frame, hexdump: Rect, show_popup:
         let content_len = data.len() / HEXDUMP_WIDTH;
 
         let lines: Vec<Line> = lines.into_iter().collect();
-        state.hexdump_scroll.state = state.hexdump_scroll.state.content_length(content_len);
+        state.hexdump_scroll.viewport = take as usize;
+        state.hexdump_scroll.set_content_length(content_len);
         let paragraph =
             Paragraph::new(lines).block(block(&pos)).style(Style::default().fg(Color::White));
 

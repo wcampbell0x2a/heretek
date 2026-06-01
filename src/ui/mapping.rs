@@ -39,7 +39,8 @@ pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
 
     // Store viewport height for use in key handlers
     state.memory_map_viewport_height = max;
-    state.memory_map_scroll.state = state.memory_map_scroll.state.content_length(len);
+    state.memory_map_scroll.viewport = max as usize;
+    state.memory_map_scroll.set_content_length(len);
     let rows: Vec<Row> = rows.into_iter().skip(skip).take(max as usize).collect();
 
     let widths = [

@@ -220,6 +220,7 @@ struct StateShare {
 struct Scroll {
     scroll: usize,
     state: ScrollbarState,
+    viewport: usize,
 }
 
 impl Scroll {
@@ -228,14 +229,23 @@ impl Scroll {
         self.state = self.state.position(0);
     }
 
+    fn max_scroll(&self, len: usize) -> usize {
+        len.saturating_sub(self.viewport)
+    }
+
+    pub fn set_content_length(&mut self, len: usize) {
+        self.state = self.state.content_length(self.max_scroll(len));
+    }
+
     pub fn end(&mut self, len: usize) {
-        self.scroll = len;
+        self.scroll = self.max_scroll(len);
         self.state.last();
     }
 
     pub fn down(&mut self, n: usize, len: usize) {
-        if self.scroll < len.saturating_sub(1) {
-            self.scroll += n;
+        let max = self.max_scroll(len);
+        if self.scroll < max {
+            self.scroll = (self.scroll + n).min(max);
             self.state = self.state.position(self.scroll);
         }
     }
@@ -284,6 +294,8 @@ struct State {
     /// All output from gdb
     output: Vec<String>,
     output_scroll: Scroll,
+    /// Previous output length, used for auto-scroll
+    output_prev_len: usize,
     /// Saved output such as (gdb) or > from gdb
     stream_output_prompt: String,
     /// Register TUI
@@ -349,6 +361,7 @@ impl State {
             current_pc: 0,
             output: Vec::new(),
             output_scroll: Scroll::default(),
+            output_prev_len: 0,
             stream_output_prompt: String::new(),
             register_changed: vec![],
             register_names: vec![],

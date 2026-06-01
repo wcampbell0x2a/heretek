@@ -94,7 +94,8 @@ pub fn draw_registers(state: &mut State, f: &mut Frame, register: Rect) {
     let take = lines.len();
     let max = register.height;
     let skip = if take <= max as usize { 0 } else { state.registers_scroll.scroll };
-    state.registers_scroll.state = state.registers_scroll.state.content_length(take);
+    state.registers_scroll.viewport = max as usize;
+    state.registers_scroll.set_content_length(take);
 
     // TODO: remove collect, juts skip before
     let lines: Vec<Line> = lines.into_iter().skip(skip).take(take).collect();

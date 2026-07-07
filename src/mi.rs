@@ -336,7 +336,10 @@ pub fn parse_asm_insns_values(input: &str) -> Vec<Asm> {
                         u64::from_str_radix(val, 16).unwrap()
                     }
                 }
-                "inst" => asm.inst = val,
+                // Some targets (e.g. esp32-c3/RISC-V) emit a literal `\t` between the
+                // mnemonic and its operands. Replace it with a space so the instruction
+                // renders like the space-separated x86 output. See issue #150.
+                "inst" => asm.inst = val.replace("\\t", " "),
                 "offset" => asm.offset = val.parse::<u64>().unwrap(),
                 "func-name" => asm.func_name = Some(val),
                 _ => {}
@@ -838,6 +841,23 @@ Non-debugging symbols:
             assert_eq!(parsed.len(), 2);
             assert_eq!(parsed[0].func_name, None);
             assert_eq!(parsed[1].func_name, None);
+        } else {
+            panic!("Expected ExecResult");
+        }
+    }
+
+    #[test]
+    fn test_parse_asm_insns_tab_separated() {
+        // Some targets (e.g. esp32-c3/RISC-V) separate the mnemonic and operands with a
+        // literal `\t` rather than spaces. See issue #150.
+        let input = r#"^done,asm_insns=[{address="0x42030194",inst="auipc\tra,0xffffd"},{address="0x42030198",inst="jalr\t792(ra)"}]"#;
+
+        if let MIResponse::ExecResult(_status, kv) = parse_mi_response(input) {
+            let asm_insns = kv.get("asm_insns").unwrap();
+            let parsed = parse_asm_insns_values(asm_insns);
+            assert_eq!(parsed.len(), 2);
+            assert_eq!(parsed[0].inst, "auipc ra,0xffffd");
+            assert_eq!(parsed[1].inst, "jalr 792(ra)");
         } else {
             panic!("Expected ExecResult");
         }

@@ -52,7 +52,8 @@ fn draw_symbol_list(state: &mut State, f: &mut Frame, area: Rect, viewing_asm: b
     let active = matches!(effective_mode(state), Mode::OnlySymbols) && !viewing_asm;
     let block = pane_block("Symbols", context, hints, active);
 
-    let mut rows = vec![Row::new(["Address", "Name"]).style(Style::new().fg(BLUE))];
+    let header = Row::new(["Address", "Name"]).style(Style::new().fg(BLUE).bold());
+    let mut rows = vec![];
 
     // Use filtered symbols when searching
     let filtered_symbols = state.get_filtered_symbols();
@@ -68,7 +69,7 @@ fn draw_symbol_list(state: &mut State, f: &mut Frame, area: Rect, viewing_asm: b
 
     // Handle scrolling
     let len = rows.len();
-    let max = area.height.saturating_sub(1); // Account for border
+    let max = area.height.saturating_sub(2); // Account for border and pinned header
     let skip = if len <= max as usize { 0 } else { state.symbols_scroll.scroll };
 
     // Store viewport height for use in key handlers
@@ -79,7 +80,7 @@ fn draw_symbol_list(state: &mut State, f: &mut Frame, area: Rect, viewing_asm: b
 
     let widths = [Constraint::Length(18), Constraint::Fill(1)];
 
-    let table = Table::new(rows, widths).block(block);
+    let table = Table::new(rows, widths).header(header).block(block);
     f.render_widget(table, area);
     f.render_stateful_widget(
         Scrollbar::new(ScrollbarOrientation::VerticalRight),
@@ -94,7 +95,8 @@ fn draw_symbol_asm(state: &mut State, f: &mut Frame, area: Rect) {
     let active = matches!(effective_mode(state), Mode::OnlySymbols);
     let block = pane_block("Disassembly", context, "Esc back", active);
 
-    let mut rows = vec![Row::new(["Address", "Instruction"]).style(Style::new().fg(BLUE))];
+    let header = Row::new(["Address", "Instruction"]).style(Style::new().fg(BLUE).bold());
+    let mut rows = vec![];
 
     for asm in &state.symbol_asm {
         let row = Row::new([format!("0x{:016x}", asm.address), asm.inst.clone()]);
@@ -103,7 +105,7 @@ fn draw_symbol_asm(state: &mut State, f: &mut Frame, area: Rect) {
 
     // Handle scrolling
     let len = rows.len();
-    let max = area.height.saturating_sub(1); // Account for border
+    let max = area.height.saturating_sub(2); // Account for border and pinned header
     let skip = if len <= max as usize { 0 } else { state.symbol_asm_scroll.scroll };
 
     state.symbol_asm_scroll.viewport = max as usize;
@@ -111,7 +113,7 @@ fn draw_symbol_asm(state: &mut State, f: &mut Frame, area: Rect) {
     let rows: Vec<Row> = rows.into_iter().skip(skip).take(max as usize).collect();
 
     let widths = [Constraint::Length(18), Constraint::Fill(1)];
-    let table = Table::new(rows, widths).block(block);
+    let table = Table::new(rows, widths).header(header).block(block);
     f.render_widget(table, area);
     f.render_stateful_widget(
         Scrollbar::new(ScrollbarOrientation::VerticalRight),

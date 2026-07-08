@@ -8,11 +8,9 @@ use super::{BLUE, ORANGE, effective_mode, pane_block};
 use crate::{Mode, State};
 
 pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
+    let header = Row::new(["Start Address", "End Address", "Size", "Offset", "Perms", "Path"])
+        .style(Style::new().fg(BLUE).bold());
     let mut rows = vec![];
-    rows.push(
-        Row::new(["Start Address", "End Address", "Size", "Offset", "Permissions", "Path"])
-            .style(Style::new().fg(BLUE)),
-    );
     let memory_map = state.memory_map.clone();
     if let Some(memory_map) = memory_map.as_ref() {
         for (index, m) in memory_map.iter().enumerate() {
@@ -32,7 +30,8 @@ pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
         }
     }
     let len = rows.len();
-    let max = mapping_rect.height.saturating_sub(1);
+    // Account for top border and pinned header row
+    let max = mapping_rect.height.saturating_sub(2);
     let skip = if len <= max as usize { 0 } else { state.memory_map_scroll.scroll };
 
     // Store viewport height for use in key handlers
@@ -42,16 +41,16 @@ pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
     let rows: Vec<Row> = rows.into_iter().skip(skip).take(max as usize).collect();
 
     let widths = [
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
-        Constraint::Length(20),
+        Constraint::Length(18),
+        Constraint::Length(18),
+        Constraint::Length(12),
+        Constraint::Length(12),
+        Constraint::Length(11),
         Constraint::Fill(1),
     ];
     let active = matches!(effective_mode(state), Mode::OnlyMapping);
     let block = pane_block("Memory Mapping", None, "H hexdump", active);
-    let table = Table::new(rows, widths).block(block);
+    let table = Table::new(rows, widths).header(header).block(block);
     f.render_widget(table, mapping_rect);
     f.render_stateful_widget(
         Scrollbar::new(ScrollbarOrientation::VerticalRight),
@@ -104,7 +103,7 @@ mod tests {
             .unwrap();
 
         // Verify state was updated
-        assert_eq!(state.memory_map_viewport_height, 23);
+        assert_eq!(state.memory_map_viewport_height, 22);
     }
 
     #[test]
@@ -123,7 +122,7 @@ mod tests {
             .unwrap();
 
         // Verify state was updated
-        assert_eq!(state.memory_map_viewport_height, 23);
+        assert_eq!(state.memory_map_viewport_height, 22);
     }
 
     #[test]
@@ -160,7 +159,7 @@ mod tests {
             .unwrap();
 
         // Verify state was updated
-        assert_eq!(state.memory_map_viewport_height, 23);
+        assert_eq!(state.memory_map_viewport_height, 22);
     }
 
     #[test]

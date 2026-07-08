@@ -311,10 +311,8 @@ struct State {
     hexdump: Option<(u64, Vec<u8>)>,
     hexdump_scroll: Scroll,
     hexdump_popup: Input,
-    /// Right side of status in TUI
+    /// Last async status reported by gdb, shown in the status bar
     async_result: String,
-    /// Left side of status in TUI
-    status: String,
     bt: Vec<Bt>,
     completions: Vec<String>,
     /// Current source file and line info
@@ -373,7 +371,6 @@ impl State {
             hexdump_scroll: Scroll::default(),
             hexdump_popup: Input::default(),
             async_result: String::new(),
-            status: String::new(),
             bt: vec![],
             completions: vec![],
             current_source_file: None,

@@ -8,7 +8,7 @@ use ratatui::{Frame, layout::Rect, style::Style};
 
 use super::{ASM_COLOR, GRAY_FG, GREEN, HEAP_COLOR, STACK_COLOR, STRING_COLOR, TEXT_COLOR};
 
-use crate::{InputMode, State};
+use crate::State;
 
 pub fn draw_title_area(state: &mut State, f: &mut Frame, title_area: Rect) {
     let vertical_title = Layout::vertical([Length(1), Length(1)]);
@@ -60,12 +60,6 @@ pub fn draw_title_area(state: &mut State, f: &mut Frame, title_area: Rect) {
             ),
         first,
     );
-    // Title Area
-    state.status = match state.input_mode {
-        InputMode::Normal => "Press q to exit, i to enter input".to_owned(),
-        InputMode::Editing => "Press Esc to stop editing, Enter to send input".to_owned(),
-    };
-
     let mode = &state.mode;
     // Use previous_mode's index when in quit confirmation to maintain selection
     let selected_index = if matches!(mode, crate::Mode::QuitConfirmation) {

@@ -407,7 +407,16 @@ impl App {
             match &args.remote {
                 None => {
                     let mut gdb_process = Command::new(args.gdb_path.unwrap_or("gdb".to_owned()))
-                        .args(["--interpreter=mi2", "--quiet", "-nx"])
+                        .args([
+                            "--interpreter=mi2",
+                            "--quiet",
+                            "-nx",
+                            "-iex",
+                            "set debuginfod enabled off",
+                            "-iex",
+                            "set style enabled off",
+                        ])
+                        .env_remove("DEBUGINFOD_URLS")
                         .stdin(Stdio::piped())
                         .stdout(Stdio::piped())
                         .stderr(Stdio::null())
@@ -1629,31 +1638,32 @@ mod tests {
         // repeated.c
         // ```c
         // #include <stdio.h>
-        // int this() {
-        //   return 0;
+        // #include <stdint.h>
+        //
+        // void capture(long unused, void **ring) {
+        //     (void)unused;
+        //     printf("ring at %p\n", (void *)ring);
         // }
         //
-        // int main() {
-        //     int *ptr, *ptr2, *ptr3, *ptr4;
+        // int main(void) {
+        //     void *ptr, *ptr2, *ptr3, *ptr4;
         //
-        //     ptr = (int*)&ptr2;    // ptr points to ptr2
-        //     ptr2 = (int*)&ptr3;   // ptr2 points to ptr3
-        //     ptr3 = (int*)&ptr4;   // ptr2 points to ptr3
-        //     ptr4 = (int*)&ptr;    // ptr3 points back to ptr
+        //     ptr  = (void *)&ptr2;   // ptr  -> ptr2
+        //     ptr2 = (void *)&ptr3;   // ptr2 -> ptr3
+        //     ptr3 = (void *)&ptr4;   // ptr3 -> ptr4
+        //     ptr4 = (void *)&ptr;    // ptr4 -> ptr
         //
-        //     printf("Address of ptr: %p\n", (void*)ptr);
-        //
-        //     this();
+        //     capture(0, &ptr);
         //     return 0;
         // }
         // ```
         const FILE_NAME: &str = "a.out";
-        const TEST_PATH: &str = "test-assets/test_repeated_ptr/";
+        const TEST_PATH: &str = "test-assets/test_repeated_ptr2/";
         let file_path = format!("{TEST_PATH}/{FILE_NAME}");
         let asset_defs = [TestAssetDef {
             filepath: FILE_NAME.to_string(),
-            hash: "ccbde92a79b40bdd07c620b47c4f21af7ca447f93839807b243d225e05e9025d".to_string(),
-            url: "https://wcampbell.dev/heretek/test_repeated_ptr/a.out".to_string(),
+            hash: "a9dfadf1d36464b92b467d4dcb08a66b579108a22455e38851aa7f7f9c87a874".to_string(),
+            url: "https://wcampbell.dev/heretek/test_repeated_ptr2/a.out".to_string(),
         }];
 
         dl_test_files_backoff(&asset_defs, TEST_PATH, Duration::from_secs(1)).unwrap();
@@ -1675,10 +1685,10 @@ mod tests {
         // stack repeating
         let mut stack: Vec<_> = stack.clone().into_iter().collect();
         stack.sort_by(|a, b| a.0.cmp(&b.0));
-        assert!(stack[2].1.repeated_pattern);
-        assert!(stack[3].1.repeated_pattern);
         assert!(stack[4].1.repeated_pattern);
         assert!(stack[5].1.repeated_pattern);
+        assert!(stack[6].1.repeated_pattern);
+        assert!(stack[7].1.repeated_pattern);
     }
 
     #[test]

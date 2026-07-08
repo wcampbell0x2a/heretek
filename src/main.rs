@@ -407,7 +407,16 @@ impl App {
             match &args.remote {
                 None => {
                     let mut gdb_process = Command::new(args.gdb_path.unwrap_or("gdb".to_owned()))
-                        .args(["--interpreter=mi2", "--quiet", "-nx"])
+                        .args([
+                            "--interpreter=mi2",
+                            "--quiet",
+                            "-nx",
+                            "-iex",
+                            "set debuginfod enabled off",
+                            "-iex",
+                            "set style enabled off",
+                        ])
+                        .env_remove("DEBUGINFOD_URLS")
                         .stdin(Stdio::piped())
                         .stdout(Stdio::piped())
                         .stderr(Stdio::null())

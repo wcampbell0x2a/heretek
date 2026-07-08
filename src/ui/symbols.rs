@@ -8,8 +8,8 @@ use ratatui::{
     widgets::Row,
 };
 
-use super::{BLUE, GREEN, ORANGE, SCROLL_CONTROL_TEXT};
-use crate::State;
+use super::{BLUE, ORANGE, effective_mode, pane_block};
+use crate::{Mode, State};
 
 pub fn draw_symbols(state: &mut State, f: &mut Frame, area: Rect) {
     if state.symbols_viewing_asm {
@@ -37,18 +37,20 @@ pub fn draw_symbols(state: &mut State, f: &mut Frame, area: Rect) {
 }
 
 fn draw_symbol_list(state: &mut State, f: &mut Frame, area: Rect, viewing_asm: bool) {
-    let title = if viewing_asm {
-        "Symbols".to_string()
-    } else if state.symbols_search_active {
-        "Symbols - Search (Enter/Esc to finish)".to_string()
-    } else if !state.symbols_search_input.value().is_empty() {
-        format!(
-            "Symbols - Filtered: \"{}\" {SCROLL_CONTROL_TEXT} ('/' to reset), Search(/), Refresh(r), Disasm(Enter)",
-            state.symbols_search_input.value()
-        )
+    let context = if !state.symbols_search_input.value().is_empty() {
+        Some(format!("filter: \"{}\"", state.symbols_search_input.value()))
     } else {
-        format!("Symbols {SCROLL_CONTROL_TEXT}, Search(/), Refresh(r), Disasm(Enter)")
+        None
     };
+    let hints = if viewing_asm {
+        ""
+    } else if state.symbols_search_active {
+        "⏎/Esc finish"
+    } else {
+        "/ search  r refresh  ⏎ disasm"
+    };
+    let active = matches!(effective_mode(state), Mode::OnlySymbols) && !viewing_asm;
+    let block = pane_block("Symbols", context, hints, active);
 
     let mut rows = vec![Row::new(["Address", "Name"]).style(Style::new().fg(BLUE))];
 
@@ -66,7 +68,7 @@ fn draw_symbol_list(state: &mut State, f: &mut Frame, area: Rect, viewing_asm: b
 
     // Handle scrolling
     let len = rows.len();
-    let max = area.height.saturating_sub(2); // Account for border
+    let max = area.height.saturating_sub(1); // Account for border
     let skip = if len <= max as usize { 0 } else { state.symbols_scroll.scroll };
 
     // Store viewport height for use in key handlers
@@ -77,7 +79,6 @@ fn draw_symbol_list(state: &mut State, f: &mut Frame, area: Rect, viewing_asm: b
 
     let widths = [Constraint::Length(18), Constraint::Fill(1)];
 
-    let block = Block::default().borders(Borders::ALL).title(title.fg(ORANGE));
     let table = Table::new(rows, widths).block(block);
     f.render_widget(table, area);
     f.render_stateful_widget(
@@ -88,11 +89,10 @@ fn draw_symbol_list(state: &mut State, f: &mut Frame, area: Rect, viewing_asm: b
 }
 
 fn draw_symbol_asm(state: &mut State, f: &mut Frame, area: Rect) {
-    let title = if state.symbol_asm_name.is_empty() {
-        format!("Disassembly {SCROLL_CONTROL_TEXT}, Back(Esc)")
-    } else {
-        format!("Disassembly: {} {SCROLL_CONTROL_TEXT}, Back(Esc)", state.symbol_asm_name)
-    };
+    let context =
+        if state.symbol_asm_name.is_empty() { None } else { Some(state.symbol_asm_name.clone()) };
+    let active = matches!(effective_mode(state), Mode::OnlySymbols);
+    let block = pane_block("Disassembly", context, "Esc back", active);
 
     let mut rows = vec![Row::new(["Address", "Instruction"]).style(Style::new().fg(BLUE))];
 
@@ -103,7 +103,7 @@ fn draw_symbol_asm(state: &mut State, f: &mut Frame, area: Rect) {
 
     // Handle scrolling
     let len = rows.len();
-    let max = area.height.saturating_sub(2); // Account for border
+    let max = area.height.saturating_sub(1); // Account for border
     let skip = if len <= max as usize { 0 } else { state.symbol_asm_scroll.scroll };
 
     state.symbol_asm_scroll.viewport = max as usize;
@@ -111,7 +111,6 @@ fn draw_symbol_asm(state: &mut State, f: &mut Frame, area: Rect) {
     let rows: Vec<Row> = rows.into_iter().skip(skip).take(max as usize).collect();
 
     let widths = [Constraint::Length(18), Constraint::Fill(1)];
-    let block = Block::default().borders(Borders::ALL).title(title.fg(GREEN));
     let table = Table::new(rows, widths).block(block);
     f.render_widget(table, area);
     f.render_stateful_widget(

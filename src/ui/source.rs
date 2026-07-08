@@ -1,31 +1,30 @@
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Rect};
-use ratatui::prelude::Stylize;
 use ratatui::style::Style;
 use ratatui::text::Line;
-use ratatui::widgets::block::Title;
-use ratatui::widgets::{Block, Borders, Cell, Row, Table, TableState};
+use ratatui::widgets::{Cell, Row, Table, TableState};
 
 use arborium::AnsiHighlighter;
 
-use super::{GREEN, ORANGE};
+use super::{GREEN, effective_mode, pane_block};
 
-use crate::State;
+use crate::{Mode, State};
 
 pub fn draw_source(state: &mut State, f: &mut Frame, area: Rect) {
     let language = state.source_language.clone().unwrap_or_else(|| "c".to_string());
 
-    let title =
+    let context =
         if let (Some(file), Some(line)) = (&state.current_source_file, state.current_source_line) {
             let filename =
                 std::path::Path::new(file).file_name().and_then(|n| n.to_str()).unwrap_or(file);
-            Title::from(format!("Source ({filename}:{line}) ({language})").fg(ORANGE))
+            Some(format!("{filename}:{line} [{language}]"))
         } else {
             return;
         };
+    let active = matches!(effective_mode(state), Mode::OnlySource);
+    let block = pane_block("Source", context, "", active);
 
     if state.source_lines.is_empty() || state.current_source_line.is_none() {
-        let block = Block::default().borders(Borders::ALL).title(title);
         f.render_widget(block, area);
         return;
     }
@@ -34,8 +33,8 @@ pub fn draw_source(state: &mut State, f: &mut Frame, area: Rect) {
     let total_lines = state.source_lines.len();
 
     // Calculate which lines to show based on scroll position
-    // Account for borders and title
-    let lines_to_show = (area.height as usize).saturating_sub(3);
+    // Account for border and title
+    let lines_to_show = (area.height as usize).saturating_sub(1);
     state.source_scroll.viewport = lines_to_show;
     let start_line = state.source_scroll.scroll.min(total_lines.saturating_sub(lines_to_show));
     let end_line = (start_line + lines_to_show).min(total_lines);
@@ -98,7 +97,7 @@ pub fn draw_source(state: &mut State, f: &mut Frame, area: Rect) {
 
     let widths = [Constraint::Length(1), Constraint::Length(4), Constraint::Fill(1)];
 
-    let table = Table::new(rows, widths).block(Block::default().borders(Borders::TOP).title(title));
+    let table = Table::new(rows, widths).block(block);
 
     let mut table_state = TableState::default();
     if current_line > start_line {

@@ -1,15 +1,13 @@
 use ratatui::layout::Constraint;
 use ratatui::prelude::Stylize;
-use ratatui::widgets::{Block, Borders, Scrollbar, ScrollbarOrientation, Table};
+use ratatui::widgets::{Scrollbar, ScrollbarOrientation, Table};
 use ratatui::{Frame, layout::Rect, style::Style, widgets::Row};
 
-use super::{BLUE, ORANGE, SCROLL_CONTROL_TEXT};
+use super::{BLUE, ORANGE, effective_mode, pane_block};
 
-use crate::State;
+use crate::{Mode, State};
 
 pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
-    let title = format!("Memory Mapping {SCROLL_CONTROL_TEXT}, Hexdump(H)");
-
     let mut rows = vec![];
     rows.push(
         Row::new(["Start Address", "End Address", "Size", "Offset", "Permissions", "Path"])
@@ -34,7 +32,7 @@ pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
         }
     }
     let len = rows.len();
-    let max = mapping_rect.height;
+    let max = mapping_rect.height.saturating_sub(1);
     let skip = if len <= max as usize { 0 } else { state.memory_map_scroll.scroll };
 
     // Store viewport height for use in key handlers
@@ -51,7 +49,8 @@ pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
         Constraint::Length(20),
         Constraint::Fill(1),
     ];
-    let block = Block::default().borders(Borders::ALL).title(title.fg(ORANGE));
+    let active = matches!(effective_mode(state), Mode::OnlyMapping);
+    let block = pane_block("Memory Mapping", None, "H hexdump", active);
     let table = Table::new(rows, widths).block(block);
     f.render_widget(table, mapping_rect);
     f.render_stateful_widget(
@@ -105,7 +104,7 @@ mod tests {
             .unwrap();
 
         // Verify state was updated
-        assert_eq!(state.memory_map_viewport_height, 24);
+        assert_eq!(state.memory_map_viewport_height, 23);
     }
 
     #[test]
@@ -124,7 +123,7 @@ mod tests {
             .unwrap();
 
         // Verify state was updated
-        assert_eq!(state.memory_map_viewport_height, 24);
+        assert_eq!(state.memory_map_viewport_height, 23);
     }
 
     #[test]
@@ -161,7 +160,7 @@ mod tests {
             .unwrap();
 
         // Verify state was updated
-        assert_eq!(state.memory_map_viewport_height, 24);
+        assert_eq!(state.memory_map_viewport_height, 23);
     }
 
     #[test]

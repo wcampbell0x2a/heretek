@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::{PtrSize, State};
 
-use super::{BLUE, DARK_GRAY, GREEN, ORANGE, SCROLL_CONTROL_TEXT, YELLOW};
+use super::{BLUE, DARK_GRAY, GREEN, ORANGE, YELLOW, effective_mode, pane_block};
 
 pub const HEXDUMP_WIDTH: usize = 16;
 
@@ -104,31 +104,31 @@ fn popup_area(area: Rect, percent_x: u16) -> Rect {
     area
 }
 
-fn block(pos: &str) -> Block<'_> {
-    Block::default().borders(Borders::ALL).title(
-        format!("Hexdump{pos} {SCROLL_CONTROL_TEXT}, Save(S), HEAP(H), STACK(T))").fg(ORANGE),
-    )
+fn hexdump_block<'a>(state: &State, pos: Option<String>) -> Block<'a> {
+    let active =
+        matches!(effective_mode(state), crate::Mode::OnlyHexdump | crate::Mode::OnlyHexdumpPopup);
+    pane_block("Hexdump", pos, "S save  H heap  T stack", active)
 }
 
 pub fn draw_hexdump(state: &mut State, f: &mut Frame, hexdump: Rect, show_popup: bool) {
     let hexdump_active = state.hexdump.is_some();
-    let mut pos = String::new();
 
     if hexdump_active {
         let r = state.hexdump.clone().unwrap();
-        pos = format!("(0x{:02x?})", r.0);
+        let pos = format!("0x{:02x?}", r.0);
         let data = &r.1;
 
         let skip = state.hexdump_scroll.scroll;
-        let take = hexdump.height;
+        let take = hexdump.height.saturating_sub(1);
         let lines = to_hexdump_str(state, r.0, data, skip, take as usize);
         let content_len = data.len() / HEXDUMP_WIDTH;
 
         let lines: Vec<Line> = lines.into_iter().collect();
         state.hexdump_scroll.viewport = take as usize;
         state.hexdump_scroll.set_content_length(content_len);
-        let paragraph =
-            Paragraph::new(lines).block(block(&pos)).style(Style::default().fg(Color::White));
+        let paragraph = Paragraph::new(lines)
+            .block(hexdump_block(state, Some(pos)))
+            .style(Style::default().fg(Color::White));
 
         f.render_widget(paragraph, hexdump);
         f.render_stateful_widget(
@@ -150,7 +150,7 @@ pub fn draw_hexdump(state: &mut State, f: &mut Frame, hexdump: Rect, show_popup:
             f.render_widget(txt_input, area);
         }
     } else {
-        f.render_widget(Paragraph::new("").block(block(&pos)), hexdump);
+        f.render_widget(Paragraph::new("").block(hexdump_block(state, None)), hexdump);
     }
 }
 
@@ -273,13 +273,6 @@ mod tests {
         // Take only 2 lines
         let lines = to_hexdump_str(&mut state, 0x1000, &buffer, 0, 2);
         assert_eq!(lines.len(), 2);
-    }
-
-    #[test]
-    fn test_block_creation() {
-        // Just verify the block function returns successfully
-        let _b = block("(0x1234)");
-        let _b2 = block("");
     }
 
     #[test]

@@ -1,14 +1,13 @@
-use ratatui::prelude::Stylize;
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::Paragraph;
 use ratatui::{Frame, layout::Rect, style::Style};
 
-use super::{ORANGE, PURPLE};
+use super::{ORANGE, PURPLE, pane_block};
 
 use crate::State;
 
 pub fn draw_bt(state: &mut State, f: &mut Frame, bt_rect: Rect) {
-    let block = Block::default().borders(Borders::TOP).title("Backtrace".fg(ORANGE));
+    let block = pane_block("Backtrace", None, "", false);
     let mut lines = vec![];
     for b in &state.bt {
         let loc_span = Span::from(format!("  {:08x}", b.location,)).style(Style::new().fg(PURPLE));

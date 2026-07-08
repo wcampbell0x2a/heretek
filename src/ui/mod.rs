@@ -24,6 +24,7 @@ use crate::{Mode, State};
 
 pub mod asm;
 pub mod bt;
+pub mod help;
 pub mod hexdump;
 pub mod input;
 pub mod mapping;
@@ -60,7 +61,11 @@ pub const SAVED_STACK: u16 = 14;
 /// Mode used for pane display decisions, falling back through overlay modes
 /// to the pane that is displayed beneath them
 pub fn effective_mode(state: &State) -> Mode {
-    if matches!(state.mode, Mode::QuitConfirmation) { state.previous_mode } else { state.mode }
+    if matches!(state.mode, Mode::QuitConfirmation | Mode::Help) {
+        state.previous_mode
+    } else {
+        state.mode
+    }
 }
 
 /// Standard pane chrome: top border, bold colored title, optional dim
@@ -261,14 +266,20 @@ pub fn ui(f: &mut Frame, state: &mut State) {
         top
     };
 
-    let display_mode =
-        if matches!(mode, Mode::QuitConfirmation) { state.previous_mode } else { mode };
+    let display_mode = if matches!(mode, Mode::QuitConfirmation | Mode::Help) {
+        state.previous_mode
+    } else {
+        mode
+    };
 
     draw_mode_content(state, f, top, display_mode);
 
-    // Draw quit confirmation popup on top if in quit confirmation mode
+    // Draw overlays on top of the pane content
     if matches!(mode, Mode::QuitConfirmation) {
         draw_quit_confirmation(f);
+    }
+    if matches!(mode, Mode::Help) {
+        help::draw_help(f);
     }
 }
 

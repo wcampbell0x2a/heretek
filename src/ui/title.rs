@@ -61,8 +61,8 @@ pub fn draw_title_area(state: &mut State, f: &mut Frame, title_area: Rect) {
         first,
     );
     let mode = &state.mode;
-    // Use previous_mode's index when in quit confirmation to maintain selection
-    let selected_index = if matches!(mode, crate::Mode::QuitConfirmation) {
+    // Use previous_mode's index when in an overlay to maintain selection
+    let selected_index = if matches!(mode, crate::Mode::QuitConfirmation | crate::Mode::Help) {
         state.previous_mode.ui_index()
     } else {
         mode.ui_index()

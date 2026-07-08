@@ -153,6 +153,7 @@ enum Mode {
     OnlySymbols,
     OnlySource,
     QuitConfirmation,
+    Help,
 }
 
 impl Mode {
@@ -169,6 +170,7 @@ impl Mode {
             Mode::OnlySymbols => 7,
             Mode::OnlySource => 8,
             Mode::QuitConfirmation => 0,
+            Mode::Help => 0,
         }
     }
 
@@ -185,6 +187,7 @@ impl Mode {
             Mode::OnlySymbols => Mode::OnlySource,
             Mode::OnlySource => Mode::All,
             Mode::QuitConfirmation => Mode::QuitConfirmation,
+            Mode::Help => Mode::Help,
         }
     }
 }
@@ -735,6 +738,22 @@ fn run_app<B: Backend>(
                 (_, KeyCode::Esc, Mode::QuitConfirmation) => {
                     let mut state = state_share.state.lock().unwrap();
                     state.mode = state.previous_mode;
+                }
+                // help overlay
+                (_, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?'), Mode::Help) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = state.previous_mode;
+                }
+                (_, _, Mode::Help) => {}
+                (InputMode::Normal, KeyCode::Char('?'), _)
+                    if !matches!(mode, Mode::QuitConfirmation) && {
+                        let state = state_share.state.lock().unwrap();
+                        !(state.mode == Mode::OnlySymbols && state.symbols_search_active)
+                    } =>
+                {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.previous_mode = state.mode;
+                    state.mode = Mode::Help;
                 }
                 // Input
                 (InputMode::Normal, KeyCode::Char('i'), _)

@@ -21,7 +21,20 @@ fn to_hexdump_str<'a>(
     take: usize,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
+    let mut prev_all_zero = false;
     for (offset, chunk) in buffer.chunks(16).skip(skip).take(take).enumerate() {
+        // Collapse runs of all-zero rows: show the first row in full, then a
+        // single `*` marker for the rest of the run, like hexyl.
+        let all_zero = chunk.iter().all(|&b| b == 0x00);
+        if all_zero && prev_all_zero {
+            // Only emit one `*` per run; the marker was already pushed.
+            if lines.last().map(Line::to_string).as_deref() != Some("*") {
+                lines.push(Line::from(Span::styled("*", Style::default().fg(DARK_GRAY))));
+            }
+            continue;
+        }
+        prev_all_zero = all_zero;
+
         let mut hex_spans = Vec::new();
         // bytes
         for byte in chunk {
@@ -254,6 +267,31 @@ mod tests {
         let buffer: Vec<u8> = (0..32).map(|i| i as u8).collect();
         let lines = to_hexdump_str(&mut state, 0x1000, &buffer, 0, 10);
         assert_eq!(lines.len(), 2);
+    }
+
+    #[test]
+    fn test_to_hexdump_str_collapses_zero_runs() {
+        let args = Args {
+            gdb_path: None,
+            remote: None,
+            ptr_size: PtrSize::Size64,
+            cmds: None,
+            log_path: None,
+        };
+        let mut state = State::new(args);
+        // 4 rows (64 bytes) of all-zero should collapse to the first row plus a
+        // single `*` marker
+        let buffer: Vec<u8> = vec![0x00; 64];
+        let lines = to_hexdump_str(&mut state, 0x1000, &buffer, 0, 10);
+        assert_eq!(lines.len(), 2);
+
+        // A non-zero row between zero runs breaks the collapse: zero row, `*`,
+        // data row, zero row => 4 lines
+        let mut buffer: Vec<u8> = vec![0x00; 48];
+        buffer.extend_from_slice(&[0x41; 16]); // non-zero row
+        buffer.extend_from_slice(&[0x00; 16]); // trailing zero row
+        let lines = to_hexdump_str(&mut state, 0x1000, &buffer, 0, 10);
+        assert_eq!(lines.len(), 4);
     }
 
     #[test]

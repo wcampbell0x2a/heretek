@@ -35,7 +35,8 @@ use gdb::write_mi;
 use log::{debug, error};
 use ratatui::crossterm::{
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseEventKind,
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton,
+        MouseEventKind,
     },
     execute,
     terminal::{LeaveAlternateScreen, disable_raw_mode},
@@ -160,6 +161,23 @@ enum Mode {
 }
 
 impl Mode {
+    /// Map a tab index (as laid out in the title bar) back to a `Mode`.
+    /// Inverse of [`Mode::ui_index`] for the selectable tabs
+    pub fn from_tab_index(index: usize) -> Option<Self> {
+        Some(match index {
+            0 => Mode::All,
+            1 => Mode::OnlyRegister,
+            2 => Mode::OnlyStack,
+            3 => Mode::OnlyInstructions,
+            4 => Mode::OnlyOutput,
+            5 => Mode::OnlyMapping,
+            6 => Mode::OnlyHexdump,
+            7 => Mode::OnlySymbols,
+            8 => Mode::OnlySource,
+            _ => return None,
+        })
+    }
+
     pub fn ui_index(&self) -> usize {
         match self {
             Mode::All => 0,
@@ -303,6 +321,9 @@ struct State {
     memory_map_scroll: Scroll,
     memory_map_selected: usize,
     memory_map_viewport_height: u16,
+    /// Clickable tab regions in the title bar: (row, x_start, x_end_exclusive)
+    /// per tab index. Populated on each render for mouse hit-testing
+    tab_regions: Vec<(u16, u16, u16)>,
     /// Current $pc
     current_pc: u64, // TODO: replace with AtomicU64?
     /// All output from gdb
@@ -371,6 +392,7 @@ impl State {
             memory_map_scroll: Scroll::default(),
             memory_map_selected: 0,
             memory_map_viewport_height: 0,
+            tab_regions: Vec::new(),
             current_pc: 0,
             output: Vec::new(),
             output_scroll: Scroll::default(),
@@ -713,6 +735,10 @@ fn run_app<B: Backend>(
                     MouseEventKind::ScrollDown => {
                         let mut state = state_share.state.lock().unwrap();
                         mouse_scroll(&mut state, false, 1);
+                    }
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        let mut state = state_share.state.lock().unwrap();
+                        mouse_click(&mut state, mouse.column, mouse.row);
                     }
                     _ => {}
                 }
@@ -1459,6 +1485,20 @@ fn mouse_scroll(state: &mut State, up: bool, amount: usize) {
     }
 }
 
+/// Handle a left mouse click at `(col, row)`: if it lands on a title-bar tab,
+/// switch to that mode. Returns true if the click was consumed
+fn mouse_click(state: &mut State, col: u16, row: u16) -> bool {
+    for (i, &(tab_row, x_start, x_end)) in state.tab_regions.iter().enumerate() {
+        if row == tab_row && col >= x_start && col < x_end {
+            if let Some(mode) = Mode::from_tab_index(i) {
+                state.mode = mode;
+            }
+            return true;
+        }
+    }
+    false
+}
+
 fn key_enter(app: &mut App, state: &mut State) -> Result<(), io::Error> {
     if state.input.value().is_empty() {
         state.sent_input.offset = 0;
@@ -2074,6 +2114,31 @@ mod tests {
         let mut val = "No parentheses here".to_string();
         resolve_paren_expressions(&mut val);
         assert_eq!(val, "No parentheses here");
+    }
+
+    #[test]
+    fn test_mouse_click_selects_tab() {
+        let args = Args {
+            gdb_path: None,
+            remote: None,
+            ptr_size: PtrSize::default(),
+            cmds: None,
+            log_path: None,
+        };
+        let mut state = State::new(args);
+        // as the title bar would populate them: three tabs on row 1
+        state.tab_regions = vec![(1, 1, 8), (1, 10, 22), (1, 24, 31)];
+
+        assert!(mouse_click(&mut state, 15, 1));
+        assert_eq!(state.mode, Mode::OnlyRegister);
+
+        assert!(mouse_click(&mut state, 3, 1));
+        assert_eq!(state.mode, Mode::All);
+
+        // a gap between tabs, or the wrong row, does nothing
+        assert!(!mouse_click(&mut state, 9, 1));
+        assert!(!mouse_click(&mut state, 3, 0));
+        assert_eq!(state.mode, Mode::All);
     }
 
     #[test]

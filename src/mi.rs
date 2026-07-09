@@ -445,7 +445,7 @@ fn unescape_gdb_output(input: &str) -> Cow<'_, str> {
                 chars.next();
                 bytes.push(b'\\');
             }
-            Some(d) if matches!(d, '0'..='7') => {
+            Some('0'..='7') => {
                 // Octal escape: collect up to 3 octal digits
                 let mut octal = String::with_capacity(3);
                 for _ in 0..3 {
@@ -555,17 +555,17 @@ pub fn parse_symbol_list(input: &str) -> Vec<crate::Symbol> {
             } else {
                 None
             };
-            if let Some(name) = name {
-                if !name.is_empty() {
-                    // These symbols from "All defined functions:" don't have real addresses yet
-                    // Store line number as placeholder, will be resolved via info address
-                    let line_num = trimmed[..colon_pos].parse::<u64>().unwrap_or(0);
-                    symbols.push(crate::Symbol {
-                        address: line_num,
-                        name,
-                        needs_address_resolution: true,
-                    });
-                }
+            if let Some(name) = name
+                && !name.is_empty()
+            {
+                // These symbols from "All defined functions:" don't have real addresses yet
+                // Store line number as placeholder, will be resolved via info address
+                let line_num = trimmed[..colon_pos].parse::<u64>().unwrap_or(0);
+                symbols.push(crate::Symbol {
+                    address: line_num,
+                    name,
+                    needs_address_resolution: true,
+                });
             }
         }
     }

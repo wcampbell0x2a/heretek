@@ -1,6 +1,6 @@
 use asm::draw_asm;
 use bt::draw_bt;
-use hexdump::draw_hexdump;
+use hexdump::{HexdumpPopup, draw_hexdump};
 use input::draw_input;
 use mapping::draw_mapping;
 use output::draw_output;
@@ -155,12 +155,17 @@ fn draw_mode_content(state: &mut State, f: &mut Frame, top: ratatui::layout::Rec
         Mode::OnlyHexdump => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            draw_hexdump(state, f, all, false);
+            draw_hexdump(state, f, all, HexdumpPopup::None);
         }
         Mode::OnlyHexdumpPopup => {
             let vertical = Layout::vertical([Fill(1)]);
             let [all] = vertical.areas(top);
-            draw_hexdump(state, f, all, true);
+            draw_hexdump(state, f, all, HexdumpPopup::Save);
+        }
+        Mode::OnlyHexdumpGotoPopup => {
+            let vertical = Layout::vertical([Fill(1)]);
+            let [all] = vertical.areas(top);
+            draw_hexdump(state, f, all, HexdumpPopup::Goto);
         }
         Mode::OnlySymbols => {
             let vertical = Layout::vertical([Fill(1)]);
@@ -176,8 +181,17 @@ fn draw_mode_content(state: &mut State, f: &mut Frame, top: ratatui::layout::Rec
     }
 }
 
+/// Join completion matches, showing only the part beyond what the user has
+/// already typed (the suffix). Matches that don't start with `input` (shouldn't
+/// happen for gdb's `-complete`) fall back to their full text
+fn completion_suffixes(input: &str, completions: &[String]) -> String {
+    completions.iter().map(|c| c.strip_prefix(input).unwrap_or(c)).collect::<Vec<_>>().join(" ")
+}
+
 pub fn ui(f: &mut Frame, state: &mut State) {
-    let (completions, bt_len, mode) = { (state.completions.clone(), state.bt.len(), state.mode) };
+    let (completions, bt_len, mode, input_val) = {
+        (state.completions.clone(), state.bt.len(), state.mode, state.input.value().to_string())
+    };
 
     // TODO: register size should depend on arch
     let top_size = Fill(1);
@@ -196,7 +210,7 @@ pub fn ui(f: &mut Frame, state: &mut State) {
         let [title_area, output, input, completions_area, status_area] = vertical.areas(f.area());
 
         // Add completions if any are found
-        let completions = completions.join(" ");
+        let completions = completion_suffixes(&input_val, &completions);
         if completions_area.area() != 0 {
             let completions_str = Paragraph::new(completions);
             f.render_widget(completions_str, completions_area);
@@ -226,7 +240,7 @@ pub fn ui(f: &mut Frame, state: &mut State) {
             vertical.areas(f.area());
 
         // Add completions if any are found
-        let completions = completions.join(" ");
+        let completions = completion_suffixes(&input_val, &completions);
         if completions_area.area() != 0 {
             let completions_str = Paragraph::new(completions);
             f.render_widget(completions_str, completions_area);
@@ -252,7 +266,7 @@ pub fn ui(f: &mut Frame, state: &mut State) {
             vertical.areas(f.area());
 
         // Add completions if any are found
-        let completions = completions.join(" ");
+        let completions = completion_suffixes(&input_val, &completions);
         if completions_area.area() != 0 {
             let completions_str = Paragraph::new(completions);
             f.render_widget(completions_str, completions_area);

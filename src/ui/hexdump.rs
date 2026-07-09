@@ -104,13 +104,25 @@ fn popup_area(area: Rect, percent_x: u16) -> Rect {
     area
 }
 
-fn hexdump_block<'a>(state: &State, pos: Option<String>) -> Block<'a> {
-    let active =
-        matches!(effective_mode(state), crate::Mode::OnlyHexdump | crate::Mode::OnlyHexdumpPopup);
-    pane_block("Hexdump", pos, "S save  H heap  T stack", active)
+/// Which popup, if any, to overlay on the hexdump pane
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum HexdumpPopup {
+    None,
+    Save,
+    Goto,
 }
 
-pub fn draw_hexdump(state: &mut State, f: &mut Frame, hexdump: Rect, show_popup: bool) {
+fn hexdump_block<'a>(state: &State, pos: Option<String>) -> Block<'a> {
+    let active = matches!(
+        effective_mode(state),
+        crate::Mode::OnlyHexdump
+            | crate::Mode::OnlyHexdumpPopup
+            | crate::Mode::OnlyHexdumpGotoPopup
+    );
+    pane_block("Hexdump", pos, "S save  : goto  H heap  T stack", active)
+}
+
+pub fn draw_hexdump(state: &mut State, f: &mut Frame, hexdump: Rect, popup: HexdumpPopup) {
     let hexdump_active = state.hexdump.is_some();
 
     if hexdump_active {
@@ -136,16 +148,19 @@ pub fn draw_hexdump(state: &mut State, f: &mut Frame, hexdump: Rect, show_popup:
             hexdump,
             &mut state.hexdump_scroll.state,
         );
-        if show_popup {
+        if popup != HexdumpPopup::None {
+            let (title, value) = match popup {
+                HexdumpPopup::Save => ("Save to", state.hexdump_popup.value().to_string()),
+                HexdumpPopup::Goto => ("Goto", state.hexdump_goto_popup.value().to_string()),
+                HexdumpPopup::None => unreachable!(),
+            };
             let area = popup_area(hexdump, 60);
-            let txt_input = Paragraph::new(state.hexdump_popup.value().to_string())
-                .style(Style::default())
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title("Save to".fg(YELLOW))
-                        .border_style(Style::default().fg(ORANGE)),
-                );
+            let txt_input = Paragraph::new(value).style(Style::default()).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(title.fg(YELLOW))
+                    .border_style(Style::default().fg(ORANGE)),
+            );
             f.render_widget(Clear, area);
             f.render_widget(txt_input, area);
         }

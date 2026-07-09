@@ -150,6 +150,7 @@ enum Mode {
     OnlyMapping,
     OnlyHexdump,
     OnlyHexdumpPopup,
+    OnlyHexdumpGotoPopup,
     OnlySymbols,
     OnlySource,
     QuitConfirmation,
@@ -167,6 +168,7 @@ impl Mode {
             Mode::OnlyMapping => 5,
             Mode::OnlyHexdump => 6,
             Mode::OnlyHexdumpPopup => 6,
+            Mode::OnlyHexdumpGotoPopup => 6,
             Mode::OnlySymbols => 7,
             Mode::OnlySource => 8,
             Mode::QuitConfirmation => 0,
@@ -184,6 +186,7 @@ impl Mode {
             Mode::OnlyMapping => Mode::OnlyHexdump,
             Mode::OnlyHexdump => Mode::OnlySymbols,
             Mode::OnlyHexdumpPopup => Mode::OnlyHexdumpPopup,
+            Mode::OnlyHexdumpGotoPopup => Mode::OnlyHexdumpGotoPopup,
             Mode::OnlySymbols => Mode::OnlySource,
             Mode::OnlySource => Mode::All,
             Mode::QuitConfirmation => Mode::QuitConfirmation,
@@ -261,6 +264,12 @@ impl Scroll {
         }
         self.state = self.state.position(self.scroll);
     }
+
+    /// Jump to an absolute row position, clamped to the scrollable range.
+    pub fn set(&mut self, pos: usize, len: usize) {
+        self.scroll = pos.min(self.max_scroll(len));
+        self.state = self.state.position(self.scroll);
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -314,6 +323,7 @@ struct State {
     hexdump: Option<(u64, Vec<u8>)>,
     hexdump_scroll: Scroll,
     hexdump_popup: Input,
+    hexdump_goto_popup: Input,
     /// Last async status reported by gdb, shown in the status bar
     async_result: String,
     bt: Vec<Bt>,
@@ -373,6 +383,7 @@ impl State {
             hexdump: None,
             hexdump_scroll: Scroll::default(),
             hexdump_popup: Input::default(),
+            hexdump_goto_popup: Input::default(),
             async_result: String::new(),
             bt: vec![],
             completions: vec![],
@@ -481,8 +492,8 @@ impl State {
         if val != 0 {
             // look through, add see if the value is part of the stack
             // trace!("{:02x?}", memory_map);
-            if self.memory_map.is_some() {
-                for r in self.memory_map.as_ref().unwrap() {
+            if let Some(memory_map) = &self.memory_map {
+                for r in memory_map {
                     if r.contains(val) {
                         if r.is_stack() {
                             is_stack = true;
@@ -693,6 +704,9 @@ fn run_app<B: Backend>(
         {
             if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                 gdb::write_mi(&app.gdb_stdin, "-exec-interrupt");
+                let mut state = state_share.state.lock().unwrap();
+                state.input.reset();
+                state.completions.clear();
                 continue;
             }
             let (input_mode, mode) = {
@@ -730,6 +744,43 @@ fn run_app<B: Backend>(
                 (_, _, Mode::OnlyHexdumpPopup) => {
                     let mut state = state_share.state.lock().unwrap();
                     state.hexdump_popup.handle_event(&Event::Key(key));
+                }
+                // hexdump goto popup
+                (_, KeyCode::Esc, Mode::OnlyHexdumpGotoPopup) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.hexdump_goto_popup = Input::default();
+                    state.mode = Mode::OnlyHexdump;
+                }
+                (_, KeyCode::Enter, Mode::OnlyHexdumpGotoPopup) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let val = state.hexdump_goto_popup.value().to_string();
+                    let trimmed = val.trim().trim_start_matches("0x");
+                    match u64::from_str_radix(trimmed, 16) {
+                        Ok(addr) => {
+                            if let Some((base, data)) = state.hexdump.as_ref() {
+                                let (base, len) = (*base, data.len());
+                                if addr >= base && (addr - base) < len as u64 {
+                                    let row = (addr - base) as usize / HEXDUMP_WIDTH;
+                                    let content_len = len / HEXDUMP_WIDTH;
+                                    state.hexdump_scroll.set(row, content_len);
+                                } else {
+                                    state.output.push(format!(
+                                        "h> 0x{addr:x} is outside the current hexdump (0x{base:x}..0x{:x})",
+                                        base + len as u64
+                                    ));
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            state.output.push(format!("h> invalid address: {val}"));
+                        }
+                    }
+                    state.hexdump_goto_popup = Input::default();
+                    state.mode = Mode::OnlyHexdump;
+                }
+                (_, _, Mode::OnlyHexdumpGotoPopup) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.hexdump_goto_popup.handle_event(&Event::Key(key));
                 }
                 // quit confirmation
                 (_, KeyCode::Enter, Mode::QuitConfirmation) => {
@@ -997,6 +1048,10 @@ fn run_app<B: Backend>(
                 (InputMode::Normal, KeyCode::Char('S'), Mode::OnlyHexdump) => {
                     let mut state = state_share.state.lock().unwrap();
                     state.mode = Mode::OnlyHexdumpPopup;
+                }
+                (InputMode::Normal, KeyCode::Char(':'), Mode::OnlyHexdump) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = Mode::OnlyHexdumpGotoPopup;
                 }
                 (InputMode::Normal, KeyCode::Char('H'), Mode::OnlyHexdump) => {
                     let mut state = state_share.state.lock().unwrap();
@@ -1702,7 +1757,7 @@ mod tests {
 
         // stack repeating
         let mut stack: Vec<_> = stack.clone().into_iter().collect();
-        stack.sort_by(|a, b| a.0.cmp(&b.0));
+        stack.sort_by_key(|a| a.0);
         assert!(stack[4].1.repeated_pattern);
         assert!(stack[5].1.repeated_pattern);
         assert!(stack[6].1.repeated_pattern);
@@ -1764,7 +1819,7 @@ mod tests {
         let output = output.to_string();
         let stack = state.state.lock().unwrap().stack.clone();
         let mut entries: Vec<_> = stack.clone().into_iter().collect();
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        entries.sort_by_key(|a| a.0);
         let first_stack = entries[0].0;
         let from = format!("0x{first_stack:02x}");
         let output = output.replace(&from, "<stack_0>");

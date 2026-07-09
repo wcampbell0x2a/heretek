@@ -58,4 +58,4 @@ jobs:
           target: x86_64-unknown-linux-musl
           components: rustfmt, clippy
       - run: cargo fmt --all --check
-      # - run: cross clippy --target x86_64-unknown-linux-gnu --workspace -- -D warnings
+      - run: cargo clippy --workspace --all-targets -- -D warnings

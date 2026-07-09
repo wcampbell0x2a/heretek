@@ -34,7 +34,9 @@ use env_logger::{Builder, Env};
 use gdb::write_mi;
 use log::{debug, error};
 use ratatui::crossterm::{
-    event::{self, DisableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseEventKind,
+    },
     execute,
     terminal::{LeaveAlternateScreen, disable_raw_mode},
 };
@@ -591,6 +593,7 @@ fn main() -> anyhow::Result<()> {
 
     // Setup terminal
     let mut terminal = ratatui::init();
+    execute!(terminal.backend_mut(), EnableMouseCapture)?;
 
     spawn_gdb_interact(&state_share, gdb_stdout);
 
@@ -699,9 +702,25 @@ fn run_app<B: Backend>(
             }
         };
 
-        if event::poll(poll_timeout)?
-            && let Event::Key(key) = event::read()?
-        {
+        if event::poll(poll_timeout)? {
+            let event = event::read()?;
+            if let Event::Mouse(mouse) = event {
+                match mouse.kind {
+                    MouseEventKind::ScrollUp => {
+                        let mut state = state_share.state.lock().unwrap();
+                        mouse_scroll(&mut state, true, 1);
+                    }
+                    MouseEventKind::ScrollDown => {
+                        let mut state = state_share.state.lock().unwrap();
+                        mouse_scroll(&mut state, false, 1);
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+            let Event::Key(key) = event else {
+                continue;
+            };
             if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                 gdb::write_mi(&app.gdb_stdin, "-exec-interrupt");
                 let mut state = state_share.state.lock().unwrap();
@@ -1395,6 +1414,49 @@ fn completion(app: &mut App, state: &mut State) -> Result<(), io::Error> {
     gdb::write_mi(&app.gdb_stdin, &cmd);
 
     Ok(())
+}
+
+/// Scroll the currently focused pane by `amount` rows in response to a mouse
+/// wheel event. Panes that use a plain `Scroll` are handled here; the mapping
+/// and symbols views use selection-based navigation and are left alone
+fn mouse_scroll(state: &mut State, up: bool, amount: usize) {
+    match state.mode {
+        Mode::All | Mode::OnlyRegister => {
+            let len = state.registers.len();
+            if up {
+                state.registers_scroll.up(amount);
+            } else {
+                state.registers_scroll.down(amount, len);
+            }
+        }
+        Mode::OnlyOutput => {
+            let len = state.output.len();
+            if up {
+                state.output_scroll.up(amount);
+            } else {
+                state.output_scroll.down(amount, len);
+            }
+        }
+        Mode::OnlyHexdump | Mode::OnlyHexdumpPopup | Mode::OnlyHexdumpGotoPopup => {
+            if let Some(hexdump) = state.hexdump.as_ref() {
+                let len = hexdump.1.len() / HEXDUMP_WIDTH;
+                if up {
+                    state.hexdump_scroll.up(amount);
+                } else {
+                    state.hexdump_scroll.down(amount, len);
+                }
+            }
+        }
+        Mode::OnlySource => {
+            let len = state.source_lines.len();
+            if up {
+                state.source_scroll.up(amount);
+            } else {
+                state.source_scroll.down(amount, len);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn key_enter(app: &mut App, state: &mut State) -> Result<(), io::Error> {

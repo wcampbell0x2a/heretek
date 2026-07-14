@@ -70,12 +70,11 @@ fn draw_symbol_list(state: &mut State, f: &mut Frame, area: Rect, viewing_asm: b
     // Handle scrolling
     let len = rows.len();
     let max = area.height.saturating_sub(2); // Account for border and pinned header
-    let skip = if len <= max as usize { 0 } else { state.symbols_scroll.scroll };
 
     // Store viewport height for use in key handlers
     state.symbols_viewport_height = max;
-    state.symbols_scroll.viewport = max as usize;
-    state.symbols_scroll.set_content_length(len);
+    state.symbols_scroll.set_max_scroll(len.saturating_sub(max as usize));
+    let skip = state.symbols_scroll.scroll;
     let rows: Vec<Row> = rows.into_iter().skip(skip).take(max as usize).collect();
 
     let widths = [Constraint::Length(18), Constraint::Fill(1)];
@@ -106,10 +105,9 @@ fn draw_symbol_asm(state: &mut State, f: &mut Frame, area: Rect) {
     // Handle scrolling
     let len = rows.len();
     let max = area.height.saturating_sub(2); // Account for border and pinned header
-    let skip = if len <= max as usize { 0 } else { state.symbol_asm_scroll.scroll };
 
-    state.symbol_asm_scroll.viewport = max as usize;
-    state.symbol_asm_scroll.set_content_length(len);
+    state.symbol_asm_scroll.set_max_scroll(len.saturating_sub(max as usize));
+    let skip = state.symbol_asm_scroll.scroll;
     let rows: Vec<Row> = rows.into_iter().skip(skip).take(max as usize).collect();
 
     let widths = [Constraint::Length(18), Constraint::Fill(1)];

@@ -91,14 +91,14 @@ pub fn draw_registers(state: &mut State, f: &mut Frame, register: Rect) {
         }
     }
 
-    let take = lines.len();
-    let max = register.height;
-    let skip = if take <= max as usize { 0 } else { state.registers_scroll.scroll };
-    state.registers_scroll.viewport = max as usize;
-    state.registers_scroll.set_content_length(take);
+    let len = lines.len();
+    // account for the top border
+    let visible = (register.height as usize).saturating_sub(1);
+    state.registers_scroll.set_max_scroll(len.saturating_sub(visible));
+    let skip = state.registers_scroll.scroll;
 
     // TODO: remove collect, juts skip before
-    let lines: Vec<Line> = lines.into_iter().skip(skip).take(take).collect();
+    let lines: Vec<Line> = lines.into_iter().skip(skip).take(visible).collect();
 
     let text = Text::from(lines);
     let paragraph = Paragraph::new(text).block(block);

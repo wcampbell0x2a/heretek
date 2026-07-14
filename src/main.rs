@@ -49,7 +49,7 @@ use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
 use mi::{Asm, MemoryMapping, data_read_memory_bytes};
-use ui::hexdump::HEXDUMP_WIDTH;
+use ui::hexdump::{HEXDUMP_WIDTH, display_index_of_row};
 
 mod deref;
 mod gdb;
@@ -246,7 +246,10 @@ struct StateShare {
 struct Scroll {
     scroll: usize,
     state: ScrollbarState,
-    viewport: usize,
+    /// Highest valid scroll offset, i.e. the offset where the last content
+    /// line sits at the bottom of the pane. Recorded each draw by the pane's
+    /// draw fn, which knows the real content and viewport sizes
+    max_scroll: usize,
 }
 
 impl Scroll {
@@ -255,39 +258,32 @@ impl Scroll {
         self.state = self.state.position(0);
     }
 
-    fn max_scroll(&self, len: usize) -> usize {
-        len.saturating_sub(self.viewport)
+    /// Record the scroll bound for this pane, clamping the current position
+    /// if the content shrank or the viewport grew
+    pub fn set_max_scroll(&mut self, max: usize) {
+        self.max_scroll = max;
+        self.scroll = self.scroll.min(max);
+        self.state = self.state.content_length(max).position(self.scroll);
     }
 
-    pub fn set_content_length(&mut self, len: usize) {
-        self.state = self.state.content_length(self.max_scroll(len));
-    }
-
-    pub fn end(&mut self, len: usize) {
-        self.scroll = self.max_scroll(len);
+    pub fn end(&mut self) {
+        self.scroll = self.max_scroll;
         self.state.last();
     }
 
-    pub fn down(&mut self, n: usize, len: usize) {
-        let max = self.max_scroll(len);
-        if self.scroll < max {
-            self.scroll = (self.scroll + n).min(max);
-            self.state = self.state.position(self.scroll);
-        }
-    }
-
-    pub fn up(&mut self, n: usize) {
-        if self.scroll > n {
-            self.scroll -= n;
-        } else {
-            self.scroll = 0;
-        }
+    pub fn down(&mut self, n: usize) {
+        self.scroll = (self.scroll + n).min(self.max_scroll);
         self.state = self.state.position(self.scroll);
     }
 
-    /// Jump to an absolute row position, clamped to the scrollable range.
-    pub fn set(&mut self, pos: usize, len: usize) {
-        self.scroll = pos.min(self.max_scroll(len));
+    pub fn up(&mut self, n: usize) {
+        self.scroll = self.scroll.saturating_sub(n);
+        self.state = self.state.position(self.scroll);
+    }
+
+    /// Jump to an absolute row position, clamped to the scrollable range
+    pub fn set(&mut self, pos: usize) {
+        self.scroll = pos.min(self.max_scroll);
         self.state = self.state.position(self.scroll);
     }
 }
@@ -806,8 +802,8 @@ fn run_app<B: Backend>(
                                 let (base, len) = (*base, data.len());
                                 if addr >= base && (addr - base) < len as u64 {
                                     let row = (addr - base) as usize / HEXDUMP_WIDTH;
-                                    let content_len = len / HEXDUMP_WIDTH;
-                                    state.hexdump_scroll.set(row, content_len);
+                                    let index = display_index_of_row(data, row);
+                                    state.hexdump_scroll.set(index);
                                 } else {
                                     state.output.push(format!(
                                         "h> 0x{addr:x} is outside the current hexdump (0x{base:x}..0x{:x})",
@@ -922,8 +918,7 @@ fn run_app<B: Backend>(
                 }
                 (InputMode::Normal, KeyCode::Char('j'), Mode::All) => {
                     let mut state = state_share.state.lock().unwrap();
-                    let len = state.registers.len();
-                    state.registers_scroll.down(1, len);
+                    state.registers_scroll.down(1);
                 }
                 (InputMode::Normal, KeyCode::Char('k'), Mode::All) => {
                     let mut state = state_share.state.lock().unwrap();
@@ -931,8 +926,7 @@ fn run_app<B: Backend>(
                 }
                 (InputMode::Normal, KeyCode::Char('J'), Mode::All) => {
                     let mut state = state_share.state.lock().unwrap();
-                    let len = state.registers.len();
-                    state.registers_scroll.down(50, len);
+                    state.registers_scroll.down(50);
                 }
                 (InputMode::Normal, KeyCode::Char('K'), Mode::All) => {
                     let mut state = state_share.state.lock().unwrap();
@@ -940,8 +934,7 @@ fn run_app<B: Backend>(
                 }
                 (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyRegister) => {
                     let mut state = state_share.state.lock().unwrap();
-                    let len = state.registers.len();
-                    state.registers_scroll.down(1, len);
+                    state.registers_scroll.down(1);
                 }
                 (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyRegister) => {
                     let mut state = state_share.state.lock().unwrap();
@@ -949,8 +942,7 @@ fn run_app<B: Backend>(
                 }
                 (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyRegister) => {
                     let mut state = state_share.state.lock().unwrap();
-                    let len = state.registers.len();
-                    state.registers_scroll.down(50, len);
+                    state.registers_scroll.down(50);
                 }
                 (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyRegister) => {
                     let mut state = state_share.state.lock().unwrap();
@@ -963,13 +955,11 @@ fn run_app<B: Backend>(
                 }
                 (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyOutput) => {
                     let mut state = state_share.state.lock().unwrap();
-                    let len = state.output.len();
-                    state.output_scroll.end(len);
+                    state.output_scroll.end();
                 }
                 (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyOutput) => {
                     let mut state = state_share.state.lock().unwrap();
-                    let len = state.output.len();
-                    state.output_scroll.down(1, len);
+                    state.output_scroll.down(1);
                 }
                 (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyOutput) => {
                     let mut state = state_share.state.lock().unwrap();
@@ -977,8 +967,7 @@ fn run_app<B: Backend>(
                 }
                 (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyOutput) => {
                     let mut state = state_share.state.lock().unwrap();
-                    let len = state.output.len();
-                    state.output_scroll.down(50, len);
+                    state.output_scroll.down(50);
                 }
                 (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyOutput) => {
                     let mut state = state_share.state.lock().unwrap();
@@ -996,7 +985,7 @@ fn run_app<B: Backend>(
                         let len = memory.len();
                         if len > 0 {
                             state.memory_map_selected = len - 1;
-                            state.memory_map_scroll.end(len);
+                            state.memory_map_scroll.end();
                         }
                     }
                 }
@@ -1085,10 +1074,7 @@ fn run_app<B: Backend>(
                 }
                 (InputMode::Normal, KeyCode::Char('G'), Mode::OnlyHexdump) => {
                     let mut state = state_share.state.lock().unwrap();
-                    if let Some(hexdump) = state.hexdump.as_ref() {
-                        let len = hexdump.1.len() / HEXDUMP_WIDTH;
-                        state.hexdump_scroll.end(len);
-                    }
+                    state.hexdump_scroll.end();
                 }
                 (InputMode::Normal, KeyCode::Char('S'), Mode::OnlyHexdump) => {
                     let mut state = state_share.state.lock().unwrap();
@@ -1122,11 +1108,7 @@ fn run_app<B: Backend>(
                 }
                 (InputMode::Normal, KeyCode::Char('j'), Mode::OnlyHexdump) => {
                     let mut state = state_share.state.lock().unwrap();
-                    let hexdump = &state.hexdump;
-                    if let Some(hexdump) = hexdump.as_ref() {
-                        let len = hexdump.1.len() / HEXDUMP_WIDTH;
-                        state.hexdump_scroll.down(1, len);
-                    }
+                    state.hexdump_scroll.down(1);
                 }
                 (InputMode::Normal, KeyCode::Char('k'), Mode::OnlyHexdump) => {
                     let mut state = state_share.state.lock().unwrap();
@@ -1134,11 +1116,7 @@ fn run_app<B: Backend>(
                 }
                 (InputMode::Normal, KeyCode::Char('J'), Mode::OnlyHexdump) => {
                     let mut state = state_share.state.lock().unwrap();
-                    let hexdump = &state.hexdump;
-                    if let Some(hexdump) = hexdump.as_ref() {
-                        let len = hexdump.1.len() / HEXDUMP_WIDTH;
-                        state.hexdump_scroll.down(50, len);
-                    }
+                    state.hexdump_scroll.down(50);
                 }
                 (InputMode::Normal, KeyCode::Char('K'), Mode::OnlyHexdump) => {
                     let mut state = state_share.state.lock().unwrap();
@@ -1177,13 +1155,12 @@ fn run_app<B: Backend>(
                 {
                     let mut state = state_share.state.lock().unwrap();
                     if state.symbols_viewing_asm {
-                        let len = state.symbol_asm.len();
-                        state.symbol_asm_scroll.end(len);
+                        state.symbol_asm_scroll.end();
                     } else {
                         let len = state.get_filtered_symbols().len();
                         if len > 0 {
                             state.symbols_selected = len - 1;
-                            state.symbols_scroll.end(len);
+                            state.symbols_scroll.end();
                         }
                     }
                 }
@@ -1195,8 +1172,7 @@ fn run_app<B: Backend>(
                 {
                     let mut state = state_share.state.lock().unwrap();
                     if state.symbols_viewing_asm {
-                        let len = state.symbol_asm.len();
-                        state.symbol_asm_scroll.down(1, len);
+                        state.symbol_asm_scroll.down(1);
                     } else {
                         let len = state.get_filtered_symbols().len();
                         if state.symbols_selected < len.saturating_sub(1) {
@@ -1240,8 +1216,7 @@ fn run_app<B: Backend>(
                 {
                     let mut state = state_share.state.lock().unwrap();
                     if state.symbols_viewing_asm {
-                        let len = state.symbol_asm.len();
-                        state.symbol_asm_scroll.down(50, len);
+                        state.symbol_asm_scroll.down(50);
                     } else {
                         let len = state.get_filtered_symbols().len();
                         let new_selected = (state.symbols_selected + 50).min(len.saturating_sub(1));
@@ -1349,13 +1324,11 @@ fn run_app<B: Backend>(
                 }
                 (InputMode::Normal, KeyCode::Char('G'), Mode::OnlySource) => {
                     let mut state = state_share.state.lock().unwrap();
-                    let len = state.source_lines.len();
-                    state.source_scroll.end(len);
+                    state.source_scroll.end();
                 }
                 (InputMode::Normal, KeyCode::Char('j'), Mode::OnlySource) => {
                     let mut state = state_share.state.lock().unwrap();
-                    let len = state.source_lines.len();
-                    state.source_scroll.down(1, len);
+                    state.source_scroll.down(1);
                 }
                 (InputMode::Normal, KeyCode::Char('k'), Mode::OnlySource) => {
                     let mut state = state_share.state.lock().unwrap();
@@ -1363,8 +1336,7 @@ fn run_app<B: Backend>(
                 }
                 (InputMode::Normal, KeyCode::Char('J'), Mode::OnlySource) => {
                     let mut state = state_share.state.lock().unwrap();
-                    let len = state.source_lines.len();
-                    state.source_scroll.down(50, len);
+                    state.source_scroll.down(50);
                 }
                 (InputMode::Normal, KeyCode::Char('K'), Mode::OnlySource) => {
                     let mut state = state_share.state.lock().unwrap();
@@ -1446,42 +1418,19 @@ fn completion(app: &mut App, state: &mut State) -> Result<(), io::Error> {
 /// wheel event. Panes that use a plain `Scroll` are handled here; the mapping
 /// and symbols views use selection-based navigation and are left alone
 fn mouse_scroll(state: &mut State, up: bool, amount: usize) {
-    match state.mode {
-        Mode::All | Mode::OnlyRegister => {
-            let len = state.registers.len();
-            if up {
-                state.registers_scroll.up(amount);
-            } else {
-                state.registers_scroll.down(amount, len);
-            }
-        }
-        Mode::OnlyOutput => {
-            let len = state.output.len();
-            if up {
-                state.output_scroll.up(amount);
-            } else {
-                state.output_scroll.down(amount, len);
-            }
-        }
+    let scroll = match state.mode {
+        Mode::All | Mode::OnlyRegister => &mut state.registers_scroll,
+        Mode::OnlyOutput => &mut state.output_scroll,
         Mode::OnlyHexdump | Mode::OnlyHexdumpPopup | Mode::OnlyHexdumpGotoPopup => {
-            if let Some(hexdump) = state.hexdump.as_ref() {
-                let len = hexdump.1.len() / HEXDUMP_WIDTH;
-                if up {
-                    state.hexdump_scroll.up(amount);
-                } else {
-                    state.hexdump_scroll.down(amount, len);
-                }
-            }
+            &mut state.hexdump_scroll
         }
-        Mode::OnlySource => {
-            let len = state.source_lines.len();
-            if up {
-                state.source_scroll.up(amount);
-            } else {
-                state.source_scroll.down(amount, len);
-            }
-        }
-        _ => {}
+        Mode::OnlySource => &mut state.source_scroll,
+        _ => return,
+    };
+    if up {
+        scroll.up(amount);
+    } else {
+        scroll.down(amount);
     }
 }
 
@@ -1767,6 +1716,38 @@ mod tests {
 
     use ratatui::{Terminal, backend::TestBackend};
     use test_assets_ureq::{TestAssetDef, dl_test_files_backoff};
+
+    #[test]
+    fn test_scroll_clamps_to_max() {
+        let mut scroll = Scroll::default();
+        scroll.set_max_scroll(10);
+
+        scroll.down(4);
+        assert_eq!(scroll.scroll, 4);
+        // can't scroll past the recorded max
+        scroll.down(100);
+        assert_eq!(scroll.scroll, 10);
+
+        scroll.up(3);
+        assert_eq!(scroll.scroll, 7);
+        scroll.up(100);
+        assert_eq!(scroll.scroll, 0);
+
+        scroll.end();
+        assert_eq!(scroll.scroll, 10);
+
+        scroll.set(5);
+        assert_eq!(scroll.scroll, 5);
+        scroll.set(100);
+        assert_eq!(scroll.scroll, 10);
+
+        // shrinking content pulls the position back in range
+        scroll.set_max_scroll(3);
+        assert_eq!(scroll.scroll, 3);
+
+        scroll.reset();
+        assert_eq!(scroll.scroll, 0);
+    }
 
     fn run_a_bit(args: Args) -> (App, StateShare, Terminal<TestBackend>) {
         let (gdb_stdout, mut app) = App::new_stream(args.clone());

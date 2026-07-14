@@ -32,12 +32,11 @@ pub fn draw_mapping(state: &mut State, f: &mut Frame, mapping_rect: Rect) {
     let len = rows.len();
     // Account for top border and pinned header row
     let max = mapping_rect.height.saturating_sub(2);
-    let skip = if len <= max as usize { 0 } else { state.memory_map_scroll.scroll };
 
     // Store viewport height for use in key handlers
     state.memory_map_viewport_height = max;
-    state.memory_map_scroll.viewport = max as usize;
-    state.memory_map_scroll.set_content_length(len);
+    state.memory_map_scroll.set_max_scroll(len.saturating_sub(max as usize));
+    let skip = state.memory_map_scroll.scroll;
     let rows: Vec<Row> = rows.into_iter().skip(skip).take(max as usize).collect();
 
     let widths = [

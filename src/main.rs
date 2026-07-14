@@ -53,6 +53,7 @@ use ui::hexdump::{HEXDUMP_WIDTH, display_index_of_row};
 
 mod deref;
 mod gdb;
+mod inferior;
 mod mi;
 mod register;
 mod ui;
@@ -234,6 +235,8 @@ pub struct Symbol {
 struct App {
     /// Gdb stdin
     gdb_stdin: Arc<Mutex<dyn Write + Send>>,
+    /// Pty for the inferior's stdout/stderr, local gdb only
+    inferior_pty: Option<inferior::InferiorPty>,
 }
 
 // TODO: this could be split up, some of these fields
@@ -434,9 +437,13 @@ impl App {
     /// # Returns
     /// `(gdb_stdin, App)`
     pub fn new_stream(args: Args) -> (BufReader<Box<dyn Read + Send>>, App) {
-        let (reader, gdb_stdin): (BufReader<Box<dyn Read + Send>>, Arc<Mutex<dyn Write + Send>>) =
-            match &args.remote {
+        let (reader, gdb_stdin, inferior_pty): (
+            BufReader<Box<dyn Read + Send>>,
+            Arc<Mutex<dyn Write + Send>>,
+            Option<inferior::InferiorPty>,
+        ) = match &args.remote {
                 None => {
+                    let inferior_pty = inferior::InferiorPty::open();
                     let mut gdb_process = Command::new(args.gdb_path.unwrap_or("gdb".to_owned()))
                         .args([
                             "--interpreter=mi2",
@@ -460,7 +467,7 @@ impl App {
                     let gdb_stdin = gdb_process.stdin.take().unwrap();
                     let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
 
-                    (reader, gdb_stdin)
+                    (reader, gdb_stdin, inferior_pty)
                 }
                 Some(remote) => {
                     let tcp_stream = TcpStream::connect(remote).unwrap();
@@ -469,11 +476,11 @@ impl App {
                     );
                     let gdb_stdin = Arc::new(Mutex::new(tcp_stream.try_clone().unwrap()));
 
-                    (reader, gdb_stdin)
+                    (reader, gdb_stdin, None)
                 }
             };
 
-        let app = App { gdb_stdin };
+        let app = App { gdb_stdin, inferior_pty };
 
         (reader, app)
     }
@@ -614,6 +621,13 @@ fn main() -> anyhow::Result<()> {
     execute!(terminal.backend_mut(), EnableMouseCapture)?;
 
     spawn_gdb_interact(&state_share, gdb_stdout);
+
+    // Give the inferior its own tty so its stdout/stderr don't share gdb's MI pipe
+    // Written directly (not via next_write) so it reaches gdb before any --cmds "run"
+    if let Some(pty) = &app.inferior_pty {
+        write_mi(&app.gdb_stdin, &format!("-inferior-tty-set {}", pty.tty_path));
+        inferior::spawn_reader(pty, Arc::clone(&state_share.state));
+    }
 
     // Now that we have a gdb, run each command
     if let Some(cmds) = args.cmds {

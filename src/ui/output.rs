@@ -1,9 +1,10 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, Scrollbar, ScrollbarOrientation};
 
-use super::pane_block;
+use super::{BLUE, pane_block};
 
 use crate::State;
 
@@ -28,8 +29,13 @@ pub fn draw_output(state: &mut State, f: &mut Frame, output: Rect, full: bool) {
         .take(visible)
         .map(|m| {
             let m = m.replace('\t', "    ");
-            let content = vec![Line::from(Span::raw(m.clone()))];
-            ListItem::new(content)
+            // inferior stdout/stderr
+            let span = if m.starts_with("p> ") {
+                Span::styled(m.clone(), Style::default().fg(BLUE))
+            } else {
+                Span::raw(m.clone())
+            };
+            ListItem::new(vec![Line::from(span)])
         })
         .collect();
     let output_block = List::new(outputs).block(pane_block("Output", None, "", full));

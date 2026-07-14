@@ -35,7 +35,7 @@ pub fn gdb_interact(gdb_stdout: BufReader<Box<dyn Read + Send>>, state: Arc<Mute
                 stream_output(t, s, &mut state, &mut current_map, &mut current_symbols);
             }
             MIResponse::Unknown(s) => {
-                state.stream_output_prompt = s.clone();
+                unknown(&mut state, s);
             }
             MIResponse::Notify(..) => (),
         }
@@ -169,9 +169,72 @@ fn dump_sp_bytes(state: &mut State, size: u64, amt: u64) {
     }
 }
 
+/// Native gdb doesn't wrap inferior output in MI records, so when the inferior
+/// shares gdb's stdout (remote mode, or local if the pty failed) its raw lines
+/// land here alongside the "(gdb)" prompt. Inferior lines starting with an MI
+/// prefix char are still misparsed as MI records; unavoidable when the streams
+/// share one pipe
+fn unknown(state: &mut State, s: &str) {
+    let trimmed = s.trim_end();
+    if trimmed == "(gdb)" {
+        state.stream_output_prompt = s.to_string();
+    } else if !trimmed.is_empty() {
+        push_inferior_line(state, trimmed);
+    }
+}
+
+/// Display a line of the inferior's stdout/stderr in the output pane
+pub fn push_inferior_line(state: &mut State, line: &str) {
+    state.output.push(format!("p> {line}"));
+}
+
 /// Unlock GDB stdin and write
 pub fn write_mi(gdb_stdin_arc: &Arc<Mutex<dyn Write + Send>>, w: &str) {
     let mut stdin = gdb_stdin_arc.lock().unwrap();
     debug!("writing {w}");
     writeln!(stdin, "{w}").expect("Failed to send command");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Args, PtrSize};
+
+    fn create_test_state() -> State {
+        let args = Args {
+            gdb_path: None,
+            remote: None,
+            ptr_size: PtrSize::Size64,
+            cmds: None,
+            log_path: None,
+        };
+        State::new(args)
+    }
+
+    #[test]
+    fn test_unknown_prompt() {
+        let mut state = create_test_state();
+        unknown(&mut state, "(gdb) ");
+        assert_eq!(state.stream_output_prompt, "(gdb) ");
+        assert_eq!(state.output.len(), 0);
+    }
+
+    #[test]
+    fn test_unknown_inferior_line() {
+        let mut state = create_test_state();
+        state.stream_output_prompt = "(gdb) ".to_string();
+        unknown(&mut state, "hello world");
+        assert_eq!(state.output, vec!["p> hello world".to_string()]);
+        // inferior output must not clobber the prompt
+        assert_eq!(state.stream_output_prompt, "(gdb) ");
+    }
+
+    #[test]
+    fn test_unknown_empty_line() {
+        let mut state = create_test_state();
+        state.stream_output_prompt = "(gdb) ".to_string();
+        unknown(&mut state, "");
+        assert_eq!(state.output.len(), 0);
+        assert_eq!(state.stream_output_prompt, "(gdb) ");
+    }
 }

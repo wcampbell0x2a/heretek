@@ -35,8 +35,8 @@ pub fn draw_source(state: &mut State, f: &mut Frame, area: Rect) {
     // Calculate which lines to show based on scroll position
     // Account for border and title
     let lines_to_show = (area.height as usize).saturating_sub(1);
-    state.source_scroll.viewport = lines_to_show;
-    let start_line = state.source_scroll.scroll.min(total_lines.saturating_sub(lines_to_show));
+    state.source_scroll.set_max_scroll(total_lines.saturating_sub(lines_to_show));
+    let start_line = state.source_scroll.scroll;
     let end_line = (start_line + lines_to_show).min(total_lines);
 
     let theme = arborium::theme::builtin::ayu_dark();

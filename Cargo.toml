@@ -9,26 +9,27 @@ categories = ["development-tools"]
 keywords = ["gdb", "tui", "debugging", "embedded", "gdbserver"]
 
 [dependencies]
-ansi-to-tui = "7.0.0"
-anyhow = "1.0.98"
-chrono = "0.4.38"
-clap = { version = "4.5.21", features = ["derive"] }
+ansi-to-tui = "8.0.1"
+anyhow = "1.0.104"
+chrono = "0.4.45"
+clap = { version = "4.6.6", features = ["derive"] }
 clap-cargo = "0.18.0"
-deku = { version = "0.20.0", default-features = false, features = ["alloc", "std"] }
-env_logger = "0.11.5"
-evalexpr = "13.0.0"
+deku = { version = "0.20.3", default-features = false, features = ["alloc", "std"] }
+env_logger = "0.11.11"
+evalexpr = "13.1.0"
 hex = "0.4.3"
-log = "0.4.22"
-once_cell = "1.20.2"
-ratatui = "0.29.0"
-regex = "1.11.1"
-tui-input = "0.14.0"
-arborium = { version = "2.1.1", features = ["lang-c", "lang-cpp", "lang-rust"] }
+log = "0.4.33"
+nix = { version = "0.31", features = ["term"] }
+once_cell = "1.21.4"
+ratatui = "0.30.2"
+regex = "1.13.1"
+tui-input = "0.15.3"
+arborium = { version = "2.18.1", features = ["lang-c", "lang-cpp", "lang-rust"] }
 
 [dev-dependencies]
-insta = "1.41.1"
-test-assets-ureq = "0.6.1"
-libc = "0.2.169"
+insta = "1.48.0"
+test-assets-ureq = "0.6.2"
+libc = "0.2.189"
 rstest = "0.26"
 
 [profile.release]

@@ -1,41 +1,41 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, Scrollbar, ScrollbarOrientation};
 
-use super::pane_block;
+use super::{BLUE, pane_block};
 
 use crate::State;
 
 pub fn draw_output(state: &mut State, f: &mut Frame, output: Rect, full: bool) {
     let len = state.output.len();
-    let max = output.height;
+    // account for the top border
+    let visible = (output.height as usize).saturating_sub(1);
+    state.output_scroll.set_max_scroll(len.saturating_sub(visible));
+
     // auto-scroll to bottom when new output is added (tail -f behavior)
     if full && len > state.output_prev_len {
-        state.output_scroll.end(len);
+        state.output_scroll.end();
         state.output_prev_len = len;
     }
 
-    let skip = if len <= max as usize {
-        0
-    } else if full {
-        state.output_scroll.scroll
-    } else {
-        len - max as usize + 1
-    };
-
-    state.output_scroll.viewport = max as usize;
-    state.output_scroll.set_content_length(len);
+    let skip = if full { state.output_scroll.scroll } else { len.saturating_sub(visible) };
 
     let outputs: Vec<ListItem> = state
         .output
         .iter()
         .skip(skip)
-        .take(max as usize)
+        .take(visible)
         .map(|m| {
             let m = m.replace('\t', "    ");
-            let content = vec![Line::from(Span::raw(m.clone()))];
-            ListItem::new(content)
+            // inferior stdout/stderr
+            let span = if m.starts_with("p> ") {
+                Span::styled(m.clone(), Style::default().fg(BLUE))
+            } else {
+                Span::raw(m.clone())
+            };
+            ListItem::new(vec![Line::from(span)])
         })
         .collect();
     let output_block = List::new(outputs).block(pane_block("Output", None, "", full));

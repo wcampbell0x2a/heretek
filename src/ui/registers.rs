@@ -1,21 +1,21 @@
 use std::path::PathBuf;
 
-use super::{ORANGE, PURPLE, RED, add_deref_to_span, apply_val_color};
+use super::{PURPLE, RED, add_deref_to_span, apply_val_color, effective_mode, pane_block};
 
 use ansi_to_tui::IntoText;
-use ratatui::prelude::Stylize;
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation};
+use ratatui::widgets::{Paragraph, Scrollbar, ScrollbarOrientation};
 use ratatui::{Frame, layout::Rect, style::Style};
 
 use crate::register::RegisterStorage;
-use crate::{PtrSize, State};
+use crate::{Mode, PtrSize, State};
 
 const ANSI_BYTES: &[u8] = include_bytes!("../../assets/heretek.txt");
 
 /// Registers
 pub fn draw_registers(state: &mut State, f: &mut Frame, register: Rect) {
-    let block = Block::default().borders(Borders::TOP).title("Registers".fg(ORANGE));
+    let active = matches!(effective_mode(state), Mode::All | Mode::OnlyRegister);
+    let block = pane_block("Registers", None, "", active);
 
     let mut lines = vec![];
     let mut longest_register_name = 0;

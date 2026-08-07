@@ -10,11 +10,12 @@ use ratatui::layout::Layout;
 use ratatui::prelude::Stylize;
 use ratatui::style::Color;
 use ratatui::style::Style;
-use ratatui::text::Span;
-use ratatui::widgets::Paragraph;
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Paragraph};
 use registers::draw_registers;
 use source::draw_source;
 use stack::draw_stack;
+use status_bar::draw_status_bar;
 use symbols::draw_symbols;
 use title::draw_title_area;
 
@@ -23,6 +24,7 @@ use crate::{Mode, State};
 
 pub mod asm;
 pub mod bt;
+pub mod help;
 pub mod hexdump;
 pub mod input;
 pub mod mapping;
@@ -30,6 +32,7 @@ pub mod output;
 pub mod registers;
 pub mod source;
 pub mod stack;
+pub mod status_bar;
 pub mod symbols;
 pub mod title;
 
@@ -55,7 +58,44 @@ const SAVED_OUTPUT: usize = 10;
 /// Amount of stack addresses we save/display
 pub const SAVED_STACK: u16 = 14;
 
-pub const SCROLL_CONTROL_TEXT: &str = "(up(k), down(j), 50 up(K), 50 down(J), top(g), bottom(G))";
+/// Mode used for pane display decisions, falling back through overlay modes
+/// to the pane that is displayed beneath them
+pub fn effective_mode(state: &State) -> Mode {
+    if matches!(state.mode, Mode::QuitConfirmation | Mode::Help) {
+        state.previous_mode
+    } else {
+        state.mode
+    }
+}
+
+/// Standard pane chrome: top border, bold colored title, optional dim
+/// context (e.g. current function or filter), right-aligned dim hints
+pub fn pane_block<'a>(
+    title: &str,
+    context: Option<String>,
+    hints: &str,
+    active: bool,
+) -> Block<'a> {
+    let title_color = if active { GREEN } else { ORANGE };
+    let mut left = vec![
+        Span::styled("──", Style::new().fg(GRAY)),
+        Span::styled(format!(" {title}"), Style::new().fg(title_color).bold()),
+    ];
+    if let Some(context) = context {
+        left.push(Span::styled(format!(" {context}"), Style::new().fg(GRAY_FG)));
+    }
+    left.push(Span::raw(" "));
+    let mut block = Block::default()
+        .borders(Borders::TOP)
+        .border_style(Style::new().fg(GRAY))
+        .title_top(Line::from(left));
+    if !hints.is_empty() {
+        block = block.title_top(
+            Line::from(Span::styled(format!("{hints} "), Style::new().fg(GRAY_FG))).right_aligned(),
+        );
+    }
+    block
+}
 
 fn draw_mode_content(state: &mut State, f: &mut Frame, top: ratatui::layout::Rect, mode: Mode) {
     match mode {
@@ -146,9 +186,14 @@ pub fn ui(f: &mut Frame, state: &mut State) {
     if let Mode::OnlyOutput = mode {
         let output_size = Fill(1);
         let completions_len = u16::from(!completions.is_empty());
-        let vertical =
-            Layout::vertical([Length(2), output_size, Length(3), Length(completions_len)]);
-        let [title_area, output, input, completions_area] = vertical.areas(f.area());
+        let vertical = Layout::vertical([
+            Length(2),
+            output_size,
+            Length(3),
+            Length(completions_len),
+            Length(1),
+        ]);
+        let [title_area, output, input, completions_area, status_area] = vertical.areas(f.area());
 
         // Add completions if any are found
         let completions = completions.join(" ");
@@ -160,6 +205,7 @@ pub fn ui(f: &mut Frame, state: &mut State) {
         draw_title_area(state, f, title_area);
         draw_output(state, f, output, true);
         draw_input(title_area, state, f, input);
+        draw_status_bar(state, f, status_area);
         return;
     }
 
@@ -174,8 +220,10 @@ pub fn ui(f: &mut Frame, state: &mut State) {
             output_size,
             Length(3),
             Length(completions_len),
+            Length(1),
         ]);
-        let [title_area, top, output, input, completions_area] = vertical.areas(f.area());
+        let [title_area, top, output, input, completions_area, status_area] =
+            vertical.areas(f.area());
 
         // Add completions if any are found
         let completions = completions.join(" ");
@@ -186,6 +234,7 @@ pub fn ui(f: &mut Frame, state: &mut State) {
         draw_title_area(state, f, title_area);
         draw_output(state, f, output, false);
         draw_input(title_area, state, f, input);
+        draw_status_bar(state, f, status_area);
 
         top
     } else {
@@ -197,8 +246,10 @@ pub fn ui(f: &mut Frame, state: &mut State) {
             output_size,
             Length(3),
             Length(completions_len),
+            Length(1),
         ]);
-        let [title_area, top, bt_area, output, input, completions_area] = vertical.areas(f.area());
+        let [title_area, top, bt_area, output, input, completions_area, status_area] =
+            vertical.areas(f.area());
 
         // Add completions if any are found
         let completions = completions.join(" ");
@@ -210,18 +261,25 @@ pub fn ui(f: &mut Frame, state: &mut State) {
         draw_title_area(state, f, title_area);
         draw_output(state, f, output, false);
         draw_input(title_area, state, f, input);
+        draw_status_bar(state, f, status_area);
 
         top
     };
 
-    let display_mode =
-        if matches!(mode, Mode::QuitConfirmation) { state.previous_mode } else { mode };
+    let display_mode = if matches!(mode, Mode::QuitConfirmation | Mode::Help) {
+        state.previous_mode
+    } else {
+        mode
+    };
 
     draw_mode_content(state, f, top, display_mode);
 
-    // Draw quit confirmation popup on top if in quit confirmation mode
+    // Draw overlays on top of the pane content
     if matches!(mode, Mode::QuitConfirmation) {
         draw_quit_confirmation(f);
+    }
+    if matches!(mode, Mode::Help) {
+        help::draw_help(f);
     }
 }
 

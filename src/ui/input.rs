@@ -1,8 +1,7 @@
-use ratatui::prelude::Stylize;
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::{Frame, layout::Rect, style::Style};
 
-use super::{BLUE, GRAY_FG, GREEN, ORANGE};
+use super::{GRAY, GREEN};
 use crate::{InputMode, State};
 
 pub fn draw_input(title_area: Rect, state: &mut State, f: &mut Frame, input: Rect) {
@@ -20,16 +19,10 @@ pub fn draw_input(title_area: Rect, state: &mut State, f: &mut Frame, input: Rec
                 InputMode::Editing => Style::default().fg(GREEN),
             })
             .scroll((0, scroll as u16))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(vec!["|".fg(GRAY_FG), state.status.clone().fg(BLUE), "|".fg(GRAY_FG)])
-                    .title(vec![
-                        "|".fg(GRAY_FG),
-                        state.async_result.clone().fg(ORANGE),
-                        "|".fg(GRAY_FG),
-                    ]),
-            );
+            .block(Block::default().borders(Borders::ALL).border_style(match state.input_mode {
+                InputMode::Normal => Style::new().fg(GRAY),
+                InputMode::Editing => Style::new().fg(GREEN),
+            }));
 
     f.render_widget(txt_input, input);
     match state.input_mode {

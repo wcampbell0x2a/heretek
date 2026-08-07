@@ -1,12 +1,11 @@
 use ratatui::layout::Constraint;
 use ratatui::prelude::Stylize;
-use ratatui::widgets::block::Title;
-use ratatui::widgets::{Block, Borders, Cell, Table, TableState};
+use ratatui::widgets::{Cell, Table, TableState};
 use ratatui::{Frame, layout::Rect, style::Style, widgets::Row};
 
-use super::{GREEN, ORANGE, PURPLE};
+use super::{GREEN, PURPLE, effective_mode, pane_block};
 
-use crate::State;
+use crate::{Mode, State};
 
 pub fn draw_asm(state: &mut State, f: &mut Frame, asm: Rect) {
     // Asm
@@ -57,11 +56,8 @@ pub fn draw_asm(state: &mut State, f: &mut Frame, asm: Rect) {
         rows.push(Row::new(row));
     }
 
-    let title = if let Some(function_name) = function_name {
-        Title::from(format!("Instructions ({function_name})").fg(ORANGE))
-    } else {
-        Title::from("Instructions".fg(ORANGE))
-    };
+    let active = matches!(effective_mode(state), Mode::OnlyInstructions);
+    let block = pane_block("Instructions", function_name, "", active);
     if let Some(pc_index) = pc_index {
         let widths = [
             Constraint::Length(16),
@@ -69,7 +65,7 @@ pub fn draw_asm(state: &mut State, f: &mut Frame, asm: Rect) {
             Constraint::Fill(1),
         ];
         let table = Table::new(rows, widths)
-            .block(Block::default().borders(Borders::TOP).title(title))
+            .block(block)
             .row_highlight_style(Style::new().fg(GREEN))
             .highlight_symbol(">>");
         let start_offset = pc_index.saturating_sub(5);
@@ -77,7 +73,6 @@ pub fn draw_asm(state: &mut State, f: &mut Frame, asm: Rect) {
             TableState::default().with_offset(start_offset).with_selected(pc_index);
         f.render_stateful_widget(table, asm, &mut table_state);
     } else {
-        let block = Block::default().borders(Borders::TOP).title(title);
         f.render_widget(block, asm);
     }
 }

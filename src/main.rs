@@ -153,6 +153,7 @@ enum Mode {
     OnlySymbols,
     OnlySource,
     QuitConfirmation,
+    Help,
 }
 
 impl Mode {
@@ -169,6 +170,7 @@ impl Mode {
             Mode::OnlySymbols => 7,
             Mode::OnlySource => 8,
             Mode::QuitConfirmation => 0,
+            Mode::Help => 0,
         }
     }
 
@@ -185,6 +187,7 @@ impl Mode {
             Mode::OnlySymbols => Mode::OnlySource,
             Mode::OnlySource => Mode::All,
             Mode::QuitConfirmation => Mode::QuitConfirmation,
+            Mode::Help => Mode::Help,
         }
     }
 }
@@ -311,10 +314,8 @@ struct State {
     hexdump: Option<(u64, Vec<u8>)>,
     hexdump_scroll: Scroll,
     hexdump_popup: Input,
-    /// Right side of status in TUI
+    /// Last async status reported by gdb, shown in the status bar
     async_result: String,
-    /// Left side of status in TUI
-    status: String,
     bt: Vec<Bt>,
     completions: Vec<String>,
     /// Current source file and line info
@@ -373,7 +374,6 @@ impl State {
             hexdump_scroll: Scroll::default(),
             hexdump_popup: Input::default(),
             async_result: String::new(),
-            status: String::new(),
             bt: vec![],
             completions: vec![],
             current_source_file: None,
@@ -739,6 +739,22 @@ fn run_app<B: Backend>(
                     let mut state = state_share.state.lock().unwrap();
                     state.mode = state.previous_mode;
                 }
+                // help overlay
+                (_, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?'), Mode::Help) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = state.previous_mode;
+                }
+                (_, _, Mode::Help) => {}
+                (InputMode::Normal, KeyCode::Char('?'), _)
+                    if !matches!(mode, Mode::QuitConfirmation) && {
+                        let state = state_share.state.lock().unwrap();
+                        !(state.mode == Mode::OnlySymbols && state.symbols_search_active)
+                    } =>
+                {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.previous_mode = state.mode;
+                    state.mode = Mode::Help;
+                }
                 // Input
                 (InputMode::Normal, KeyCode::Char('i'), _)
                     if {
@@ -894,10 +910,11 @@ fn run_app<B: Backend>(
                         let len = memory.len();
                         if state.memory_map_selected < len.saturating_sub(1) {
                             state.memory_map_selected += 1;
-                            let selected_screen_pos = (state.memory_map_selected + 1)
+                            let selected_screen_pos = state
+                                .memory_map_selected
                                 .saturating_sub(state.memory_map_scroll.scroll);
                             if selected_screen_pos >= state.memory_map_viewport_height as usize {
-                                let target_scroll = state.memory_map_selected + 2
+                                let target_scroll = state.memory_map_selected + 1
                                     - state.memory_map_viewport_height as usize;
                                 state.memory_map_scroll.scroll = target_scroll;
                                 state.memory_map_scroll.state =
@@ -910,8 +927,8 @@ fn run_app<B: Backend>(
                     let mut state = state_share.state.lock().unwrap();
                     if state.memory_map_selected > 0 {
                         state.memory_map_selected -= 1;
-                        if (state.memory_map_selected + 1) < state.memory_map_scroll.scroll {
-                            let target_scroll = state.memory_map_selected + 1;
+                        if state.memory_map_selected < state.memory_map_scroll.scroll {
+                            let target_scroll = state.memory_map_selected;
                             state.memory_map_scroll.scroll = target_scroll;
                             state.memory_map_scroll.state =
                                 state.memory_map_scroll.state.position(target_scroll);
@@ -925,10 +942,11 @@ fn run_app<B: Backend>(
                         let new_selected =
                             (state.memory_map_selected + 50).min(len.saturating_sub(1));
                         state.memory_map_selected = new_selected;
-                        let selected_screen_pos = (state.memory_map_selected + 1)
+                        let selected_screen_pos = state
+                            .memory_map_selected
                             .saturating_sub(state.memory_map_scroll.scroll);
                         if selected_screen_pos >= state.memory_map_viewport_height as usize {
-                            let target_scroll = state.memory_map_selected + 2
+                            let target_scroll = state.memory_map_selected + 1
                                 - state.memory_map_viewport_height as usize;
                             state.memory_map_scroll.scroll = target_scroll;
                             state.memory_map_scroll.state =
@@ -940,8 +958,8 @@ fn run_app<B: Backend>(
                     let mut state = state_share.state.lock().unwrap();
                     let new_selected = state.memory_map_selected.saturating_sub(50);
                     state.memory_map_selected = new_selected;
-                    if (state.memory_map_selected + 1) < state.memory_map_scroll.scroll {
-                        let target_scroll = state.memory_map_selected + 1;
+                    if state.memory_map_selected < state.memory_map_scroll.scroll {
+                        let target_scroll = state.memory_map_selected;
                         state.memory_map_scroll.scroll = target_scroll;
                         state.memory_map_scroll.state =
                             state.memory_map_scroll.state.position(target_scroll);
@@ -1059,13 +1077,13 @@ fn run_app<B: Backend>(
                 {
                     let mut state = state_share.state.lock().unwrap();
                     if state.symbols_viewing_asm {
-                        let len = state.symbol_asm.len() + 1; // +1 for header
+                        let len = state.symbol_asm.len();
                         state.symbol_asm_scroll.end(len);
                     } else {
                         let len = state.get_filtered_symbols().len();
                         if len > 0 {
                             state.symbols_selected = len - 1;
-                            state.symbols_scroll.end(len + 1); // +1 for header
+                            state.symbols_scroll.end(len);
                         }
                     }
                 }
@@ -1077,16 +1095,16 @@ fn run_app<B: Backend>(
                 {
                     let mut state = state_share.state.lock().unwrap();
                     if state.symbols_viewing_asm {
-                        let len = state.symbol_asm.len() + 1;
+                        let len = state.symbol_asm.len();
                         state.symbol_asm_scroll.down(1, len);
                     } else {
                         let len = state.get_filtered_symbols().len();
                         if state.symbols_selected < len.saturating_sub(1) {
                             state.symbols_selected += 1;
-                            let selected_screen_pos = (state.symbols_selected + 1)
-                                .saturating_sub(state.symbols_scroll.scroll);
+                            let selected_screen_pos =
+                                state.symbols_selected.saturating_sub(state.symbols_scroll.scroll);
                             if selected_screen_pos >= state.symbols_viewport_height as usize {
-                                let target_scroll = state.symbols_selected + 2
+                                let target_scroll = state.symbols_selected + 1
                                     - state.symbols_viewport_height as usize;
                                 state.symbols_scroll.scroll = target_scroll;
                                 state.symbols_scroll.state =
@@ -1106,8 +1124,8 @@ fn run_app<B: Backend>(
                         state.symbol_asm_scroll.up(1);
                     } else if state.symbols_selected > 0 {
                         state.symbols_selected -= 1;
-                        if (state.symbols_selected + 1) < state.symbols_scroll.scroll {
-                            let target_scroll = state.symbols_selected + 1;
+                        if state.symbols_selected < state.symbols_scroll.scroll {
+                            let target_scroll = state.symbols_selected;
                             state.symbols_scroll.scroll = target_scroll;
                             state.symbols_scroll.state =
                                 state.symbols_scroll.state.position(target_scroll);
@@ -1122,17 +1140,17 @@ fn run_app<B: Backend>(
                 {
                     let mut state = state_share.state.lock().unwrap();
                     if state.symbols_viewing_asm {
-                        let len = state.symbol_asm.len() + 1;
+                        let len = state.symbol_asm.len();
                         state.symbol_asm_scroll.down(50, len);
                     } else {
                         let len = state.get_filtered_symbols().len();
                         let new_selected = (state.symbols_selected + 50).min(len.saturating_sub(1));
                         state.symbols_selected = new_selected;
-                        let selected_screen_pos = (state.symbols_selected + 1)
-                            .saturating_sub(state.symbols_scroll.scroll);
+                        let selected_screen_pos =
+                            state.symbols_selected.saturating_sub(state.symbols_scroll.scroll);
                         if selected_screen_pos >= state.symbols_viewport_height as usize {
                             let target_scroll =
-                                state.symbols_selected + 2 - state.symbols_viewport_height as usize;
+                                state.symbols_selected + 1 - state.symbols_viewport_height as usize;
                             state.symbols_scroll.scroll = target_scroll;
                             state.symbols_scroll.state =
                                 state.symbols_scroll.state.position(target_scroll);
@@ -1151,8 +1169,8 @@ fn run_app<B: Backend>(
                     } else {
                         let new_selected = state.symbols_selected.saturating_sub(50);
                         state.symbols_selected = new_selected;
-                        if (state.symbols_selected + 1) < state.symbols_scroll.scroll {
-                            let target_scroll = state.symbols_selected + 1;
+                        if state.symbols_selected < state.symbols_scroll.scroll {
+                            let target_scroll = state.symbols_selected;
                             state.symbols_scroll.scroll = target_scroll;
                             state.symbols_scroll.state =
                                 state.symbols_scroll.state.position(target_scroll);

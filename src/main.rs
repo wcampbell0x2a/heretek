@@ -442,43 +442,42 @@ impl App {
             Arc<Mutex<dyn Write + Send>>,
             Option<inferior::InferiorPty>,
         ) = match &args.remote {
-                None => {
-                    let inferior_pty = inferior::InferiorPty::open();
-                    let mut gdb_process = Command::new(args.gdb_path.unwrap_or("gdb".to_owned()))
-                        .args([
-                            "--interpreter=mi2",
-                            "--quiet",
-                            "-nx",
-                            "-iex",
-                            "set debuginfod enabled off",
-                            "-iex",
-                            "set style enabled off",
-                        ])
-                        .env_remove("DEBUGINFOD_URLS")
-                        .stdin(Stdio::piped())
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::null())
-                        .spawn()
-                        .expect("Failed to start GDB");
+            None => {
+                let inferior_pty = inferior::InferiorPty::open();
+                let mut gdb_process = Command::new(args.gdb_path.unwrap_or("gdb".to_owned()))
+                    .args([
+                        "--interpreter=mi2",
+                        "--quiet",
+                        "-nx",
+                        "-iex",
+                        "set debuginfod enabled off",
+                        "-iex",
+                        "set style enabled off",
+                    ])
+                    .env_remove("DEBUGINFOD_URLS")
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::null())
+                    .spawn()
+                    .expect("Failed to start GDB");
 
-                    let reader = BufReader::new(
-                        Box::new(gdb_process.stdout.unwrap()) as Box<dyn Read + Send>
-                    );
-                    let gdb_stdin = gdb_process.stdin.take().unwrap();
-                    let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
+                let reader =
+                    BufReader::new(Box::new(gdb_process.stdout.unwrap()) as Box<dyn Read + Send>);
+                let gdb_stdin = gdb_process.stdin.take().unwrap();
+                let gdb_stdin = Arc::new(Mutex::new(gdb_stdin));
 
-                    (reader, gdb_stdin, inferior_pty)
-                }
-                Some(remote) => {
-                    let tcp_stream = TcpStream::connect(remote).unwrap();
-                    let reader = BufReader::new(
-                        Box::new(tcp_stream.try_clone().unwrap()) as Box<dyn Read + Send>
-                    );
-                    let gdb_stdin = Arc::new(Mutex::new(tcp_stream.try_clone().unwrap()));
+                (reader, gdb_stdin, inferior_pty)
+            }
+            Some(remote) => {
+                let tcp_stream = TcpStream::connect(remote).unwrap();
+                let reader = BufReader::new(
+                    Box::new(tcp_stream.try_clone().unwrap()) as Box<dyn Read + Send>
+                );
+                let gdb_stdin = Arc::new(Mutex::new(tcp_stream.try_clone().unwrap()));
 
-                    (reader, gdb_stdin, None)
-                }
-            };
+                (reader, gdb_stdin, None)
+            }
+        };
 
         let app = App { gdb_stdin, inferior_pty };
 
@@ -689,7 +688,10 @@ fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     app: &mut App,
     state_share: &mut StateShare,
-) -> io::Result<()> {
+) -> io::Result<()>
+where
+    io::Error: From<B::Error>,
+{
     loop {
         {
             let mut state = state_share.state.lock().unwrap();
@@ -1802,6 +1804,37 @@ mod tests {
         (app, state_share, terminal)
     }
 
+    /// Replace a dereferenced string in the rendered output with a stable `placeholder`.
+    ///
+    /// The string comes from the environment of the test machine, thus it must not go into
+    /// the snapshot. The renderer clips each line to the width of the terminal, thus the
+    /// visible text can be a prefix of the full string that `deref_map` holds. Match on a
+    /// short prefix and replace up to the closing quote, which keeps the mask correct if the
+    /// text is truncated. The replacement keeps the width of the text that it replaces, thus
+    /// the columns of the snapshot stay aligned
+    fn mask_deref_string(output: &str, deref_map: &VecDeque<u64>, placeholder: &str) -> String {
+        let mut full = "\"".to_string();
+        for value in deref_map.iter().skip(1) {
+            full.push_str(std::str::from_utf8(&value.to_le_bytes()).unwrap());
+        }
+
+        // A prefix of one pointer is enough to find the text, and is short enough to survive
+        // the clipping of the line
+        let prefix_len = full.len().min(1 + size_of::<u64>());
+        let prefix = &full[..prefix_len];
+
+        let Some(start) = output.find(prefix) else {
+            panic!("cannot find the dereferenced string that starts with {prefix:?}");
+        };
+        let Some(end) = output[start + 1..].find('"').map(|i| start + 1 + i + 1) else {
+            panic!("cannot find the end quote of the dereferenced string {prefix:?}");
+        };
+
+        let width = end - start;
+        let padding = width.saturating_sub(placeholder.len());
+        format!("{}{placeholder}{:padding$}{}", &output[..start], "", &output[end..])
+    }
+
     #[test]
     fn test_repeated_ptr() {
         // gcc repeated.c -g -fno-stack-protector -static
@@ -2011,29 +2044,16 @@ mod tests {
         // rdx
         let from = format!("0x{:02x}", registers[3].deref.map[0]);
         let output = output.replace(&from, "<rdx_1>");
-        let mut ret_s = "\"".to_string();
-        for r in registers[3].deref.map.iter().skip(1) {
-            ret_s.push_str(std::str::from_utf8(&r.to_le_bytes()).unwrap());
-        }
-        ret_s.push('"');
-        let padding_width = ret_s.len() + 7;
-        let output =
-            output.replace(&ret_s, &format!("<rdx_2>{:padding$}", "", padding = padding_width));
+        let output = mask_deref_string(&output, &registers[3].deref.map, "<rdx_2>");
 
         // rsi
         let from = format!("0x{:02x}", registers[4].deref.map[0]);
         let output = output.replace(&from, "<rsi_1>");
-        let mut ret_s = "\"".to_string();
-        for r in registers[4].deref.map.iter().skip(1) {
-            ret_s.push_str(std::str::from_utf8(&r.to_le_bytes()).unwrap());
-        }
-        ret_s.push('"');
-        let padding_width = ret_s.len() + 7;
-        let output =
-            output.replace(&ret_s, &format!("<rsi_2>{:padding$}", "", padding = padding_width));
+        let output = mask_deref_string(&output, &registers[4].deref.map, "<rsi_2>");
 
         let from = format!("0x{:02x}", registers[6].deref.map[0]);
         let output = output.replace(&from, "<rbp_1>");
+
         let from = format!("0x{:02x}", registers[6].deref.map[1]);
         let output = output.replace(&from, "<rbp_2>");
 

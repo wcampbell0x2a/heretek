@@ -1,5 +1,4 @@
 use ratatui::layout::Constraint;
-use ratatui::prelude::Stylize;
 use ratatui::widgets::{Scrollbar, ScrollbarOrientation, Table};
 use ratatui::{Frame, layout::Rect, style::Style, widgets::Row};
 

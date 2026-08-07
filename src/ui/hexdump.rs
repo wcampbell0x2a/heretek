@@ -21,7 +21,20 @@ fn to_hexdump_str<'a>(
     take: usize,
 ) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
+    let mut prev_all_zero = false;
     for (offset, chunk) in buffer.chunks(16).skip(skip).take(take).enumerate() {
+        // Collapse runs of all-zero rows: show the first row in full, then a
+        // single `*` marker for the rest of the run, like hexyl.
+        let all_zero = chunk.iter().all(|&b| b == 0x00);
+        if all_zero && prev_all_zero {
+            // Only emit one `*` per run; the marker was already pushed.
+            if lines.last().map(Line::to_string).as_deref() != Some("*") {
+                lines.push(Line::from(Span::styled("*", Style::default().fg(DARK_GRAY))));
+            }
+            continue;
+        }
+        prev_all_zero = all_zero;
+
         let mut hex_spans = Vec::new();
         // bytes
         for byte in chunk {
@@ -104,13 +117,25 @@ fn popup_area(area: Rect, percent_x: u16) -> Rect {
     area
 }
 
-fn hexdump_block<'a>(state: &State, pos: Option<String>) -> Block<'a> {
-    let active =
-        matches!(effective_mode(state), crate::Mode::OnlyHexdump | crate::Mode::OnlyHexdumpPopup);
-    pane_block("Hexdump", pos, "S save  H heap  T stack", active)
+/// Which popup, if any, to overlay on the hexdump pane
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum HexdumpPopup {
+    None,
+    Save,
+    Goto,
 }
 
-pub fn draw_hexdump(state: &mut State, f: &mut Frame, hexdump: Rect, show_popup: bool) {
+fn hexdump_block<'a>(state: &State, pos: Option<String>) -> Block<'a> {
+    let active = matches!(
+        effective_mode(state),
+        crate::Mode::OnlyHexdump
+            | crate::Mode::OnlyHexdumpPopup
+            | crate::Mode::OnlyHexdumpGotoPopup
+    );
+    pane_block("Hexdump", pos, "S save  : goto  H heap  T stack", active)
+}
+
+pub fn draw_hexdump(state: &mut State, f: &mut Frame, hexdump: Rect, popup: HexdumpPopup) {
     let hexdump_active = state.hexdump.is_some();
 
     if hexdump_active {
@@ -136,16 +161,19 @@ pub fn draw_hexdump(state: &mut State, f: &mut Frame, hexdump: Rect, show_popup:
             hexdump,
             &mut state.hexdump_scroll.state,
         );
-        if show_popup {
+        if popup != HexdumpPopup::None {
+            let (title, value) = match popup {
+                HexdumpPopup::Save => ("Save to", state.hexdump_popup.value().to_string()),
+                HexdumpPopup::Goto => ("Goto", state.hexdump_goto_popup.value().to_string()),
+                HexdumpPopup::None => unreachable!(),
+            };
             let area = popup_area(hexdump, 60);
-            let txt_input = Paragraph::new(state.hexdump_popup.value().to_string())
-                .style(Style::default())
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title("Save to".fg(YELLOW))
-                        .border_style(Style::default().fg(ORANGE)),
-                );
+            let txt_input = Paragraph::new(value).style(Style::default()).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(title.fg(YELLOW))
+                    .border_style(Style::default().fg(ORANGE)),
+            );
             f.render_widget(Clear, area);
             f.render_widget(txt_input, area);
         }
@@ -239,6 +267,31 @@ mod tests {
         let buffer: Vec<u8> = (0..32).map(|i| i as u8).collect();
         let lines = to_hexdump_str(&mut state, 0x1000, &buffer, 0, 10);
         assert_eq!(lines.len(), 2);
+    }
+
+    #[test]
+    fn test_to_hexdump_str_collapses_zero_runs() {
+        let args = Args {
+            gdb_path: None,
+            remote: None,
+            ptr_size: PtrSize::Size64,
+            cmds: None,
+            log_path: None,
+        };
+        let mut state = State::new(args);
+        // 4 rows (64 bytes) of all-zero should collapse to the first row plus a
+        // single `*` marker
+        let buffer: Vec<u8> = vec![0x00; 64];
+        let lines = to_hexdump_str(&mut state, 0x1000, &buffer, 0, 10);
+        assert_eq!(lines.len(), 2);
+
+        // A non-zero row between zero runs breaks the collapse: zero row, `*`,
+        // data row, zero row => 4 lines
+        let mut buffer: Vec<u8> = vec![0x00; 48];
+        buffer.extend_from_slice(&[0x41; 16]); // non-zero row
+        buffer.extend_from_slice(&[0x00; 16]); // trailing zero row
+        let lines = to_hexdump_str(&mut state, 0x1000, &buffer, 0, 10);
+        assert_eq!(lines.len(), 4);
     }
 
     #[test]

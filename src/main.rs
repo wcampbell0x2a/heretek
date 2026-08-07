@@ -34,7 +34,10 @@ use env_logger::{Builder, Env};
 use gdb::write_mi;
 use log::{debug, error};
 use ratatui::crossterm::{
-    event::{self, DisableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton,
+        MouseEventKind,
+    },
     execute,
     terminal::{LeaveAlternateScreen, disable_raw_mode},
 };
@@ -150,6 +153,7 @@ enum Mode {
     OnlyMapping,
     OnlyHexdump,
     OnlyHexdumpPopup,
+    OnlyHexdumpGotoPopup,
     OnlySymbols,
     OnlySource,
     QuitConfirmation,
@@ -157,6 +161,23 @@ enum Mode {
 }
 
 impl Mode {
+    /// Map a tab index (as laid out in the title bar) back to a `Mode`.
+    /// Inverse of [`Mode::ui_index`] for the selectable tabs
+    pub fn from_tab_index(index: usize) -> Option<Self> {
+        Some(match index {
+            0 => Mode::All,
+            1 => Mode::OnlyRegister,
+            2 => Mode::OnlyStack,
+            3 => Mode::OnlyInstructions,
+            4 => Mode::OnlyOutput,
+            5 => Mode::OnlyMapping,
+            6 => Mode::OnlyHexdump,
+            7 => Mode::OnlySymbols,
+            8 => Mode::OnlySource,
+            _ => return None,
+        })
+    }
+
     pub fn ui_index(&self) -> usize {
         match self {
             Mode::All => 0,
@@ -167,6 +188,7 @@ impl Mode {
             Mode::OnlyMapping => 5,
             Mode::OnlyHexdump => 6,
             Mode::OnlyHexdumpPopup => 6,
+            Mode::OnlyHexdumpGotoPopup => 6,
             Mode::OnlySymbols => 7,
             Mode::OnlySource => 8,
             Mode::QuitConfirmation => 0,
@@ -184,6 +206,7 @@ impl Mode {
             Mode::OnlyMapping => Mode::OnlyHexdump,
             Mode::OnlyHexdump => Mode::OnlySymbols,
             Mode::OnlyHexdumpPopup => Mode::OnlyHexdumpPopup,
+            Mode::OnlyHexdumpGotoPopup => Mode::OnlyHexdumpGotoPopup,
             Mode::OnlySymbols => Mode::OnlySource,
             Mode::OnlySource => Mode::All,
             Mode::QuitConfirmation => Mode::QuitConfirmation,
@@ -261,6 +284,12 @@ impl Scroll {
         }
         self.state = self.state.position(self.scroll);
     }
+
+    /// Jump to an absolute row position, clamped to the scrollable range.
+    pub fn set(&mut self, pos: usize, len: usize) {
+        self.scroll = pos.min(self.max_scroll(len));
+        self.state = self.state.position(self.scroll);
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -292,6 +321,9 @@ struct State {
     memory_map_scroll: Scroll,
     memory_map_selected: usize,
     memory_map_viewport_height: u16,
+    /// Clickable tab regions in the title bar: (row, x_start, x_end_exclusive)
+    /// per tab index. Populated on each render for mouse hit-testing
+    tab_regions: Vec<(u16, u16, u16)>,
     /// Current $pc
     current_pc: u64, // TODO: replace with AtomicU64?
     /// All output from gdb
@@ -314,6 +346,7 @@ struct State {
     hexdump: Option<(u64, Vec<u8>)>,
     hexdump_scroll: Scroll,
     hexdump_popup: Input,
+    hexdump_goto_popup: Input,
     /// Last async status reported by gdb, shown in the status bar
     async_result: String,
     bt: Vec<Bt>,
@@ -359,6 +392,7 @@ impl State {
             memory_map_scroll: Scroll::default(),
             memory_map_selected: 0,
             memory_map_viewport_height: 0,
+            tab_regions: Vec::new(),
             current_pc: 0,
             output: Vec::new(),
             output_scroll: Scroll::default(),
@@ -373,6 +407,7 @@ impl State {
             hexdump: None,
             hexdump_scroll: Scroll::default(),
             hexdump_popup: Input::default(),
+            hexdump_goto_popup: Input::default(),
             async_result: String::new(),
             bt: vec![],
             completions: vec![],
@@ -481,8 +516,8 @@ impl State {
         if val != 0 {
             // look through, add see if the value is part of the stack
             // trace!("{:02x?}", memory_map);
-            if self.memory_map.is_some() {
-                for r in self.memory_map.as_ref().unwrap() {
+            if let Some(memory_map) = &self.memory_map {
+                for r in memory_map {
                     if r.contains(val) {
                         if r.is_stack() {
                             is_stack = true;
@@ -580,6 +615,7 @@ fn main() -> anyhow::Result<()> {
 
     // Setup terminal
     let mut terminal = ratatui::init();
+    execute!(terminal.backend_mut(), EnableMouseCapture)?;
 
     spawn_gdb_interact(&state_share, gdb_stdout);
 
@@ -688,11 +724,34 @@ fn run_app<B: Backend>(
             }
         };
 
-        if event::poll(poll_timeout)?
-            && let Event::Key(key) = event::read()?
-        {
+        if event::poll(poll_timeout)? {
+            let event = event::read()?;
+            if let Event::Mouse(mouse) = event {
+                match mouse.kind {
+                    MouseEventKind::ScrollUp => {
+                        let mut state = state_share.state.lock().unwrap();
+                        mouse_scroll(&mut state, true, 1);
+                    }
+                    MouseEventKind::ScrollDown => {
+                        let mut state = state_share.state.lock().unwrap();
+                        mouse_scroll(&mut state, false, 1);
+                    }
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        let mut state = state_share.state.lock().unwrap();
+                        mouse_click(&mut state, mouse.column, mouse.row);
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+            let Event::Key(key) = event else {
+                continue;
+            };
             if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                 gdb::write_mi(&app.gdb_stdin, "-exec-interrupt");
+                let mut state = state_share.state.lock().unwrap();
+                state.input.reset();
+                state.completions.clear();
                 continue;
             }
             let (input_mode, mode) = {
@@ -730,6 +789,43 @@ fn run_app<B: Backend>(
                 (_, _, Mode::OnlyHexdumpPopup) => {
                     let mut state = state_share.state.lock().unwrap();
                     state.hexdump_popup.handle_event(&Event::Key(key));
+                }
+                // hexdump goto popup
+                (_, KeyCode::Esc, Mode::OnlyHexdumpGotoPopup) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.hexdump_goto_popup = Input::default();
+                    state.mode = Mode::OnlyHexdump;
+                }
+                (_, KeyCode::Enter, Mode::OnlyHexdumpGotoPopup) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    let val = state.hexdump_goto_popup.value().to_string();
+                    let trimmed = val.trim().trim_start_matches("0x");
+                    match u64::from_str_radix(trimmed, 16) {
+                        Ok(addr) => {
+                            if let Some((base, data)) = state.hexdump.as_ref() {
+                                let (base, len) = (*base, data.len());
+                                if addr >= base && (addr - base) < len as u64 {
+                                    let row = (addr - base) as usize / HEXDUMP_WIDTH;
+                                    let content_len = len / HEXDUMP_WIDTH;
+                                    state.hexdump_scroll.set(row, content_len);
+                                } else {
+                                    state.output.push(format!(
+                                        "h> 0x{addr:x} is outside the current hexdump (0x{base:x}..0x{:x})",
+                                        base + len as u64
+                                    ));
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            state.output.push(format!("h> invalid address: {val}"));
+                        }
+                    }
+                    state.hexdump_goto_popup = Input::default();
+                    state.mode = Mode::OnlyHexdump;
+                }
+                (_, _, Mode::OnlyHexdumpGotoPopup) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.hexdump_goto_popup.handle_event(&Event::Key(key));
                 }
                 // quit confirmation
                 (_, KeyCode::Enter, Mode::QuitConfirmation) => {
@@ -997,6 +1093,10 @@ fn run_app<B: Backend>(
                 (InputMode::Normal, KeyCode::Char('S'), Mode::OnlyHexdump) => {
                     let mut state = state_share.state.lock().unwrap();
                     state.mode = Mode::OnlyHexdumpPopup;
+                }
+                (InputMode::Normal, KeyCode::Char(':'), Mode::OnlyHexdump) => {
+                    let mut state = state_share.state.lock().unwrap();
+                    state.mode = Mode::OnlyHexdumpGotoPopup;
                 }
                 (InputMode::Normal, KeyCode::Char('H'), Mode::OnlyHexdump) => {
                     let mut state = state_share.state.lock().unwrap();
@@ -1340,6 +1440,63 @@ fn completion(app: &mut App, state: &mut State) -> Result<(), io::Error> {
     gdb::write_mi(&app.gdb_stdin, &cmd);
 
     Ok(())
+}
+
+/// Scroll the currently focused pane by `amount` rows in response to a mouse
+/// wheel event. Panes that use a plain `Scroll` are handled here; the mapping
+/// and symbols views use selection-based navigation and are left alone
+fn mouse_scroll(state: &mut State, up: bool, amount: usize) {
+    match state.mode {
+        Mode::All | Mode::OnlyRegister => {
+            let len = state.registers.len();
+            if up {
+                state.registers_scroll.up(amount);
+            } else {
+                state.registers_scroll.down(amount, len);
+            }
+        }
+        Mode::OnlyOutput => {
+            let len = state.output.len();
+            if up {
+                state.output_scroll.up(amount);
+            } else {
+                state.output_scroll.down(amount, len);
+            }
+        }
+        Mode::OnlyHexdump | Mode::OnlyHexdumpPopup | Mode::OnlyHexdumpGotoPopup => {
+            if let Some(hexdump) = state.hexdump.as_ref() {
+                let len = hexdump.1.len() / HEXDUMP_WIDTH;
+                if up {
+                    state.hexdump_scroll.up(amount);
+                } else {
+                    state.hexdump_scroll.down(amount, len);
+                }
+            }
+        }
+        Mode::OnlySource => {
+            let len = state.source_lines.len();
+            if up {
+                state.source_scroll.up(amount);
+            } else {
+                state.source_scroll.down(amount, len);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Handle a left mouse click at `(col, row)`: if it lands on a title-bar tab,
+/// switch to that mode. Returns true if the click was consumed
+fn mouse_click(state: &mut State, col: u16, row: u16) -> bool {
+    for (i, &(tab_row, x_start, x_end)) in state.tab_regions.iter().enumerate() {
+        if row == tab_row && col >= x_start && col < x_end {
+            if let Some(mode) = Mode::from_tab_index(i) {
+                state.mode = mode;
+            }
+            return true;
+        }
+    }
+    false
 }
 
 fn key_enter(app: &mut App, state: &mut State) -> Result<(), io::Error> {
@@ -1702,7 +1859,7 @@ mod tests {
 
         // stack repeating
         let mut stack: Vec<_> = stack.clone().into_iter().collect();
-        stack.sort_by(|a, b| a.0.cmp(&b.0));
+        stack.sort_by_key(|a| a.0);
         assert!(stack[4].1.repeated_pattern);
         assert!(stack[5].1.repeated_pattern);
         assert!(stack[6].1.repeated_pattern);
@@ -1764,7 +1921,7 @@ mod tests {
         let output = output.to_string();
         let stack = state.state.lock().unwrap().stack.clone();
         let mut entries: Vec<_> = stack.clone().into_iter().collect();
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        entries.sort_by_key(|a| a.0);
         let first_stack = entries[0].0;
         let from = format!("0x{first_stack:02x}");
         let output = output.replace(&from, "<stack_0>");
@@ -1957,6 +2114,31 @@ mod tests {
         let mut val = "No parentheses here".to_string();
         resolve_paren_expressions(&mut val);
         assert_eq!(val, "No parentheses here");
+    }
+
+    #[test]
+    fn test_mouse_click_selects_tab() {
+        let args = Args {
+            gdb_path: None,
+            remote: None,
+            ptr_size: PtrSize::default(),
+            cmds: None,
+            log_path: None,
+        };
+        let mut state = State::new(args);
+        // as the title bar would populate them: three tabs on row 1
+        state.tab_regions = vec![(1, 1, 8), (1, 10, 22), (1, 24, 31)];
+
+        assert!(mouse_click(&mut state, 15, 1));
+        assert_eq!(state.mode, Mode::OnlyRegister);
+
+        assert!(mouse_click(&mut state, 3, 1));
+        assert_eq!(state.mode, Mode::All);
+
+        // a gap between tabs, or the wrong row, does nothing
+        assert!(!mouse_click(&mut state, 9, 1));
+        assert!(!mouse_click(&mut state, 3, 0));
+        assert_eq!(state.mode, Mode::All);
     }
 
     #[test]

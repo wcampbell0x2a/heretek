@@ -34,7 +34,7 @@ pub fn draw_title_area(state: &mut State, f: &mut Frame, title_area: Rect) {
     } else {
         mode.ui_index()
     };
-    let tab = Tabs::new(vec![
+    let titles = [
         "F1 Main",
         "F2 Registers",
         "F3 Stack",
@@ -44,12 +44,34 @@ pub fn draw_title_area(state: &mut State, f: &mut Frame, title_area: Rect) {
         "F7 Hexdump",
         "F8 Symbols",
         "F9 Source",
-    ])
-    .block(Block::new().title_alignment(Alignment::Center))
-    .style(Style::default())
-    .highlight_style(Style::default().fg(GREEN).add_modifier(Modifier::BOLD))
-    .select(selected_index)
-    .divider("|".fg(GRAY_FG));
+    ];
+
+    // Record clickable regions for mouse tab selection, mirroring ratatui's
+    // Tabs layout: [pad_left(1)][title][pad_right(1)]([divider(1)])... starting
+    // at the left of `second` (the block has no borders, so inner == area)
+    state.tab_regions.clear();
+    let mut x = second.left();
+    for (i, title) in titles.iter().enumerate() {
+        if x >= second.right() {
+            break;
+        }
+        x += 1; // left padding
+        let start = x;
+        let title_width = title.chars().count() as u16;
+        x = (x + title_width).min(second.right());
+        state.tab_regions.push((second.top(), start, x));
+        x += 1; // right padding
+        if i + 1 < titles.len() {
+            x += 1; // divider
+        }
+    }
+
+    let tab = Tabs::new(titles.to_vec())
+        .block(Block::new().title_alignment(Alignment::Center))
+        .style(Style::default())
+        .highlight_style(Style::default().fg(GREEN).add_modifier(Modifier::BOLD))
+        .select(selected_index)
+        .divider("|".fg(GRAY_FG));
 
     f.render_widget(tab, second);
 }

@@ -6,9 +6,8 @@ demo:
     gcc -g book/vhs/demo.c -o book/vhs/demo_dyn
 
 update-screenshots: hello demo build
-    vhs docs/vhs/main.tape
-    vhs docs/vhs/hexdump.tape
-    vhs docs/vhs/readme.tape
+    vhs book/vhs/readme.tape
+    cp images/readme.gif book/src/images/readme.gif
     vhs book/vhs/main_view.tape
     vhs book/vhs/registers_view.tape
     vhs book/vhs/hexdump_view.tape

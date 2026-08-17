@@ -18,7 +18,6 @@
 - [Commands](./commands.md)
 - [Keybindings](./keybindings.md)
 - [Configuration](./configuration.md)
-- [Color Coding](./colors.md)
 - [Remote Targets](./remote.md)
 - [Development](./development.md)
 - [Changelog](./changelog.md)

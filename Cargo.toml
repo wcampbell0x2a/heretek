@@ -7,6 +7,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/wcampbell0x2a/heretek"
 categories = ["development-tools"]
 keywords = ["gdb", "tui", "debugging", "embedded", "gdbserver"]
+exclude = ["book/", "images/", ".github/"]
 
 [dependencies]
 ansi-to-tui = "8.0.1"

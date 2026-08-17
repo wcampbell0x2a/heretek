@@ -5,6 +5,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.9.0] - 2026-08-16
+- UI improvements
+  - Add a bottom status bar indicating the heretek state and the gdb state.
+  - Add help menu to show the meaning of colors and specific key usage.
+  - With the information now put into the bottom bar, it's now removed from the top bar.
+- Add mouse scrolling to all scrollable panels.
+- Add mouse tab selection.
+- Fix all scrolling bounds related to showing extra rows.
+- Hexdump now collapses output of repeated lines such as all 00s.
+- Show std/stderr in the `Output` pane.
+- Display registers pointing to stack locations.
+- Only show completion suffix beyond the current input.
+- Add `:`-triggered `Goto` popup to the hexdump view to scroll to a typed address.
+- Handle `\t` in gdb instruction output.
+
 ## [0.8.0] - 2025-12-15
 - Add `Source` improvements:
   - Add `Source` display page

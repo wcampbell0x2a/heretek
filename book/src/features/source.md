@@ -24,9 +24,9 @@ The Source view shows syntax-highlighted source code for the current execution p
 Source code is syntax-highlighted using treesitter (via the `arborium` crate) with the **Ayu Dark** theme.
 
 Supported languages:
-- **C**
-- **C++**
-- **Rust**
+- C
+- C++
+- Rust
 
 The language is auto-detected from GDB's `show language` output.
 
@@ -35,7 +35,7 @@ The language is auto-detected from GDB's `show language` output.
 Source file and line information comes from GDB stop events:
 1. The `fullname` field (absolute path) from `*stopped` MI records
 2. Falls back to the `file` field if `fullname` is not available
-3. The actual file is read from disk — the source must be present on the local filesystem
+3. The actual file is read from disk; the source must be present on the local filesystem
 
 ## In Main View
 

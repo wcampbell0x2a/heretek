@@ -1,6 +1,6 @@
 # Remote Targets
 
-A key feature of heretek is the ability to connect to remote GDB sessions without requiring `gdbserver`. Many embedded and vendor-shipped environments have broken or missing `gdbserver` binaries — heretek works around this using only `gdb`, `nc`, `cat`, and `mkfifo`.
+heretek connects to remote GDB sessions without requiring `gdbserver`. Many embedded and vendor-shipped environments have broken or missing `gdbserver` binaries, but heretek works around this using only `gdb`, `nc`, `cat`, and `mkfifo`.
 
 ## Setting Up the Remote Side
 

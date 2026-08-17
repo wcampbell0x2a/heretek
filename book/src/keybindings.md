@@ -4,8 +4,8 @@
 
 heretek has two input modes:
 
-- **Normal mode** — Navigation keys are active. This is the default.
-- **Editing mode** — Keyboard input goes to the command line.
+- **Normal mode**: Navigation keys are active. This is the default.
+- **Editing mode**: Keyboard input goes to the command line.
 
 Press `i` to enter editing mode. Press `Esc` to return to normal mode.
 

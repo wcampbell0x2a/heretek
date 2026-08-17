@@ -22,17 +22,15 @@ Press `Tab` to cycle through views in order:
 
 All values across every view are color coded by memory region:
 
-- **<span style="color: #aad94c">Green</span>** — Heap memory
-- **<span style="color: #d2a6ff">Purple</span>** — Stack memory
-- **<span style="color: #ff3333">Red</span>** — Code/text segment
-- **<span style="color: #e6b450">Yellow</span>** — ASCII strings
-- **<span style="color: #ff8f40">Orange</span>** — Assembly instructions
-
-See [Color Coding](../colors.md) for full details.
+- **<span style="color: #aad94c">Green</span>**: Heap memory
+- **<span style="color: #d2a6ff">Purple</span>**: Stack memory
+- **<span style="color: #ff3333">Red</span>**: Code/text segment
+- **<span style="color: #e6b450">Yellow</span>**: ASCII strings
+- **<span style="color: #ff8f40">Orange</span>**: Assembly instructions
 
 ## Pointer Dereference Chains
 
-A key feature across Registers and Stack views is automatic pointer dereference. heretek follows pointer chains and displays them inline:
+In the Registers and Stack views, heretek follows pointer chains and displays them inline:
 
 ```
 rax  0x7fffffffe000 → 0x00400580 → main+0 (push rbp)

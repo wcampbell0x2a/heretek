@@ -1,6 +1,6 @@
 # Symbols (F8)
 
-The Symbols view provides a browsable list of all function symbols in the loaded binary, with fuzzy search and inline disassembly.
+The Symbols view lists all function symbols in the loaded binary, with fuzzy search and inline disassembly.
 
 ![symbols view](../images/symbols_view.gif)
 
@@ -23,8 +23,8 @@ Address            Name
 
 Press `/` to activate the search bar at the bottom of the panel.
 
-- Search is **fuzzy**: all characters of your search term must appear in order in the symbol name, but don't need to be consecutive
-- Filter is applied **live** as you type
+- Search is fuzzy: all characters of your search term must appear in order in the symbol name, but don't need to be consecutive
+- The filter is applied live as you type
 - Press `Enter` to finish searching (filter stays active)
 - Press `Esc` to cancel the search
 - The title shows the active filter: `Symbols - Filtered: "main"`

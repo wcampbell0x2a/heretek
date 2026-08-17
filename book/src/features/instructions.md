@@ -16,7 +16,7 @@ Instructions are shown as a table with three columns:
   0x0040123c       main+8             mov    eax, 0x0
 ```
 
-- The **current instruction** (`$pc`) is highlighted in green with a `>>` marker
+- The current instruction (`$pc`) is highlighted in green with a `>>` marker
 - Instructions before `$pc` are shown in white
 - Addresses and function+offset are shown in purple
 - The panel title shows the current function name: `Instructions (main)`
@@ -31,4 +31,4 @@ The view auto-scrolls to keep `$pc` visible.
 
 ## Syntax
 
-Intel syntax is used by default — heretek sends `set disassembly-flavor intel` to GDB when a program is run or attached.
+Intel syntax is used by default; heretek sends `set disassembly-flavor intel` to GDB when a program is run or attached.

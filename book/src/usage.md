@@ -42,7 +42,7 @@ Options:
 
 ## Local Session
 
-Simply run heretek to start a local GDB session:
+Run heretek to start a local GDB session:
 
 ```
 $ heretek

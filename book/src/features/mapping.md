@@ -28,7 +28,7 @@ Mappings are classified for color coding across the application:
 
 ## Hexdump Integration
 
-Press `H` on any selected mapping to load its contents into the Hexdump view. This is a quick way to inspect any memory region.
+Press `H` on any selected mapping to load its contents into the Hexdump view.
 
 ## GDB Compatibility
 

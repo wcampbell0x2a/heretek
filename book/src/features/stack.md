@@ -21,4 +21,4 @@ The Stack view shows the contents of memory starting from the current stack poin
 
 ## Register Cross-Reference
 
-The stack view cross-references all current register values against displayed stack addresses. If any register's value matches a stack entry's address, the register name is shown next to that entry. This makes it easy to see where `rsp`, `rbp`, and other registers point on the stack.
+The stack view cross-references all current register values against displayed stack addresses. If any register's value matches a stack entry's address, the register name is shown next to that entry.

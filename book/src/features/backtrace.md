@@ -1,6 +1,6 @@
 # Backtrace
 
-The backtrace panel is not a standalone tab — it appears automatically between the main content area and the output strip whenever backtrace data is available.
+The backtrace panel is not a standalone tab; it appears automatically between the main content area and the output strip whenever backtrace data is available.
 
 ## Display
 

@@ -1,6 +1,6 @@
 # Hexdump (F7)
 
-The Hexdump view provides a color-coded display of raw memory contents with register annotations.
+The Hexdump view shows raw memory contents, color-coded, with register annotations.
 
 ![hexdump](../images/hexdump_view.gif)
 
@@ -29,7 +29,7 @@ OFFSET: HH HH HH HH HH HH HH HH  HH HH HH HH HH HH HH HH | ASCII.text.. | ← $r
 
 ## Loading Data
 
-There are several ways to load memory into the hexdump:
+Ways to load memory into the hexdump:
 
 | Method | Description |
 |--------|-------------|

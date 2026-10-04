@@ -3,7 +3,7 @@ use ratatui::prelude::Stylize;
 use ratatui::widgets::{Cell, Table, TableState};
 use ratatui::{Frame, layout::Rect, style::Style, widgets::Row};
 
-use super::{GREEN, PURPLE, effective_mode, pane_block};
+use super::{GRAY_FG, GREEN, PURPLE, effective_mode, pane_block};
 
 use crate::{Mode, State};
 
@@ -49,7 +49,7 @@ pub fn draw_asm(state: &mut State, f: &mut Frame, asm: Rect) {
         let inst_cell = if let Some(pc_index) = pc_index {
             if pc_index == index { Cell::from(inst).fg(GREEN) } else { Cell::from(inst).white() }
         } else {
-            Cell::from(inst).dark_gray()
+            Cell::from(inst).fg(GRAY_FG)
         };
         row.push(inst_cell);
 

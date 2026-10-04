@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::{PtrSize, State};
 
-use super::{BLUE, DARK_GRAY, GREEN, ORANGE, YELLOW, effective_mode, pane_block};
+use super::{BLUE, GRAY_FG, GREEN, ORANGE, YELLOW, effective_mode, pane_block};
 
 pub const HEXDUMP_WIDTH: usize = 16;
 
@@ -72,7 +72,7 @@ fn to_hexdump_str<'a>(
     for display_row in rows {
         let row = match display_row {
             DisplayRow::Collapsed => {
-                lines.push(Line::from(Span::styled("*", Style::default().fg(DARK_GRAY))));
+                lines.push(Line::from(Span::styled("*", Style::default().fg(GRAY_FG))));
                 continue;
             }
             DisplayRow::Row(row) => *row,
@@ -141,7 +141,7 @@ fn to_hexdump_str<'a>(
 
 pub fn color(byte: u8) -> Color {
     if byte == 0x00 {
-        DARK_GRAY
+        GRAY_FG
     } else if byte.is_ascii_graphic() {
         BLUE
     } else if byte.is_ascii_whitespace() {
@@ -232,7 +232,7 @@ mod tests {
 
     #[test]
     fn test_color_null_byte() {
-        assert_eq!(color(0x00), DARK_GRAY);
+        assert_eq!(color(0x00), GRAY_FG);
     }
 
     #[test]
